@@ -48,7 +48,7 @@
       "title": "Git y GitHub",
       "completed": false,
       "competencies": [
-        { "title": "Repositorios", "completed": false },
+        { "title": "Repositorios", "completed": true },
         { "title": "Commits", "completed": false },
         { "title": "Branches", "completed": false },
         { "title": "Merge", "completed": false },
