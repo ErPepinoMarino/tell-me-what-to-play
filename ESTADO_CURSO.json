@@ -1,0 +1,198 @@
+{
+  "course": "Master AI Software Engineer",
+
+  "current": {
+    "module": "Git y GitHub"
+  },
+
+  "modules": [
+    {
+      "title": "Ecosistema del Software Moderno",
+      "completed": true,
+      "competencies": [
+        { "title": "Internet y HTTP", "completed": true },
+        { "title": "Frontend y Backend", "completed": true },
+        { "title": "APIs", "completed": true },
+        { "title": "Cloud", "completed": true },
+        { "title": "SaaS", "completed": true },
+        { "title": "DevOps", "completed": true }
+      ],
+      "projects": []
+    },
+
+    {
+      "title": "TypeScript",
+      "completed": true,
+      "competencies": [
+        {
+          "title": "Entorno profesional (Node, npm, package.json, tsconfig, ESLint, Prettier)",
+          "completed": true
+        },
+        { "title": "Sistema de tipos", "completed": true },
+        { "title": "Inferencia de tipos", "completed": true },
+        { "title": "Tipos primitivos", "completed": true },
+        { "title": "Objetos", "completed": true },
+        { "title": "Type aliases e Interfaces", "completed": true },
+        { "title": "Funciones", "completed": true },
+        { "title": "Generics", "completed": true },
+        { "title": "Enums y alternativas", "completed": true },
+        { "title": "Clases", "completed": true },
+        { "title": "Módulos", "completed": true },
+        { "title": "Utility Types", "completed": true },
+        { "title": "Asincronía", "completed": true }
+      ],
+      "projects": [{ "title": "Aplicación de consola TypeScript", "completed": true }]
+    },
+
+    {
+      "title": "Git y GitHub",
+      "completed": false,
+      "competencies": [
+        { "title": "Repositorios", "completed": false },
+        { "title": "Commits", "completed": false },
+        { "title": "Branches", "completed": false },
+        { "title": "Merge", "completed": false },
+        { "title": "Rebase", "completed": false },
+        { "title": "Pull Requests", "completed": false },
+        { "title": "GitHub Flow", "completed": false }
+      ],
+      "projects": [{ "title": "Gestionar un proyecto completo con Git", "completed": false }]
+    },
+
+    {
+      "title": "Frontend Moderno",
+      "completed": false,
+      "competencies": [
+        { "title": "HTML", "completed": false },
+        { "title": "CSS", "completed": false },
+        { "title": "React", "completed": false },
+        { "title": "Next.js", "completed": false },
+        { "title": "Componentes", "completed": false },
+        { "title": "Hooks", "completed": false },
+        { "title": "Estado", "completed": false }
+      ],
+      "projects": [{ "title": "Frontend completo", "completed": false }]
+    },
+
+    {
+      "title": "Backend",
+      "completed": false,
+      "competencies": [
+        { "title": "Node.js", "completed": false },
+        { "title": "Express/Fastify", "completed": false },
+        { "title": "REST API", "completed": false },
+        { "title": "Middleware", "completed": false },
+        { "title": "Validación", "completed": false }
+      ],
+      "projects": [{ "title": "API REST", "completed": false }]
+    },
+
+    {
+      "title": "Bases de Datos",
+      "completed": false,
+      "competencies": [
+        { "title": "SQL", "completed": false },
+        { "title": "PostgreSQL", "completed": false },
+        { "title": "Prisma", "completed": false },
+        { "title": "Migraciones", "completed": false }
+      ],
+      "projects": [{ "title": "Persistencia completa", "completed": false }]
+    },
+
+    {
+      "title": "Autenticación y Seguridad",
+      "completed": false,
+      "competencies": [
+        { "title": "OAuth", "completed": false },
+        { "title": "JWT", "completed": false },
+        { "title": "Cookies y sesiones", "completed": false },
+        { "title": "Permisos", "completed": false }
+      ],
+      "projects": [{ "title": "Sistema de autenticación", "completed": false }]
+    },
+
+    {
+      "title": "Docker y Entornos",
+      "completed": false,
+      "competencies": [
+        { "title": "Docker", "completed": false },
+        { "title": "Docker Compose", "completed": false },
+        { "title": "Variables de entorno", "completed": false }
+      ],
+      "projects": [{ "title": "Aplicación dockerizada", "completed": false }]
+    },
+
+    {
+      "title": "Testing y Calidad",
+      "completed": false,
+      "competencies": [
+        { "title": "Unit Testing", "completed": false },
+        { "title": "Integration Testing", "completed": false },
+        { "title": "E2E Testing", "completed": false },
+        { "title": "Cobertura", "completed": false }
+      ],
+      "projects": [{ "title": "Suite completa de tests", "completed": false }]
+    },
+
+    {
+      "title": "CI/CD y Despliegue",
+      "completed": false,
+      "competencies": [
+        { "title": "GitHub Actions", "completed": false },
+        { "title": "Vercel", "completed": false },
+        { "title": "Railway / Render", "completed": false },
+        { "title": "CI/CD", "completed": false }
+      ],
+      "projects": [{ "title": "Pipeline de despliegue", "completed": false }]
+    },
+
+    {
+      "title": "Inteligencia Artificial",
+      "completed": false,
+      "competencies": [
+        { "title": "OpenAI API", "completed": false },
+        { "title": "Prompts", "completed": false },
+        { "title": "Function Calling", "completed": false },
+        { "title": "Structured Output", "completed": false },
+        { "title": "Embeddings", "completed": false },
+        { "title": "RAG", "completed": false },
+        { "title": "LangChain", "completed": false },
+        { "title": "LangGraph", "completed": false },
+        { "title": "MCP", "completed": false }
+      ],
+      "projects": [{ "title": "Aplicación con IA", "completed": false }]
+    },
+
+    {
+      "title": "Arquitectura de Software",
+      "completed": false,
+      "competencies": [
+        { "title": "SOLID", "completed": false },
+        { "title": "Clean Architecture", "completed": false },
+        { "title": "Patrones de diseño", "completed": false },
+        { "title": "Escalabilidad", "completed": false }
+      ],
+      "projects": [{ "title": "Refactorización arquitectónica", "completed": false }]
+    },
+
+    {
+      "title": "Proyecto SaaS Profesional",
+      "completed": false,
+      "competencies": [{ "title": "Integración completa del stack", "completed": false }],
+      "projects": [{ "title": "SaaS listo para producción", "completed": false }]
+    },
+
+    {
+      "title": "Marca Profesional",
+      "completed": false,
+      "competencies": [
+        { "title": "LinkedIn", "completed": false },
+        { "title": "GitHub", "completed": false },
+        { "title": "Portfolio", "completed": false },
+        { "title": "CV", "completed": false },
+        { "title": "Entrevistas técnicas", "completed": false }
+      ],
+      "projects": []
+    }
+  ]
+}
