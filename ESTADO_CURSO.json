@@ -50,13 +50,8 @@
       "competencies": [
         { "title": "Repositorios", "completed": true },
         { "title": "Commits", "completed": true },
-<<<<<<< HEAD
         { "title": "Branches", "completed": true },
-        { "title": "Merge", "completed": "MASTER" },
-=======
-        { "title": "Branches", "completed": false },
-        { "title": "Merge", "completed": "FEATURE" },
->>>>>>> feature-login
+        { "title": "Merge", "completed": true },
         { "title": "Rebase", "completed": false },
         { "title": "Pull Requests", "completed": false },
         { "title": "GitHub Flow", "completed": false }
