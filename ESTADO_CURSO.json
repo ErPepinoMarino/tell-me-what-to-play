@@ -49,9 +49,9 @@
       "completed": false,
       "competencies": [
         { "title": "Repositorios", "completed": true },
-        { "title": "Commits", "completed": false },
-        { "title": "Branches", "completed": false },
-        { "title": "Merge", "completed": "working" },
+        { "title": "Commits", "completed": true },
+        { "title": "Branches", "completed": true },
+        { "title": "Merge", "completed": "MASTER" },
         { "title": "Rebase", "completed": false },
         { "title": "Pull Requests", "completed": false },
         { "title": "GitHub Flow", "completed": false }
