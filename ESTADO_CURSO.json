@@ -50,7 +50,7 @@
       "competencies": [
         { "title": "Repositorios", "completed": true },
         { "title": "Commits", "completed": false },
-        { "title": "Branches", "completed": true },
+        { "title": "Branches", "completed": false },
         { "title": "Merge", "completed": false },
         { "title": "Rebase", "completed": false },
         { "title": "Pull Requests", "completed": false },
