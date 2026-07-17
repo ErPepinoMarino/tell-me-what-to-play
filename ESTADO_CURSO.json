@@ -51,7 +51,7 @@
         { "title": "Repositorios", "completed": true },
         { "title": "Commits", "completed": true },
         { "title": "Branches", "completed": false },
-        { "title": "Merge", "completed": "working" },
+        { "title": "Merge", "completed": "FEATURE" },
         { "title": "Rebase", "completed": false },
         { "title": "Pull Requests", "completed": false },
         { "title": "GitHub Flow", "completed": false }
