@@ -46,17 +46,17 @@
 
     {
       "title": "Git y GitHub",
-      "completed": false,
+      "completed": true,
       "competencies": [
         { "title": "Repositorios", "completed": true },
         { "title": "Commits", "completed": true },
         { "title": "Branches", "completed": true },
         { "title": "Merge", "completed": true },
-        { "title": "Rebase", "completed": false },
-        { "title": "Pull Requests", "completed": false },
-        { "title": "GitHub Flow", "completed": false }
+        { "title": "Rebase", "completed": true },
+        { "title": "Pull Requests", "completed": true },
+        { "title": "GitHub Flow", "completed": true }
       ],
-      "projects": [{ "title": "Gestionar un proyecto completo con Git", "completed": false }]
+      "projects": [{ "title": "Gestionar un proyecto completo con Git", "completed": true }]
     },
 
     {
