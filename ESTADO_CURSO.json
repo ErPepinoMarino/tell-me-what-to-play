@@ -63,8 +63,8 @@
       "title": "Frontend Moderno",
       "completed": false,
       "competencies": [
-        { "title": "HTML", "completed": false },
-        { "title": "CSS", "completed": false },
+        { "title": "HTML", "completed": true },
+        { "title": "CSS", "completed": true },
         { "title": "React", "completed": false },
         { "title": "Next.js", "completed": false },
         { "title": "Componentes", "completed": false },
