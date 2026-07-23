@@ -41,7 +41,9 @@
         { "title": "Utility Types", "completed": true },
         { "title": "Asincronía", "completed": true }
       ],
-      "projects": [{ "title": "Aplicación de consola TypeScript", "completed": true }]
+      "projects": [
+        { "title": "Aplicación de consola TypeScript", "completed": true }
+      ]
     },
 
     {
@@ -56,7 +58,9 @@
         { "title": "Pull Requests", "completed": true },
         { "title": "GitHub Flow", "completed": true }
       ],
-      "projects": [{ "title": "Gestionar un proyecto completo con Git", "completed": true }]
+      "projects": [
+        { "title": "Gestionar un proyecto completo con Git", "completed": true }
+      ]
     },
 
     {
@@ -65,11 +69,11 @@
       "competencies": [
         { "title": "HTML", "completed": true },
         { "title": "CSS", "completed": true },
-        { "title": "React", "completed": false },
+        { "title": "React", "completed": true },
         { "title": "Next.js", "completed": false },
-        { "title": "Componentes", "completed": false },
-        { "title": "Hooks", "completed": false },
-        { "title": "Estado", "completed": false }
+        { "title": "Componentes", "completed": true },
+        { "title": "Hooks", "completed": true },
+        { "title": "Estado", "completed": true }
       ],
       "projects": [{ "title": "Frontend completo", "completed": false }]
     },
@@ -172,14 +176,20 @@
         { "title": "Patrones de diseño", "completed": false },
         { "title": "Escalabilidad", "completed": false }
       ],
-      "projects": [{ "title": "Refactorización arquitectónica", "completed": false }]
+      "projects": [
+        { "title": "Refactorización arquitectónica", "completed": false }
+      ]
     },
 
     {
       "title": "Proyecto SaaS Profesional",
       "completed": false,
-      "competencies": [{ "title": "Integración completa del stack", "completed": false }],
-      "projects": [{ "title": "SaaS listo para producción", "completed": false }]
+      "competencies": [
+        { "title": "Integración completa del stack", "completed": false }
+      ],
+      "projects": [
+        { "title": "SaaS listo para producción", "completed": false }
+      ]
     },
 
     {
