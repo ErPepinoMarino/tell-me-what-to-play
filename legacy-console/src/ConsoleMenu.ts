@@ -1,5 +1,6 @@
+/// <reference types="node" />
 import * as readline from "readline";
-import { stdin as input, stdout as output } from "node:process";
+import { stdin as input, stdout as output } from "process";
 import { GameLibrary } from "./GameLibrary";
 import { User } from "./User";
 import { showGame, showUserGame, showMessage } from "./ConsoleRenderers";
@@ -25,7 +26,9 @@ function askOption(libraryIn: GameLibrary, userIn: User) {
         rl.close();
         return;
       default:
-        showMessage("Opción inválida. Por favor, seleccione una opción válida.");
+        showMessage(
+          "Opción inválida. Por favor, seleccione una opción válida.",
+        );
         returnToMenu(libraryIn, userIn);
         return;
     }
@@ -59,7 +62,9 @@ function searchGame(libraryIn: GameLibrary, userIn: User) {
       });
       //si no se encontro ningun juego en la lista del usuario, mostramos que no se encontro
       if (foundGames === 0) {
-        showMessage("No se encontraron juegos con ese título en la lista del usuario.");
+        showMessage(
+          "No se encontraron juegos con ese título en la lista del usuario.",
+        );
       }
     } else {
       //Si no encontamos ningun juego en la biblioteca, mostramos que no se encontro
