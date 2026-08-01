@@ -70,12 +70,12 @@
         { "title": "HTML", "completed": true },
         { "title": "CSS", "completed": true },
         { "title": "React", "completed": true },
-        { "title": "Next.js", "completed": false },
+        { "title": "Next.js", "completed": true },
         { "title": "Componentes", "completed": true },
         { "title": "Hooks", "completed": true },
         { "title": "Estado", "completed": true }
       ],
-      "projects": [{ "title": "Frontend completo", "completed": false }]
+      "projects": [{ "title": "Frontend completo", "completed": true }]
     },
 
     {

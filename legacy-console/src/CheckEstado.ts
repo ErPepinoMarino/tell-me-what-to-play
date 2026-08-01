@@ -64,7 +64,7 @@ function findCurrentModule(modules: Module[]): Module | null {
 }
 
 // Read and parse the JSON file
-const filePath = path.resolve(__dirname, "..", "ESTADO_CURSO.json");
+const filePath = path.resolve(__dirname, "..", "..", "ESTADO_CURSO.json");
 const rawData = fs.readFileSync(filePath, "utf-8");
 const courseData: CourseData = JSON.parse(rawData);
 
