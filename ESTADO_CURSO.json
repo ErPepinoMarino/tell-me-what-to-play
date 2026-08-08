@@ -1,10 +1,6 @@
 {
   "course": "Master AI Software Engineer",
 
-  "current": {
-    "module": "Git y GitHub"
-  },
-
   "modules": [
     {
       "title": "Ecosistema del Software Moderno",
@@ -65,7 +61,7 @@
 
     {
       "title": "Frontend Moderno",
-      "completed": false,
+      "completed": true,
       "competencies": [
         { "title": "HTML", "completed": true },
         { "title": "CSS", "completed": true },
@@ -80,15 +76,15 @@
 
     {
       "title": "Backend",
-      "completed": false,
+      "completed": true,
       "competencies": [
-        { "title": "Node.js", "completed": false },
-        { "title": "Express/Fastify", "completed": false },
-        { "title": "REST API", "completed": false },
-        { "title": "Middleware", "completed": false },
-        { "title": "Validación", "completed": false }
+        { "title": "Node.js", "completed": true },
+        { "title": "Express/Fastify", "completed": true },
+        { "title": "REST API", "completed": true },
+        { "title": "Middleware", "completed": true },
+        { "title": "Validación", "completed": true }
       ],
-      "projects": [{ "title": "API REST", "completed": false }]
+      "projects": [{ "title": "API REST", "completed": true }]
     },
 
     {

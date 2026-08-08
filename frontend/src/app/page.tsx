@@ -6,8 +6,6 @@ import GameInfo from "@/components/GameInfo/GameInfo";
 import MyLibrary from "@/components/MyLibrary/MyLibrary";
 import Login from "@/components/Login/Login";
 import Footer from "@/components/Footer/Footer";
-import { gameService } from "@/services/gameServices";
-import { Game } from "@/types/Game";
 
 //Más limpio sacar las props de la declaración de la función home, sino queda una guarrada verbosa.
 type HomeProps = {
@@ -21,8 +19,17 @@ export default async function Home({ searchParams }: HomeProps) {
   //ves.
   const { q, game } = await searchParams;
 
-  const games = await gameService.search(q ?? "");
-  const selectedGame = game ? await gameService.getBySlug(game) : undefined;
+  const response = await fetch(
+    `http://localhost:3001/api/games?q=${encodeURIComponent(q ?? "")}`
+  );
+
+  const games = await response.json();
+
+  const selectedGame = game
+    ? await fetch(
+        `http://localhost:3001/api/games/${encodeURIComponent(game)}`
+      ).then((res) => res.json())
+    : undefined;
 
   return (
     <main className="min-h-screen bg-gray-100 py-8">
