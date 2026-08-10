@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model games {
+  id           Int          @id @default(autoincrement())
+  slug         String       @unique
+  title        String
+  description  String?
+  cover_url    String?
+  release_year Int?
+  genres       String[]
+  platforms    String[]
+  rating       Decimal?     @db.Decimal
+  updated_at DateTime @updatedAt
+  user_games   user_games[]
+}
+
+model user_games {
+  user_id        Int
+  game_id        Int
+  status         game_status?
+  recommendation recommendation?
+  review         String?
+  games          games           @relation(fields: [game_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users          users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, game_id])
+}
+
+model users {
+  id         Int          @id @default(autoincrement())
+  email      String       @unique
+  created_at DateTime @default(now())
+  user_games user_games[]
+}
+
+enum game_status {
+  PENDING
+  PLAYED
+  COMPLETED
+}
+
+enum recommendation {
+  HIGHLY_RECOMMENDED
+  RECOMMENDED
+  MEH
+  NOT_RECOMMENDED
+}

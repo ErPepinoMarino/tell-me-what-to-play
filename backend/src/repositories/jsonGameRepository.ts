@@ -18,4 +18,27 @@ export const jsonGameRepository: IGameRepository = {
       game.title.toLowerCase().includes(searchQuery),
     );
   },
+  async create(game: Game): Promise<Game> {
+    games.push(game);
+    return game;
+  },
+  async update(game: Game): Promise<Game> {
+    const index = games.findIndex((item) => item.id === game.id);
+
+    if (index === -1) {
+      throw new Error(`Game with id ${game.id} not found`);
+    }
+
+    games[index] = game;
+    return game;
+  },
+  async delete(id: number): Promise<void> {
+    const index = games.findIndex((game) => game.id === id);
+
+    if (index === -1) {
+      throw new Error(`Game with id ${id} not found`);
+    }
+
+    games.splice(index, 1);
+  },
 };

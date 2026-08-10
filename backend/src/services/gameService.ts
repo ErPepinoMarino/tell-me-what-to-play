@@ -1,8 +1,8 @@
 import type { Game } from "../types/Game.js";
-import { jsonGameRepository } from "../repositories/jsonGameRepository.js";
 import { IGameRepository } from "../repositories/IGameRepository.js";
+import { prismaGameRepository } from "../repositories/prismaGameRepository.js";
 
-const repository: IGameRepository = jsonGameRepository;
+const repository: IGameRepository = prismaGameRepository;
 
 export const gameService = {
   async getBySlug(slug: string): Promise<Game | undefined> {
@@ -11,5 +11,11 @@ export const gameService = {
 
   async search(query: string) {
     return repository.search(query);
+  },
+  async create(game: Game): Promise<Game> {
+    return repository.create(game);
+  },
+  async update(game: Game): Promise<Game> {
+    return repository.update(game);
   },
 };

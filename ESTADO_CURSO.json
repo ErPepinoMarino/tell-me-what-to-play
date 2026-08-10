@@ -89,14 +89,14 @@
 
     {
       "title": "Bases de Datos",
-      "completed": false,
+      "completed": true,
       "competencies": [
-        { "title": "SQL", "completed": false },
-        { "title": "PostgreSQL", "completed": false },
-        { "title": "Prisma", "completed": false },
-        { "title": "Migraciones", "completed": false }
+        { "title": "SQL", "completed": true },
+        { "title": "PostgreSQL", "completed": true },
+        { "title": "Prisma", "completed": true },
+        { "title": "Migraciones", "completed": true }
       ],
-      "projects": [{ "title": "Persistencia completa", "completed": false }]
+      "projects": [{ "title": "Persistencia completa", "completed": true }]
     },
 
     {
