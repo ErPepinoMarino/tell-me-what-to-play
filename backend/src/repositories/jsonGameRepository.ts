@@ -1,8 +1,7 @@
 import { games } from "../data/games.js";
 import type { Game } from "../types/Game.js";
-import { IGameRepository } from "./IGameRepository.js"; //se importa como js pese a ser ts porque el module system es NodeNext y el module resolution es NodeNext, por lo que se resuelve como js
 
-export const jsonGameRepository: IGameRepository = {
+export const jsonGameRepository = {
   async getAll(): Promise<Game[]> {
     return games;
   },

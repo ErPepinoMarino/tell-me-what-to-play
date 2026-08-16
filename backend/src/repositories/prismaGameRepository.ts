@@ -1,8 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import type { Game } from "../types/Game.js";
-import type { IGameRepository } from "./IGameRepository.js";
 
-export const prismaGameRepository: IGameRepository = {
+export const prismaGameRepository = {
   async getAll(): Promise<Game[]> {
     const games = await prisma.games.findMany();
 

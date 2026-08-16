@@ -37,29 +37,6 @@ type GameQuery = {
 type GameParams = {
   slug: string;
 };
-/*
-type AddToLibraryRequest = {
-  gameId: number;
-  favorite: boolean;
-};
-
-const addToLibrarySchema = {
-  body: {
-    type: "object",
-    additionalProperties: false,
-    required: ["gameId", "favorite"],
-    properties: {
-      gameId: {
-        type: "integer",
-        minimum: 1,
-      },
-      favorite: {
-        type: "boolean",
-      },
-    },
-  },
-};
-*/
 
 //Usamos FastifyInstance para tipar la función gameRoutes
 export async function gameRoutes(fastify: FastifyInstance): Promise<void> {

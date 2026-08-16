@@ -1,8 +1,7 @@
 import type { Game } from "../types/Game.js";
-import { IGameRepository } from "../repositories/IGameRepository.js";
 import { prismaGameRepository } from "../repositories/prismaGameRepository.js";
 
-const repository: IGameRepository = prismaGameRepository;
+const repository = prismaGameRepository;
 
 export const gameService = {
   async getBySlug(slug: string): Promise<Game | undefined> {

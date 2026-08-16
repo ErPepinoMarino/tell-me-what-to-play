@@ -101,14 +101,14 @@
 
     {
       "title": "Autenticación y Seguridad",
-      "completed": false,
+      "completed": true,
       "competencies": [
-        { "title": "OAuth", "completed": false },
-        { "title": "JWT", "completed": false },
-        { "title": "Cookies y sesiones", "completed": false },
-        { "title": "Permisos", "completed": false }
+        { "title": "OAuth", "completed": true },
+        { "title": "JWT", "completed": true },
+        { "title": "Cookies y sesiones", "completed": true },
+        { "title": "Permisos", "completed": true }
       ],
-      "projects": [{ "title": "Sistema de autenticación", "completed": false }]
+      "projects": [{ "title": "Sistema de autenticación", "completed": true }]
     },
 
     {

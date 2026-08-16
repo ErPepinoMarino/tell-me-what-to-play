@@ -12,9 +12,12 @@
   "keywords": [],
   "type": "module",
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/jwt": "^10.2.1",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
-    "fastify": "^5.11.2"
+    "fastify": "^5.11.2",
+    "google-auth-library": "^11.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
