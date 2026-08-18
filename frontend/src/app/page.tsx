@@ -19,15 +19,17 @@ export default async function Home({ searchParams }: HomeProps) {
   //ves.
   const { q, game } = await searchParams;
 
+  const apiUrl = process.env.API_URL;
+
   const response = await fetch(
-    `http://localhost:3001/api/games?q=${encodeURIComponent(q ?? "")}`
+    `${apiUrl}/api/games?q=${encodeURIComponent(q ?? "")}`
   );
 
   const games = await response.json();
 
   const selectedGame = game
     ? await fetch(
-        `http://localhost:3001/api/games/${encodeURIComponent(game)}`
+        `${apiUrl}/api/games/${encodeURIComponent(game)}`
       ).then((res) => res.json())
     : undefined;
 

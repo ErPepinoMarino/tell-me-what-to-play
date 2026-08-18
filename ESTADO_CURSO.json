@@ -113,13 +113,13 @@
 
     {
       "title": "Docker y Entornos",
-      "completed": false,
+      "completed": true,
       "competencies": [
-        { "title": "Docker", "completed": false },
-        { "title": "Docker Compose", "completed": false },
-        { "title": "Variables de entorno", "completed": false }
+        { "title": "Docker", "completed": true },
+        { "title": "Docker Compose", "completed": true },
+        { "title": "Variables de entorno", "completed": true }
       ],
-      "projects": [{ "title": "Aplicación dockerizada", "completed": false }]
+      "projects": [{ "title": "Aplicación dockerizada", "completed": true }]
     },
 
     {

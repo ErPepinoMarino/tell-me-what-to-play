@@ -1,6 +1,5 @@
 volumes:
   postgres_data:
-
 services:
   postgres:
     image: postgres:18
@@ -12,3 +11,31 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_URL: http://backend:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
