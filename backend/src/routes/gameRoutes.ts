@@ -63,17 +63,4 @@ export async function gameRoutes(fastify: FastifyInstance): Promise<void> {
       return gameService.getBySlug(request.params.slug);
     },
   );
-  /*
-  fastify.post<{
-    Body: AddToLibraryRequest;
-  }>(
-    "/api/library",
-    {
-      schema: addToLibrarySchema,
-    },
-    async (request) => {
-      return libraryService.add(request.body.gameId, request.body.favorite);
-    },
-  );
-  */
 }

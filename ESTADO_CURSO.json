@@ -124,14 +124,14 @@
 
     {
       "title": "Testing y Calidad",
-      "completed": false,
+      "completed": true,
       "competencies": [
-        { "title": "Unit Testing", "completed": false },
-        { "title": "Integration Testing", "completed": false },
-        { "title": "E2E Testing", "completed": false },
-        { "title": "Cobertura", "completed": false }
+        { "title": "Unit Testing", "completed": true },
+        { "title": "Integration Testing", "completed": true },
+        { "title": "E2E Testing", "completed": true },
+        { "title": "Cobertura", "completed": true }
       ],
-      "projects": [{ "title": "Suite completa de tests", "completed": false }]
+      "projects": [{ "title": "Suite completa de tests", "completed": true }]
     },
 
     {

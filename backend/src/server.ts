@@ -12,14 +12,8 @@ import { gameRoutes } from "./routes/gameRoutes.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { userGamesRoutes } from "./routes/userGamesRoutes.js";
 
-//servicios
-import { createAuthService } from "./services/authService.js";
-import { prismaSessionRepository } from "./repositories/prismaSessionRepository.js";
-import { prismaUserRepository } from "./repositories/prismaUserRepository.js";
-
 //middlewares
 import { loggerMiddleware } from "./middlewares/loggerMiddleware.js";
-import { authMiddleware } from "./middlewares/authMiddleware.js";
 
 const app = fastify();
 
@@ -30,29 +24,6 @@ app.register(fastifyJwt, {
     expiresIn: "15m",
   },
 });
-
-app.get("/test-auth-session", async () => {
-  const authService = createAuthService(
-    app,
-    prismaSessionRepository,
-    prismaUserRepository,
-  );
-
-  return authService.createAuthSession(1);
-});
-
-app.get(
-  "/test-protected",
-  {
-    preHandler: authMiddleware,
-  },
-  async (request) => {
-    return {
-      message: "Acceso autorizado",
-      userId: request.user.sub,
-    };
-  },
-);
 
 //middleWare
 app.addHook("onRequest", loggerMiddleware);

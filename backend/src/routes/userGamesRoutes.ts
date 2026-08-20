@@ -87,6 +87,8 @@ export async function userGamesRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       try {
+        //Sacamos el id del JWT, importante.
+        //El id bueno es el que viene en JWT, no el que viene en la URL.
         const actorUserId = Number(request.user.sub);
         const actorRole = await getActorRole(actorUserId);
         const targetUserId = Number(request.params.targetUserId);
@@ -163,10 +165,7 @@ export async function userGamesRoutes(fastify: FastifyInstance): Promise<void> {
     Body: {
       status?: "PENDING" | "PLAYED" | "COMPLETED";
       recommendation?:
-        | "HIGHLY_RECOMMENDED"
-        | "RECOMMENDED"
-        | "MEH"
-        | "NOT_RECOMMENDED";
+        "HIGHLY_RECOMMENDED" | "RECOMMENDED" | "MEH" | "NOT_RECOMMENDED";
       review?: string;
     };
   }>(

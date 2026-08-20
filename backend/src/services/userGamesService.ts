@@ -41,7 +41,7 @@ export const userGamesService = {
     targetUserId: number,
     gameId: number,
   ) {
-    ensureGameExists(gameId);
+    await ensureGameExists(gameId);
     ensureLibraryAccess(actorRole, actorUserId, targetUserId);
 
     const existing = await prismaUserGamesRepository.getByUserAndGame(
@@ -70,7 +70,7 @@ export const userGamesService = {
       review?: string | null;
     },
   ) {
-    ensureGameExists(gameId);
+    await ensureGameExists(gameId);
     ensureLibraryAccess(actorRole, actorUserId, targetUserId);
 
     const entry = await prismaUserGamesRepository.getByUserAndGame(
@@ -91,7 +91,7 @@ export const userGamesService = {
     targetUserId: number,
     gameId: number,
   ) {
-    ensureGameExists(gameId);
+    await ensureGameExists(gameId);
     ensureLibraryAccess(actorRole, actorUserId, targetUserId);
 
     const entry = await prismaUserGamesRepository.getByUserAndGame(

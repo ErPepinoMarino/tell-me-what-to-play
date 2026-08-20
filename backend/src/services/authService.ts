@@ -76,55 +76,21 @@ export function createAuthService(
       return Date.now() >= expiresAt.getTime();
     },
     async refreshSession(token: string) {
-      const refreshToken = await this.validateRefreshToken(token);
-
-      if (!refreshToken) {
-        return null;
-      }
-
-      // Un refresh token ya utilizado no puede volver a utilizarse.
-      if (refreshToken.revoked_at) {
-        await sessionRepository.revokeSession(refreshToken.session_id);
-        return null;
-      }
-
-      // La sesión ha caducado.
-      if (this.isSessionExpired(refreshToken.sessions.expires_at)) {
-        await sessionRepository.revokeSession(refreshToken.session_id);
-        return null;
-      }
-
-      // El refresh token sigue vigente.
-      if (!this.isRefreshTokenExpired(refreshToken.created_at)) {
-        const accessToken = this.createAccessToken(
-          refreshToken.sessions.user_id,
-        );
-
-        return {
-          accessToken,
-          refreshToken: token,
-        };
-      }
-
-      // El refresh token ha caducado.
-      // Se rota y se prolonga la sesión 24 horas.
-      await sessionRepository.revokeRefreshToken(refreshToken.id);
-
+      const tokenHash = createHash("sha256").update(token).digest("hex");
       const newRefreshToken = this.createRefreshToken();
-
-      await sessionRepository.saveRefreshToken(
-        refreshToken.session_id,
+      const now = new Date();
+      const result = await sessionRepository.rotateRefreshToken(
+        tokenHash,
         newRefreshToken.tokenHash,
+        now,
+        new Date(now.getTime() + 24 * 60 * 60 * 1000),
       );
 
-      const newExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      if (result.status !== "rotated") {
+        return null;
+      }
 
-      await sessionRepository.updateExpiresAt(
-        refreshToken.session_id,
-        newExpiresAt,
-      );
-
-      const accessToken = this.createAccessToken(refreshToken.sessions.user_id);
+      const accessToken = this.createAccessToken(result.userId);
 
       return {
         accessToken,

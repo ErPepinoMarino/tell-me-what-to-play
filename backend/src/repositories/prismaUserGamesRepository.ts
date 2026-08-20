@@ -53,18 +53,34 @@ export const prismaUserGamesRepository = {
       throw new Error("game already in library");
     }
 
-    return prisma.user_games.create({
-      data: {
-        user_id: userId,
-        game_id: gameId,
-        status: input.status ?? null,
-        recommendation: input.recommendation ?? null,
-        review: input.review ?? null,
-      },
-      include: {
-        games: true,
-      },
-    });
+    try {
+      return await prisma.user_games.create({
+        data: {
+          user_id: userId,
+          game_id: gameId,
+          status: input.status ?? null,
+          recommendation: input.recommendation ?? null,
+          review: input.review ?? null,
+        },
+        include: {
+          games: true,
+        },
+      });
+    } catch (error) {
+      // La clave única (user_id, game_id) es la autoridad de integridad.
+      // Si otra request concurrente creó la entrada entre nuestro find y nuestro create,
+      // Prisma/PostgreSQL lanza P2002 (unique violation) que traducimos al error de negocio.
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        throw new Error("game already in library");
+      }
+
+      throw error;
+    }
   },
 
   async update(userId: number, gameId: number, input: UserGameInput) {
