@@ -1,5 +1,6 @@
 volumes:
   postgres_data:
+
 services:
   postgres:
     image: postgres:18
@@ -16,6 +17,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
+
+  migrate:
+    build: ./backend
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    build: ./backend
+    command: npx prisma db seed
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   backend:
     build: ./backend
     ports:
@@ -29,13 +50,26 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   frontend:
     build:
       context: ./frontend
       args:
         API_URL: http://backend:3001
+    environment:
+      API_URL: http://backend:3001
     ports:
       - "3000:3000"
     depends_on:
-      - backend
-
+      backend:
+        condition: service_healthy

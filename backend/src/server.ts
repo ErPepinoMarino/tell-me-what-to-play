@@ -12,9 +12,6 @@ import { gameRoutes } from "./routes/gameRoutes.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { userGamesRoutes } from "./routes/userGamesRoutes.js";
 
-//middlewares
-import { loggerMiddleware } from "./middlewares/loggerMiddleware.js";
-
 const app = fastify();
 
 //registro el plugin de JWT con el secreto de JWT desde el archivo .env
@@ -24,9 +21,6 @@ app.register(fastifyJwt, {
     expiresIn: "15m",
   },
 });
-
-//middleWare
-app.addHook("onRequest", loggerMiddleware);
 
 //Rutas
 app.register(fastifyCookie);

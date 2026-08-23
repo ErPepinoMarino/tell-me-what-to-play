@@ -15,6 +15,11 @@ type HomeProps = {
   }>;
 };
 
+//Esto básicamente es para que no se llame al backend en la build.
+//Ya que frontend y backend son apps separadas y el backend no estará disponible en la build.
+//Basta solo con declarar la variable para que Next.js lo entienda.
+export const dynamic = "force-dynamic";
+
 export default async function Home({ searchParams }: HomeProps) {
   //ves.
   const { q, game } = await searchParams;
@@ -28,9 +33,9 @@ export default async function Home({ searchParams }: HomeProps) {
   const games = await response.json();
 
   const selectedGame = game
-    ? await fetch(
-        `${apiUrl}/api/games/${encodeURIComponent(game)}`
-      ).then((res) => res.json())
+    ? await fetch(`${apiUrl}/api/games/${encodeURIComponent(game)}`).then(
+        (res) => res.json()
+      )
     : undefined;
 
   return (

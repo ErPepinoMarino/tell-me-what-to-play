@@ -48,11 +48,12 @@ export const prismaUserGamesRepository = {
         },
       },
     });
-
+    //miramos si el juego existe en la librería del usuario.
     if (existing) {
       throw new Error("game already in library");
     }
-
+    //Esto puede parecer raro pero es para manejar una race condition.
+    //Primero metemos el juego en la libreroia (o lo intentamos con un try)
     try {
       return await prisma.user_games.create({
         data: {
@@ -68,15 +69,15 @@ export const prismaUserGamesRepository = {
       });
     } catch (error) {
       // La clave única (user_id, game_id) es la autoridad de integridad.
-      // Si otra request concurrente creó la entrada entre nuestro find y nuestro create,
       // Prisma/PostgreSQL lanza P2002 (unique violation) que traducimos al error de negocio.
+      // Esto quiere decir que ha llegado mas de una request al mismo tiempo y la primera ha creado el registro, la segunda ha fallado.
       if (
         error &&
         typeof error === "object" &&
         "code" in error &&
         error.code === "P2002"
       ) {
-        throw new Error("game already in library");
+        throw new Error("game already in library", { cause: error });
       }
 
       throw error;
