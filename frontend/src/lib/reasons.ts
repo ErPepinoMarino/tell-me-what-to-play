@@ -78,15 +78,6 @@ function semanticLabel(field: string): string {
   return SEMANTIC_LABELS[field] ?? field;
 }
 
-function objectiveLabel(field: string): string {
-  // "genres.RPG" | "gameModes.COOPERATIVE" | "perspectives.TOP_DOWN"
-  const [prefix, value] = field.split(".");
-  if (prefix === "genres") return GENRE_LABELS[value] ?? value;
-  if (prefix === "gameModes") return MODE_LABELS[value] ?? value;
-  if (prefix === "perspectives") return PERSPECTIVE_LABELS[value] ?? value;
-  return field;
-}
-
 /*
  * Convierte una razón del matcher en un chip comprensible.
  * La temática (keywords) se muestra siempre primero: es el bloque que
@@ -102,19 +93,6 @@ export function reasonToChip(reason: MatchReason): ReasonChip | null {
           icon: "check",
           label: `Temática: ${reason.field.replace(/^kw\./, "")}`,
         };
-      case "reference-keyword":
-        return {
-          icon: "check",
-          label: `Similar a lo que pediste: ${reason.field.replace(/^ref\./, "")}`,
-        };
-      case "genre-match":
-        return { icon: "check", label: `Género: ${objectiveLabel(reason.field)}` };
-      case "mode-match":
-        return { icon: "check", label: objectiveLabel(reason.field) };
-      case "perspective-match":
-        return { icon: "check", label: objectiveLabel(reason.field) };
-      case "platform-overlap":
-        return { icon: "check", label: "Disponible en tus plataformas" };
       case "semantic-agreement":
         return {
           icon: "partial",
@@ -125,23 +103,10 @@ export function reasonToChip(reason: MatchReason): ReasonChip | null {
           icon: "cross",
           label: `${semanticLabel(reason.field)} contradice lo pedido`,
         };
-      case "no-overlap":
-        return {
-          icon: "cross",
-          label:
-            reason.field === "genres"
-              ? "No es del género pedido"
-              : "No tiene los modos de juego pedidos",
-        };
-      case "no-keyword-overlap":
-        return { icon: "cross", label: "No encaja con la temática pedida" };
-      case "no-reference-overlap":
-        return {
-          icon: "cross",
-          label: "Poca relación con el juego de referencia",
-        };
-      case "platforms-disjoint":
-        return { icon: "cross", label: "No está en tus plataformas" };
+      case "must-violated":
+        return { icon: "cross", label: "No cumple un requisito pedido" };
+      case "red-flag-violated":
+        return { icon: "cross", label: "Contiene algo que excluiste" };
       case "absence-violated":
         return {
           icon: "cross",
@@ -174,12 +139,49 @@ export function intentSummary(intent: GameSearchIntent): string[] {
     bits.push(genres.map((g) => GENRE_LABELS[g] ?? g).join(" / "));
   }
 
+  const modes = intent.objective?.gameModes?.filter((m) => m !== "UNKNOWN") ?? [];
+  if (modes.length > 0) {
+    bits.push(modes.map((m) => MODE_LABELS[m] ?? m).join(" / "));
+  }
+
+  const perspectives =
+    intent.objective?.perspectives?.filter((p) => p !== "UNKNOWN") ?? [];
+  if (perspectives.length > 0) {
+    bits.push(perspectives.map((p) => PERSPECTIVE_LABELS[p] ?? p).join(" / "));
+  }
+
+  const platforms = intent.objective?.platforms?.filter((p) => p !== "UNKNOWN") ?? [];
+  if (platforms.length > 0) {
+    bits.push(`en ${platforms.join(" / ")}`);
+  }
+
   if (intent.keywords && intent.keywords.length > 0) {
-    bits.push(intent.keywords.join(", "));
+    // Las keywords son vocabulario interno de búsqueda (inglés canónico):
+    // se etiquetan como lo que son en vez de mezclarse con los labels ES.
+    bits.push(`términos de búsqueda: ${intent.keywords.join(", ")}`);
+  }
+
+  if (intent.releaseYear !== null) {
+    bits.push(`del año ${intent.releaseYear}`);
+  } else if (intent.yearFrom !== null && intent.yearTo !== null) {
+    bits.push(`entre ${intent.yearFrom} y ${intent.yearTo}`);
+  } else if (intent.yearFrom !== null) {
+    bits.push(`desde ${intent.yearFrom}`);
+  } else if (intent.yearTo !== null) {
+    bits.push(`hasta ${intent.yearTo}`);
   }
 
   if (intent.gameReferenced && intent.gameReferenced.length > 0) {
     bits.push(`referencia: ${intent.gameReferenced.join(", ")}`);
+  }
+
+  const exclusions = [
+    ...(intent.excluded?.keywords ?? []),
+    ...(intent.excluded?.genres ?? []),
+    ...(intent.excluded?.platforms ?? []),
+  ];
+  if (exclusions.length > 0) {
+    bits.push(`sin: ${exclusions.join(", ")}`);
   }
 
   if (intent.semantic) {

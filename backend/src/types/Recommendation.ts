@@ -11,17 +11,21 @@ import type {
   MatchReasonKind,
 } from "../matching/types.js";
 
-// Acciones del contrato. "search" y "pivot" son idénticas a nivel de estado
-// (intent nuevo); la diferencia es solo narrativa para el frontend.
-export type RecommendationAction = "search" | "more" | "refine" | "pivot";
+/*
+ * Acciones del contrato. "search" es cualquier mensaje nuevo: si hay sesión,
+ * el LLM recibe el intent previo y decide si lo EXTIENDE o lo REEMPLAZA
+ * (afinar o cambiar de tema es decisión del intérprete, no del cliente).
+ * "more" repite la intención de sesión excluyendo lo ya mostrado.
+ */
+export type RecommendationAction = "search" | "more";
 
 export type NoticeCode =
   | "EXPLICIT_GAME_REQUESTED"
   | "ANCHOR_NOT_FOUND"
   | "EMPTY_INTENT"
+  | "INTENT_UNCHANGED"
   | "PARTIAL_RESULTS"
   | "SEARCH_EXHAUSTED"
-  | "REFINE_WITHOUT_CONTEXT"
   | "DISCOVERY_BUDGET_EXHAUSTED"
   | "DISCOVERY_UNAVAILABLE"
   | "CATALOG_FULL"

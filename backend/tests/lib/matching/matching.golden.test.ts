@@ -106,7 +106,7 @@ describe("rankMatches — orden determinista y exclusiones", () => {
     ]);
   });
 
-  it("N3b excludeReferenced=false → el ancla se rankEA con nota is-anchor", () => {
+  it("N3b excludeReferenced=false → el ancla se rankEA igualmente", () => {
     const anchor = makeGame({ id: 100, slug: "gta-v", keywords: ["crime"] });
     const intent = makeIntent({
       gameReferenced: ["GTA V"],
@@ -120,8 +120,6 @@ describe("rankMatches — orden determinista y exclusiones", () => {
 
     expect(excluded).toEqual([]);
     expect(ranked).toHaveLength(1);
-    expect(ranked[0].reasons.some((reason) => reason.note === "is-anchor")).toBe(
-      true,
-    );
+    expect(ranked[0].tier).toBe("valid");
   });
 });

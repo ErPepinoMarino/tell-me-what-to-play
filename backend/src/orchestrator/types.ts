@@ -2,10 +2,14 @@ import type { Game, GameToPersist } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 // Filtro de pre-selección SQL del pool de candidatos (cap externo incluido).
+// Semántica conjuntiva: TODO lo pedido debe estar (contrato de filtros duros).
 export interface CandidateFilter {
   genres: string[];
   keywords: string[];
   platforms: string[];
+  releaseYear: number | null;
+  yearFrom: number | null;
+  yearTo: number | null;
   limit: number;
 }
 
@@ -42,7 +46,7 @@ export interface IntentExtractor {
 export type Actor = { kind: "anon" } | { kind: "user"; userId: number };
 
 export interface RecommendationRequest {
-  action: "search" | "more" | "refine" | "pivot";
+  action: "search" | "more";
   message: string;
   actor: Actor;
 }

@@ -5,20 +5,14 @@ import {
   COV_MIN,
   EPSILON,
   GATE_ABSENCE_VIOLATED,
-  GATE_PLATFORMS_DISJOINT,
+  GATE_MUST_VIOLATED,
+  GATE_RED_FLAG_VIOLATED,
   MATCH_THRESHOLDS,
-  MATCH_WEIGHTS,
-  OBJ_SUBWEIGHTS,
-  PLATFORM_BONUS,
-  SCORE_MAX,
-  SCORE_MIN,
   SEMANTIC_FIELDS,
-  ZERO_OVERLAP_PENALTIES,
   type SemanticField,
 } from "./constants.js";
 import { keywordStem } from "./keywords.js";
 import type {
-  MatchBlock,
   MatchCoverage,
   MatchInput,
   MatchReason,
@@ -28,79 +22,90 @@ import type {
 } from "./types.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
-// Orden fijo de bloques: cálculo, razones y suma en coma flotante reproducible.
-const BLOCK_ORDER: MatchBlock[] = [
-  "semantic",
-  "objective",
-  "keywords",
-  "reference",
-];
-
 /*
- * Parte de razón en unidades del bloque (share). El peso efectivo del bloque
- * se aplica al materializar la razón, así la renormalización toca solo aquí.
+ * Matcher puro: (GameSearchIntent, MatchableGame) → MatchResult.
+ * Determinista, explicable y sin I/O. Nunca lanza por contenido de datos:
+ * UNKNOWN, arrays vacíos y todo-null se tratan como "no verificable".
+ *
+ * Dos fases:
+ *  1. FILTRO DURO (sin números): todo lo no-semántico pedido explícitamente
+ *     debe estar (must); lo excluido explícitamente (red flags) prohíbe.
+ *     El juego puede tener MÁS de lo pedido, nunca menos. UNKNOWN falla el
+ *     must (no verificable). Los gates marcan tier "invalid".
+ *  2. RANKING (solo semántica): media de acuerdo sobre las dimensiones
+ *     comparables, con contradicciones amplificadas. Es la única
+ *     ponderación numérica.
  */
-interface BlockPart {
-  field: string;
-  intentValue: number | string | null;
-  gameValue: number | string | null;
-  share: number;
-  kind: "bonus" | "penalty";
-  note: string;
-}
-
-interface BlockComputation {
-  available: boolean;
-  // Puntuación cruda del bloque, a escala propia (diagnóstico; puede ser negativa).
-  score: number | null;
-  parts: BlockPart[];
-  comparableFields: number;
-  positiveOverlap: boolean;
-  // Solo semántico: dims comparables en contradicción amplificada
-  // (distancia >= AMPLIFICATION_THRESHOLD). Un match por keywords no da
-  // validez si la ficha contradice así las semánticas pedidas.
-  amplifiedContradictions: number;
-  // Razón "skipped" a emitir cuando el bloque computa a cero por falta de solape.
-  zeroOverlap: {
-    intentValue: string;
-    gameValue: string;
-    note: string;
-  } | null;
-}
-
-function unavailableBlock(): BlockComputation {
-  return {
-    available: false,
-    score: null,
-    parts: [],
-    comparableFields: 0,
-    positiveOverlap: false,
-    amplifiedContradictions: 0,
-    zeroOverlap: null,
-  };
-}
 
 // Tiene datos clasificables: no vacío y no solo UNKNOWN.
 function hasKnownValues(values: string[]): boolean {
   return values.length > 0 && !values.every((value) => value === "UNKNOWN");
 }
 
-function normalizeKeyword(keyword: string): string {
-  return keyword.trim().toLowerCase();
+function normalizeTerm(term: string): string {
+  return term.trim().toLowerCase();
 }
 
-// Normaliza y deduplica preservando el orden (determinismo).
-function uniqueNormalized(keywords: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const keyword of keywords) {
-    const normalized = normalizeKeyword(keyword);
-    if (normalized.length > 0 && !seen.has(normalized)) {
-      seen.add(normalized);
-      result.push(normalized);
-    }
-  }
-  return result;
+// Talos de las keywords del juego (frase completa: "car wash" → "car wash").
+function gameKeywordStems(game: MatchableGame): Set<string> {
+  return new Set(game.keywords.map((keyword) => keywordStem(keyword)));
+}
+
+// Talos de las palabras del título ("Grand Theft Auto: San Andreas" →
+// grand/theft/auto/san/andreas). El split es unicode-aware para que la
+// puntuación ("Batman:", "pokémon") no rompa las palabras.
+function titleWordStems(title: string): Set<string> {
+  return new Set(
+    title
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .map((word) => keywordStem(word))
+      .filter((word) => word.length > 0),
+  );
+}
+
+/*
+ * Un término (must o red flag) está en el juego si:
+ *  (a) su talo coincide con una keyword completa del juego, o
+ *  (b) TODAS sus palabras aparecen como palabras del título.
+ * (b) es lo que permite excluir "grand theft auto" por título aunque el
+ * juego no tenga esa keyword (el prompt expande las siglas de franquicias).
+ */
+function termMatches(
+  term: string,
+  keywordStems: Set<string>,
+  titleStems: Set<string>,
+): boolean {
+  const normalized = normalizeTerm(term);
+  if (normalized.length === 0) return false;
+  if (keywordStems.has(keywordStem(normalized))) return true;
+
+  const words = normalized
+    .split(/\s+/)
+    .map((word) => keywordStem(word))
+    .filter((word) => word.length > 0);
+  return words.length > 0 && words.every((word) => titleStems.has(word));
+}
+
+function pushGate(
+  gatesViolated: string[],
+  reasons: MatchReason[],
+  gate: string,
+  block: MatchReason["block"],
+  field: string,
+  intentValue: number | string | null,
+  gameValue: number | string | null,
+): void {
+  if (!gatesViolated.includes(gate)) gatesViolated.push(gate);
+  reasons.push({
+    block,
+    field,
+    intentValue,
+    gameValue,
+    contribution: 0,
+    kind: "gate",
+    note: gate,
+  });
 }
 
 // Compartido con rankMatches: ¿es este juego uno de los referenciados (anclas)?
@@ -115,35 +120,235 @@ export function isAnchorGame(
   );
 }
 
-function checkPlatformGate(
+/*
+ * RED FLAGS: lo excluido explícitamente prohíbe el match. Cualquier
+ * coincidencia → invalid, aunque el juego sea ideal en todo lo demás.
+ */
+function checkRedFlags(
   intent: GameSearchIntent,
   game: MatchableGame,
   gatesViolated: string[],
   reasons: MatchReason[],
 ): void {
-  const requested = intent.objective?.platforms ?? [];
-  // Sin plataformas pedidas o juego sin datos clasificables → no comparable.
-  if (requested.length === 0 || !hasKnownValues(game.platforms)) return;
+  const excluded = intent.excluded;
+  if (!excluded) return;
 
-  const overlap = requested.filter((platform) =>
-    game.platforms.includes(platform),
-  );
-  if (overlap.length === 0) {
-    if (!gatesViolated.includes(GATE_PLATFORMS_DISJOINT)) {
-      gatesViolated.push(GATE_PLATFORMS_DISJOINT);
+  const keywordStems = gameKeywordStems(game);
+  const titleStems = titleWordStems(game.title);
+
+  for (const term of excluded.keywords ?? []) {
+    if (termMatches(term, keywordStems, titleStems)) {
+      pushGate(
+        gatesViolated,
+        reasons,
+        GATE_RED_FLAG_VIOLATED,
+        "keywords",
+        `xkw.${normalizeTerm(term)}`,
+        normalizeTerm(term),
+        game.title,
+      );
     }
-    reasons.push({
-      block: "objective",
-      field: "platforms",
-      intentValue: requested.join(","),
-      gameValue: game.platforms.join(","),
-      contribution: 0,
-      kind: "gate",
-      note: GATE_PLATFORMS_DISJOINT,
-    });
+  }
+
+  const enumChecks: {
+    field: string;
+    excluded: string[] | null | undefined;
+    values: string[];
+  }[] = [
+    { field: "genres", excluded: excluded.genres, values: game.genres },
+    { field: "platforms", excluded: excluded.platforms, values: game.platforms },
+    { field: "gameModes", excluded: excluded.gameModes, values: game.gameModes },
+    {
+      field: "perspectives",
+      excluded: excluded.perspectives,
+      values: game.perspectives,
+    },
+  ];
+  for (const check of enumChecks) {
+    for (const value of check.excluded ?? []) {
+      if (check.values.includes(value)) {
+        pushGate(
+          gatesViolated,
+          reasons,
+          GATE_RED_FLAG_VIOLATED,
+          "objective",
+          check.field,
+          value,
+          check.values.join(","),
+        );
+      }
+    }
+  }
+
+  const year = game.releaseYear;
+  if (excluded.releaseYear != null && year === excluded.releaseYear) {
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_RED_FLAG_VIOLATED,
+      "objective",
+      "releaseYear",
+      excluded.releaseYear,
+      year,
+    );
+  }
+  if (excluded.yearFrom != null && year !== null && year >= excluded.yearFrom) {
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_RED_FLAG_VIOLATED,
+      "objective",
+      "yearFrom",
+      excluded.yearFrom,
+      year,
+    );
+  }
+  if (excluded.yearTo != null && year !== null && year <= excluded.yearTo) {
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_RED_FLAG_VIOLATED,
+      "objective",
+      "yearTo",
+      excluded.yearTo,
+      year,
+    );
   }
 }
 
+/*
+ * MUST: todo lo pedido explícitamente debe estar. Superset permitido
+ * (más géneros/plataformas/keywords no penaliza); UNKNOWN = no verificable
+ * = falla; año null = no verificable = falla.
+ */
+function checkMust(
+  intent: GameSearchIntent,
+  game: MatchableGame,
+  gatesViolated: string[],
+  reasons: MatchReason[],
+): void {
+  const keywordStems = gameKeywordStems(game);
+  const titleStems = titleWordStems(game.title);
+
+  for (const term of intent.keywords ?? []) {
+    const normalized = normalizeTerm(term);
+    if (normalized.length === 0) continue;
+    if (termMatches(normalized, keywordStems, titleStems)) {
+      // Razón informativa (contribución 0): la temática no puntúa, filtra.
+      reasons.push({
+        block: "keywords",
+        field: `kw.${normalized}`,
+        intentValue: normalized,
+        gameValue: normalized,
+        contribution: 0,
+        kind: "bonus",
+        note: "keyword-match",
+      });
+    } else {
+      pushGate(
+        gatesViolated,
+        reasons,
+        GATE_MUST_VIOLATED,
+        "keywords",
+        `kw.${normalized}`,
+        normalized,
+        null,
+      );
+    }
+  }
+
+  const groups: {
+    field: string;
+    requested: string[];
+    values: string[];
+  }[] = [
+    { field: "genres", requested: intent.objective?.genres ?? [], values: game.genres },
+    {
+      field: "platforms",
+      requested: intent.objective?.platforms ?? [],
+      values: game.platforms,
+    },
+    {
+      field: "gameModes",
+      requested: intent.objective?.gameModes ?? [],
+      values: game.gameModes,
+    },
+    {
+      field: "perspectives",
+      requested: intent.objective?.perspectives ?? [],
+      values: game.perspectives,
+    },
+  ];
+  for (const group of groups) {
+    if (group.requested.length === 0) continue;
+    if (!hasKnownValues(group.values)) {
+      // UNKNOWN: no se puede verificar el requisito → falla.
+      pushGate(
+        gatesViolated,
+        reasons,
+        GATE_MUST_VIOLATED,
+        "objective",
+        group.field,
+        group.requested.join(","),
+        "UNKNOWN",
+      );
+      continue;
+    }
+    for (const value of group.requested) {
+      if (!group.values.includes(value)) {
+        pushGate(
+          gatesViolated,
+          reasons,
+          GATE_MUST_VIOLATED,
+          "objective",
+          group.field,
+          value,
+          group.values.join(","),
+        );
+      }
+    }
+  }
+
+  const year = game.releaseYear;
+  if (intent.releaseYear != null && year !== intent.releaseYear) {
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_MUST_VIOLATED,
+      "objective",
+      "releaseYear",
+      intent.releaseYear,
+      year,
+    );
+  }
+  if (intent.yearFrom != null && (year === null || year < intent.yearFrom)) {
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_MUST_VIOLATED,
+      "objective",
+      "yearFrom",
+      intent.yearFrom,
+      year,
+    );
+  }
+  if (intent.yearTo != null && (year === null || year > intent.yearTo)) {
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_MUST_VIOLATED,
+      "objective",
+      "yearTo",
+      intent.yearTo,
+      year,
+    );
+  }
+}
+
+/*
+ * Ausencia explícita (contrato del intent): 0 significa "sin nada de eso".
+ * Si el juego conoce esa dimensión y la incumple, es invalid.
+ */
 function checkAbsenceGate(
   intent: GameSearchIntent,
   game: MatchableGame,
@@ -157,363 +362,80 @@ function checkAbsenceGate(
     const intentValue = semantic[field];
     const gameValue = game[field];
     if (intentValue === null || gameValue === null) continue;
-    // 0 es ausencia explícita (contrato del intent), nunca "poco".
     if (intentValue > EPSILON) continue;
     if (gameValue < ABSENCE_GATE_MIN) continue;
 
-    if (!gatesViolated.includes(GATE_ABSENCE_VIOLATED)) {
-      gatesViolated.push(GATE_ABSENCE_VIOLATED);
-    }
-    reasons.push({
-      block: "semantic",
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_ABSENCE_VIOLATED,
+      "semantic",
       field,
       intentValue,
       gameValue,
-      contribution: 0,
-      kind: "gate",
-      note: GATE_ABSENCE_VIOLATED,
-    });
+    );
   }
 }
 
-function computeSemanticBlock(
+/*
+ * Ranking semántico: única ponderación numérica. Media de acuerdo sobre
+ * las dimensiones comparables. Una contradicción grande (distancia ≥
+ * AMPLIFICATION_THRESHOLD) aporta NEGATIVO (acuerdo² negado): debe hundir
+ * la ficha por debajo incluso de una ficha desconocida (el giro del
+ * escenario S2: "pixel art frenético" pierde contra "no sé cómo es").
+ * La contribución de cada dimensión se reparte entre las comparables, de
+ * modo que score = Σ contributions = media (invariante exacta), en [-1,1].
+ */
+function computeSemanticRanking(
   intent: GameSearchIntent,
   game: MatchableGame,
-): BlockComputation {
-  const semantic = intent.semantic;
-  if (!semantic) return unavailableBlock();
+  reasons: MatchReason[],
+): { comparable: number } {
+  let comparable = 0;
 
-  interface Comparable {
+  // Primera pasada: acuerdos (orden fijo del schema).
+  const agreements: {
     field: SemanticField;
     intentValue: number;
     gameValue: number;
     agreement: number;
-    note: string;
-  }
+    amplified: boolean;
+  }[] = [];
 
-  const comparable: Comparable[] = [];
-  let amplifiedContradictions = 0;
   for (const field of SEMANTIC_FIELDS) {
-    const intentValue = semantic[field];
+    const intentValue = intent.semantic?.[field];
     const gameValue = game[field];
-    // null = desconocido en cualquiera de las partes → no comparable.
-    if (intentValue === null || gameValue === null) continue;
-
+    if (intentValue === null || intentValue === undefined || gameValue === null) {
+      continue;
+    }
+    comparable++;
     const distance = Math.abs(intentValue - gameValue);
-    let agreement = 1 - distance;
-    let note = "semantic-agreement";
-    if (distance >= AMPLIFICATION_THRESHOLD) {
-      // Casi-opuestos duelen más que lineal.
-      agreement = agreement * agreement;
-      note = "amplified-contradiction";
-      amplifiedContradictions++;
-    }
-    comparable.push({ field, intentValue, gameValue, agreement, note });
+    const amplified = distance >= AMPLIFICATION_THRESHOLD;
+    const rawAgreement = 1 - distance;
+    const agreement = amplified ? rawAgreement * rawAgreement : rawAgreement;
+    agreements.push({ field, intentValue, gameValue, agreement, amplified });
   }
 
-  if (comparable.length === 0) return unavailableBlock();
-
-  const parts: BlockPart[] = comparable.map((c): BlockPart => ({
-    field: c.field,
-    intentValue: c.intentValue,
-    gameValue: c.gameValue,
-    share: c.agreement / comparable.length,
-    kind: c.agreement >= AGREEMENT_BONUS_THRESHOLD ? "bonus" : "penalty",
-    note: c.note,
-  }));
-  const score =
-    comparable.reduce((sum, c) => sum + c.agreement, 0) / comparable.length;
-
-  return {
-    available: true,
-    score,
-    parts,
-    comparableFields: comparable.length,
-    positiveOverlap: false,
-    amplifiedContradictions,
-    zeroOverlap: null,
-  };
-}
-
-function computeObjectiveBlock(
-  intent: GameSearchIntent,
-  game: MatchableGame,
-): BlockComputation {
-  const parts: BlockPart[] = [];
-  let comparableFields = 0;
-  let positiveOverlap = false;
-  let score = 0;
-  const objective = intent.objective;
-
-  // Géneros: overlap proporcional; cero overlap penaliza (suave), no es gate.
-  const requestedGenres = objective?.genres ?? [];
-  if (requestedGenres.length > 0 && hasKnownValues(game.genres)) {
-    comparableFields++;
-    const present = requestedGenres.filter((genre) =>
-      game.genres.includes(genre),
-    );
-    if (present.length === 0) {
-      const share = OBJ_SUBWEIGHTS.genres * -ZERO_OVERLAP_PENALTIES.genres;
-      score += share;
-      parts.push({
-        field: "genres",
-        intentValue: requestedGenres.join(","),
-        gameValue: game.genres.join(","),
-        share,
-        kind: "penalty",
-        note: "no-overlap",
-      });
-    } else {
-      for (const genre of present) {
-        const share = OBJ_SUBWEIGHTS.genres / requestedGenres.length;
-        score += share;
-        positiveOverlap = true;
-        parts.push({
-          field: `genres.${genre}`,
-          intentValue: genre,
-          gameValue: genre,
-          share,
-          kind: "bonus",
-          note: "genre-match",
-        });
-      }
-    }
-  }
-
-  // Modos de juego: cero overlap penaliza fuerte (soft-gate).
-  const requestedModes = objective?.gameModes ?? [];
-  if (requestedModes.length > 0 && hasKnownValues(game.gameModes)) {
-    comparableFields++;
-    const present = requestedModes.filter((mode) =>
-      game.gameModes.includes(mode),
-    );
-    if (present.length === 0) {
-      const share =
-        OBJ_SUBWEIGHTS.gameModes * -ZERO_OVERLAP_PENALTIES.gameModes;
-      score += share;
-      parts.push({
-        field: "gameModes",
-        intentValue: requestedModes.join(","),
-        gameValue: game.gameModes.join(","),
-        share,
-        kind: "penalty",
-        note: "no-overlap",
-      });
-    } else {
-      for (const mode of present) {
-        const share = OBJ_SUBWEIGHTS.gameModes / requestedModes.length;
-        score += share;
-        positiveOverlap = true;
-        parts.push({
-          field: `gameModes.${mode}`,
-          intentValue: mode,
-          gameValue: mode,
-          share,
-          kind: "bonus",
-          note: "mode-match",
-        });
-      }
-    }
-  }
-
-  // Perspectivas: cero overlap no penaliza (solo ausencia de bonus).
-  const requestedPerspectives = objective?.perspectives ?? [];
-  if (requestedPerspectives.length > 0 && hasKnownValues(game.perspectives)) {
-    comparableFields++;
-    const present = requestedPerspectives.filter((perspective) =>
-      game.perspectives.includes(perspective),
-    );
-    for (const perspective of present) {
-      const share = OBJ_SUBWEIGHTS.perspectives / requestedPerspectives.length;
-      score += share;
-      positiveOverlap = true;
-      parts.push({
-        field: `perspectives.${perspective}`,
-        intentValue: perspective,
-        gameValue: perspective,
-        share,
-        kind: "bonus",
-        note: "perspective-match",
+  if (comparable > 0) {
+    for (const item of agreements) {
+      reasons.push({
+        block: "semantic",
+        field: item.field,
+        intentValue: item.intentValue,
+        gameValue: item.gameValue,
+        contribution: (item.amplified ? -item.agreement : item.agreement) /
+          comparable,
+        kind: item.amplified
+          ? "penalty"
+          : item.agreement >= AGREEMENT_BONUS_THRESHOLD
+            ? "bonus"
+            : "penalty",
+        note: item.amplified ? "amplified-contradiction" : "semantic-agreement",
       });
     }
   }
 
-  // Plataformas: overlap → bonus fijo. El disjoint lo detecta el gate previo.
-  const requestedPlatforms = objective?.platforms ?? [];
-  if (requestedPlatforms.length > 0 && hasKnownValues(game.platforms)) {
-    comparableFields++;
-    const overlap = requestedPlatforms.filter((platform) =>
-      game.platforms.includes(platform),
-    );
-    if (overlap.length > 0) {
-      score += PLATFORM_BONUS;
-      positiveOverlap = true;
-      parts.push({
-        field: "platforms",
-        intentValue: requestedPlatforms.join(","),
-        gameValue: game.platforms.join(","),
-        share: PLATFORM_BONUS,
-        kind: "bonus",
-        note: "platform-overlap",
-      });
-    }
-  }
-
-  if (comparableFields === 0) return unavailableBlock();
-
-  return {
-    available: true,
-    score,
-    parts,
-    comparableFields,
-    positiveOverlap,
-    amplifiedContradictions: 0,
-    zeroOverlap: null,
-  };
-}
-
-function computeKeywordsBlock(
-  intent: GameSearchIntent,
-  game: MatchableGame,
-): BlockComputation {
-  const requested = uniqueNormalized(intent.keywords ?? []);
-  const gameKeywords = uniqueNormalized(game.keywords);
-  // La intención pide keywords y el juego tiene con qué comparar.
-  if (requested.length === 0 || gameKeywords.length === 0) {
-    return unavailableBlock();
-  }
-
-  // Match por talo: "zombie" casa con "Zombies", "stories" con "story".
-  const gameStems = new Set(gameKeywords.map(keywordStem));
-  const matched = requested.filter((keyword) =>
-    gameStems.has(keywordStem(keyword)),
-  );
-  const parts: BlockPart[] = matched.map((keyword): BlockPart => ({
-    field: `kw.${keyword}`,
-    intentValue: keyword,
-    gameValue: keyword,
-    share: 1 / requested.length,
-    kind: "bonus",
-    note: "keyword-match",
-  }));
-
-  return {
-    available: true,
-    score: matched.length / requested.length,
-    parts,
-    comparableFields: 1,
-    positiveOverlap: matched.length > 0,
-    amplifiedContradictions: 0,
-    zeroOverlap:
-      matched.length === 0
-        ? {
-            intentValue: requested.join(","),
-            gameValue: gameKeywords.join(","),
-            note: "no-keyword-overlap",
-          }
-        : null,
-  };
-}
-
-function computeReferenceBlock(
-  game: MatchableGame,
-  anchors: MatchableGame[],
-): BlockComputation {
-  if (anchors.length === 0) return unavailableBlock();
-
-  const anchorKeywords = uniqueNormalized(
-    anchors.flatMap((anchor) => anchor.keywords),
-  );
-  if (anchorKeywords.length === 0) return unavailableBlock();
-
-  // El candidato ES el ancla: bloque pleno (nunca se muestra;
-  // rankMatches lo excluye con motivo "referenced-anchor").
-  if (isAnchorGame(game, anchors)) {
-    return {
-      available: true,
-      score: 1,
-      parts: [
-        {
-          field: "reference",
-          intentValue: null,
-          gameValue: game.slug,
-          share: 1,
-          kind: "bonus",
-          note: "is-anchor",
-        },
-      ],
-      comparableFields: 1,
-      positiveOverlap: false,
-      amplifiedContradictions: 0,
-      zeroOverlap: null,
-    };
-  }
-
-  const candidateKeywords = uniqueNormalized(game.keywords);
-  const matched = anchorKeywords.filter((keyword) =>
-    candidateKeywords.includes(keyword),
-  );
-
-  return {
-    available: true,
-    score: matched.length / anchorKeywords.length,
-    parts: matched.map((keyword): BlockPart => ({
-      field: `ref.${keyword}`,
-      intentValue: keyword,
-      gameValue: keyword,
-      share: 1 / anchorKeywords.length,
-      kind: "bonus",
-      note: "reference-keyword",
-    })),
-    comparableFields: 1,
-    positiveOverlap: false,
-    amplifiedContradictions: 0,
-    zeroOverlap:
-      matched.length === 0
-        ? {
-            intentValue: anchorKeywords.join(","),
-            gameValue: candidateKeywords.join(","),
-            note: "no-reference-overlap",
-          }
-        : null,
-  };
-}
-
-function assignTier(params: {
-  gatesViolated: number;
-  anyAvailable: boolean;
-  score: number;
-  covSem: number;
-  objectiveOverlap: boolean;
-  /*
-   * Camino de validez por keywords (regla de producto: 0 semánticas conocidas
-   * puede ser válido si las keywords lo justifican). Se desactiva cuando la
-   * ficha contradice de forma amplificada alguna semántica pedida: ahí manda
-   * la contradicción, no la temática.
-   */
-  keywordOverlap: boolean;
-}): MatchTier {
-  const {
-    gatesViolated,
-    anyAvailable,
-    score,
-    covSem,
-    objectiveOverlap,
-    keywordOverlap,
-  } = params;
-  if (gatesViolated > 0) return "invalid";
-  if (!anyAvailable) return "invalid";
-  if (score >= MATCH_THRESHOLDS.excellent && covSem >= COV_MIN.excellent) {
-    return "excellent";
-  }
-  if (
-    score >= MATCH_THRESHOLDS.valid &&
-    (covSem >= COV_MIN.valid || objectiveOverlap || keywordOverlap)
-  ) {
-    return "valid";
-  }
-  if (score >= MATCH_THRESHOLDS.weak) return "weak";
-  return "invalid";
+  return { comparable };
 }
 
 // |contribution| descendente; empates por field asc (codepoints, no locale).
@@ -528,11 +450,33 @@ function sortReasons(reasons: MatchReason[]): void {
   });
 }
 
+function assignTier(gatesViolated: number, score: number, covSem: number): MatchTier {
+  if (gatesViolated > 0) return "invalid";
+  if (score >= MATCH_THRESHOLDS.excellent && covSem >= COV_MIN.excellent) {
+    return "excellent";
+  }
+  // Pasó todos los filtros: mostrable. La semántica solo ordena.
+  return "valid";
+}
+
 /*
- * Matcher puro: (GameSearchIntent, MatchableGame) → MatchResult.
- * Determinista, explicable y sin I/O. Nunca lanza por contenido de datos:
- * UNKNOWN, arrays vacíos y todo-null se tratan como "no comparable".
+ * Fase de filtros duros aislada: ¿el juego cumple TODO lo pedido (must) y
+ * no contiene NADA de lo excluido (red flags)? Sin ranking. La usan el
+ * pre-filtro de descubrimiento y la canonicalización de la cache para no
+ * gastar presupuesto en candidatos condenados a invalid.
  */
+export function passesHardFilters(
+  intent: GameSearchIntent,
+  game: MatchableGame,
+): boolean {
+  const gatesViolated: string[] = [];
+  const reasons: MatchReason[] = [];
+  checkRedFlags(intent, game, gatesViolated, reasons);
+  checkMust(intent, game, gatesViolated, reasons);
+  checkAbsenceGate(intent, game, gatesViolated, reasons);
+  return gatesViolated.length === 0;
+}
+
 export function matchGame(input: MatchInput): MatchResult {
   const { intent, game } = input;
   const anchors = input.anchors ?? [];
@@ -540,67 +484,14 @@ export function matchGame(input: MatchInput): MatchResult {
   const reasons: MatchReason[] = [];
   const gatesViolated: string[] = [];
 
-  // 1. Gates: condiciones duras. El score se calcula igualmente (diagnóstico).
-  checkPlatformGate(intent, game, gatesViolated, reasons);
+  // 1. Filtros duros (must + red flags) y ausencia semántica explícita.
+  checkRedFlags(intent, game, gatesViolated, reasons);
+  checkMust(intent, game, gatesViolated, reasons);
   checkAbsenceGate(intent, game, gatesViolated, reasons);
 
-  // 2. Bloques crudos: partes en unidades del bloque, sin pesos efectivos.
-  const computations: Record<MatchBlock, BlockComputation> = {
-    semantic: computeSemanticBlock(intent, game),
-    objective: computeObjectiveBlock(intent, game),
-    keywords: computeKeywordsBlock(intent, game),
-    reference: computeReferenceBlock(game, anchors),
-  };
-
-  // 3. Renormalización: los bloques no computables ceden su peso a los demás.
-  const availableWeight = BLOCK_ORDER.reduce(
-    (sum, block) =>
-      computations[block].available ? sum + MATCH_WEIGHTS[block] : sum,
-    0,
-  );
-  const anyAvailable = availableWeight > EPSILON;
-
-  // 4. Materializa razones (contributions en unidades de score final).
-  if (anyAvailable) {
-    for (const block of BLOCK_ORDER) {
-      const computation = computations[block];
-      if (!computation.available) {
-        reasons.push({
-          block,
-          field: block,
-          intentValue: null,
-          gameValue: null,
-          contribution: 0,
-          kind: "skipped",
-          note: "weight-renormalized",
-        });
-        continue;
-      }
-      const effectiveWeight = MATCH_WEIGHTS[block] / availableWeight;
-      for (const part of computation.parts) {
-        reasons.push({
-          block,
-          field: part.field,
-          intentValue: part.intentValue,
-          gameValue: part.gameValue,
-          contribution: effectiveWeight * part.share,
-          kind: part.kind,
-          note: part.note,
-        });
-      }
-      if (computation.zeroOverlap) {
-        reasons.push({
-          block,
-          field: block,
-          intentValue: computation.zeroOverlap.intentValue,
-          gameValue: computation.zeroOverlap.gameValue,
-          contribution: 0,
-          kind: "skipped",
-          note: computation.zeroOverlap.note,
-        });
-      }
-    }
-  } else {
+  // 2. Ranking semántico.
+  const { comparable } = computeSemanticRanking(intent, game, reasons);
+  if (comparable === 0 && gatesViolated.length === 0) {
     reasons.push({
       block: "semantic",
       field: "intent",
@@ -608,44 +499,40 @@ export function matchGame(input: MatchInput): MatchResult {
       gameValue: null,
       contribution: 0,
       kind: "skipped",
-      note: "no-usable-signal",
+      note: "no-semantic-signal",
     });
   }
 
-  // 5. Orden determinista y score: la suma se hace en el orden ya ordenado
-  // para que score = clamp(Σ contributions) sea exacto (invariante I2).
+  // 3. Orden determinista y score: la suma se hace en el orden ya ordenado
+  // para que score = Σ contributions sea exacto. Con contradicciones
+  // amplificadas el score puede ser negativo (peor que "desconocido");
+  // acotación defensiva a [-1, 1].
   sortReasons(reasons);
   let rawScore = 0;
   for (const reason of reasons) rawScore += reason.contribution;
-  const score = Math.min(SCORE_MAX, Math.max(SCORE_MIN, rawScore));
+  const score = Math.max(-1, Math.min(1, rawScore));
 
   const coverage: MatchCoverage = {
-    semanticDims: computations.semantic.comparableFields,
-    objectiveFields: computations.objective.comparableFields,
+    semanticDims: comparable,
+    objectiveFields: [
+      game.genres,
+      game.platforms,
+      game.gameModes,
+      game.perspectives,
+    ].filter(hasKnownValues).length,
     hasKeywords: game.keywords.length > 0,
     hasAnchors: anchors.length > 0,
   };
 
   return {
     score,
-    tier: assignTier({
-      gatesViolated: gatesViolated.length,
-      anyAvailable,
+    tier: assignTier(
+      gatesViolated.length,
       score,
-      covSem: coverage.semanticDims / SEMANTIC_FIELDS.length,
-      objectiveOverlap: computations.objective.positiveOverlap,
-      keywordOverlap:
-        computations.keywords.positiveOverlap &&
-        computations.semantic.amplifiedContradictions === 0,
-    }),
+      comparable / SEMANTIC_FIELDS.length,
+    ),
     coverage,
     gatesViolated,
     reasons,
-    blockScores: {
-      semantic: computations.semantic.score,
-      objective: computations.objective.score,
-      keywords: computations.keywords.score,
-      reference: computations.reference.score,
-    },
   };
 }

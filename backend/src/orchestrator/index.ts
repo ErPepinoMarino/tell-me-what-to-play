@@ -2,6 +2,8 @@ import { createIgdbClient } from "../igdb/index.js";
 import { createEnrichmentService } from "../services/enrichmentService.js";
 import { createBudgetedIntentExtractor } from "../services/intentService.js";
 import { createExplanationComposer } from "../services/explanationService.js";
+import { createKeywordEmbedder } from "../lib/embeddings.js";
+import { createKeywordLexiconService } from "../services/keywordLexiconService.js";
 import { InMemoryBudgetLedger } from "../budget/budgetLedger.js";
 import { InMemorySessionStore } from "../sessions/sessionStore.js";
 import { RECOMMENDATION_CONFIG } from "../recommendation/constants.js";
@@ -9,6 +11,7 @@ import { DiscoveryManager } from "./discovery.js";
 import { RecommendationOrchestrator } from "./recommendationOrchestrator.js";
 import { MissingRecommendationCredentialsError } from "./errors.js";
 import { prismaCatalogLayer, jsonCacheLayer } from "./adapters.js";
+import { prisma } from "../lib/prisma.js";
 
 let singleton: RecommendationOrchestrator | undefined;
 
@@ -32,6 +35,7 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     igdb: RECOMMENDATION_CONFIG.igdbDailyLimit,
     brave: RECOMMENDATION_CONFIG.braveDailyLimit,
     llm: RECOMMENDATION_CONFIG.llmDailyLimit,
+    embedding: RECOMMENDATION_CONFIG.embeddingDailyLimit,
   });
 
   const sessions = new InMemorySessionStore({
@@ -39,11 +43,24 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     maxEntries: RECOMMENDATION_CONFIG.sessionMaxEntries,
   });
 
+  /*
+   * Léxico de keywords (FASE 4): carga perezosa de la tabla keyword_lexicon
+   * y canonicalización de keywords del usuario/enrichment/siembra. Con el
+   * servicio de embeddings caído o presupuesto seco degrada a literal.
+   */
+  const lexicon = createKeywordLexiconService({
+    loader: async () => prisma.keyword_lexicon.findMany(),
+    embedder: createKeywordEmbedder(),
+    budget,
+  });
+
   const discovery = new DiscoveryManager(
     igdb,
     enrichment,
     prismaCatalogLayer,
     budget,
+    RECOMMENDATION_CONFIG,
+    lexicon,
   );
 
   return new RecommendationOrchestrator({
@@ -53,6 +70,7 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     discovery,
     sessions,
     explainer: createExplanationComposer(budget),
+    lexicon,
   });
 }
 

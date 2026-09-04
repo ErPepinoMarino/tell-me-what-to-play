@@ -28,22 +28,15 @@ export interface MatchReason {
 }
 
 export interface MatchCoverage {
-  // Dimensiones semánticas comparables (0..13)
+  // Dimensiones semánticas comparables (0..13): base del ranking
   semanticDims: number;
-  // Campos objetivo comparables: genres, gameModes, perspectives, platforms (0..4)
+  // Informativo: grupos objetivo (genres/platforms/gameModes/perspectives)
+  // con datos conocidos en el juego (0..4)
   objectiveFields: number;
   // El juego tiene keywords con las que comparar
   hasKeywords: boolean;
   // Hay juegos referenciados resueltos (anclas)
   hasAnchors: boolean;
-}
-
-// Puntuación cruda de cada bloque (diagnóstico). null = bloque no computable.
-export interface BlockScores {
-  semantic: number | null;
-  objective: number | null;
-  keywords: number | null;
-  reference: number | null;
 }
 
 export interface MatchResult {
@@ -52,17 +45,20 @@ export interface MatchResult {
   coverage: MatchCoverage;
   gatesViolated: string[];
   reasons: MatchReason[];
-  blockScores: BlockScores;
 }
 
 /*
- * Subconjunto estructural del dominio Game que el scoring necesita.
- * Es decir, un game que tiene solo los campos que necesitamos. Punto.
+ * Subconjunto estructural del dominio Game que el matching necesita.
+ * El título y el releaseYear participan de los filtros duros: las
+ * keywords/red flags también se verifican contra el título y el año
+ * pedido es obligatorio.
  */
 export interface MatchableGame {
   id: number;
   slug: string;
   sourceId: string | null;
+  title: string;
+  releaseYear: number | null;
   genres: Genre[];
   platforms: Platform[];
   gameModes: GameMode[];

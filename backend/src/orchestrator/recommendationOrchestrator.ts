@@ -1,5 +1,5 @@
 import { rankMatches } from "../matching/rankMatches.js";
-import { TIER_RANK } from "../matching/constants.js";
+import { SEMANTIC_FIELDS, TIER_RANK } from "../matching/constants.js";
 import type { MatchReason, RankedMatch } from "../matching/types.js";
 import type { Game } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
@@ -44,6 +44,7 @@ import {
   type ExplanationInput,
 } from "../services/explanationService.js";
 import { createTrace, newTraceId, type Trace } from "../lib/logger.js";
+import type { KeywordLexiconService } from "../services/keywordLexiconService.js";
 
 export interface OrchestratorDeps {
   intents: IntentExtractor;
@@ -52,6 +53,11 @@ export interface OrchestratorDeps {
   discovery: DiscoveryManager;
   sessions: SessionStore;
   explainer: ExplanationComposer;
+  /*
+   * Opcional: canonicalización de keywords contra el léxico (FASE 4).
+   * Sin léxico, el comportamiento es el previo (keywords crudas).
+   */
+  lexicon?: KeywordLexiconService;
 }
 
 export interface OrchestrationOutcome {
@@ -66,7 +72,6 @@ interface IntentResolution {
   session?: SessionState;
   userId?: number;
   shownGameIds: number[];
-  shownForCurrentIntent: number;
 }
 
 type StopReason =
@@ -94,6 +99,17 @@ export class RecommendationOrchestrator {
     // RESOLVE_ACTION + INTERPRET
     const base = await this.resolveIntent(request, notices);
     const action = request.action;
+
+    /*
+     * Canonicalización contra el léxico (punto 1 de integración): las
+     * keywords del usuario ("infectados") se mapean al vocabulario canónico
+     * ("zombies") ANTES del matching, del pre-filtro y de persistir sesión.
+     * Idempotente: los canónicos ya canonicalizados no gastan embeddings.
+     */
+    if (this.deps.lexicon) {
+      base.intent = await this.deps.lexicon.canonicalizeIntent(base.intent);
+    }
+
     trace("intent", {
       keywords: base.intent.keywords,
       genres: base.intent.objective?.genres,
@@ -182,19 +198,23 @@ export class RecommendationOrchestrator {
     }
     trace("pool", { candidates: pool.length });
 
+    /*
+     * Exclusión de mostrados: SOLO "more" evita repetir lo ya presentado.
+     * En "search" los mostrados compiten de nuevo con la intención actual
+     * (el LLM puede haberla extendido): siempre se muestran los mejores.
+     */
+    const excludeIds = action === "more" ? base.shownGameIds : [];
+
     let ranked = rankMatches(base.intent, pool, {
       anchors,
-      excludeGameIds: base.shownGameIds,
+      excludeGameIds: excludeIds,
     }).ranked;
 
     // Relleno por necesidad: variantes de query y techo de fichas nuevas
     // (worst case = 8 juegos por petición). Para antes al llenar los slots,
     // agotar candidatos o secar el presupuesto diario.
     const variants = buildQueryVariants(base.intent);
-    const slots = Math.max(
-      0,
-      this.config.maxResults - base.shownForCurrentIntent,
-    );
+    const slots = this.config.maxResults;
     let variantIndex = 0;
     let newGamesCreated = 0;
     let stopReason: StopReason | undefined;
@@ -237,6 +257,7 @@ export class RecommendationOrchestrator {
           variant,
           Math.min(this.config.maxNewGamesPerDiscoveryUnit, remainingGameCap),
           traceId,
+          base.intent,
         );
         if (attempt.outcome === "budget-exhausted") {
           // Un intento bloqueado por presupuesto no consume nada: no cuenta
@@ -265,7 +286,7 @@ export class RecommendationOrchestrator {
         pool.push(...attempt.newGames);
         ranked = rankMatches(base.intent, pool, {
           anchors,
-          excludeGameIds: base.shownGameIds,
+          excludeGameIds: excludeIds,
         }).ranked;
         discoveryUnitsUsed++;
         newGamesCreated += attempt.newGames.length;
@@ -320,11 +341,10 @@ export class RecommendationOrchestrator {
     const results = selected.map((item) => toResultItem(item));
     const resultsBelowSlots = results.length < slots;
     const exhaustedPool =
-      (resultsBelowSlots &&
-        stopReason !== undefined &&
-        stopReason !== "games-cap" &&
-        stopReason !== "deadline") ||
-      (results.length === 0 && slots === 0);
+      resultsBelowSlots &&
+      stopReason !== undefined &&
+      stopReason !== "games-cap" &&
+      stopReason !== "deadline";
 
     if (results.length < this.config.targetValidResults) {
       notices.add("PARTIAL_RESULTS");
@@ -338,6 +358,7 @@ export class RecommendationOrchestrator {
         ranked,
         variants.slice(variantIndex),
         traceId,
+        base.intent,
       );
     }
 
@@ -380,12 +401,15 @@ export class RecommendationOrchestrator {
         session,
         userId: request.actor.userId,
         shownGameIds: session.shownGameIds,
-        shownForCurrentIntent: session.shownForCurrentIntent,
       };
     }
 
-    // search | pivot | refine: intent nuevo (search y pivot son idénticos
-    // en estado; refine además recibe el intent previo como contexto).
+    /*
+     * search: intent nuevo. Si hay sesión con intención previa, el extractor
+     * la recibe como contexto y decide si el mensaje la EXTIENDE (merge) o
+     * la REEMPLAZA (tema nuevo): afinar o cambiar de tema es decisión del
+     * intérprete, no del cliente.
+     */
     let session: SessionState | undefined;
     let userId: number | undefined;
     let previousIntent: GameSearchIntent | undefined;
@@ -393,22 +417,27 @@ export class RecommendationOrchestrator {
     if (request.actor.kind === "user") {
       userId = request.actor.userId;
       session = this.deps.sessions.ensure(userId);
+      previousIntent = session.currentIntent ?? undefined;
     }
 
-    if (request.action === "refine") {
-      if (session?.currentIntent) previousIntent = session.currentIntent;
-      else notices.add("REFINE_WITHOUT_CONTEXT");
-    }
+    const extracted = await this.extractWithRetry(request.message, previousIntent);
 
-    const intent = await this.extractWithRetry(request.message, previousIntent);
-    if (session) session.shownForCurrentIntent = 0;
+    /*
+     * Salvaguarda determinista: si el mensaje no aporta intención nueva
+     * ("sí", "¿y eso?") pero la sesión tenía una, se reutiliza la previa.
+     * El LLM interpreta; el código decide con una regla verificable.
+     */
+    let intent = extracted;
+    if (isEmptyIntent(extracted) && previousIntent) {
+      intent = previousIntent;
+      notices.add("INTENT_UNCHANGED");
+    }
 
     return {
       intent,
       session,
       userId,
       shownGameIds: session?.shownGameIds ?? [],
-      shownForCurrentIntent: 0,
     };
   }
 
@@ -437,7 +466,6 @@ export class RecommendationOrchestrator {
         selectedIds,
         this.config.sessionShownCap,
       );
-      base.session.shownForCurrentIntent += selectedIds.length;
     }
     this.deps.sessions.save(base.userId, base.session);
   }
@@ -451,6 +479,7 @@ export class RecommendationOrchestrator {
     ranked: RankedMatch<Game>[],
     remainingVariants: string[],
     traceId: string,
+    intent: GameSearchIntent,
   ): Promise<void> {
     return (async () => {
       let units = 0;
@@ -478,6 +507,7 @@ export class RecommendationOrchestrator {
           variant,
           this.config.maxNewGamesPerDiscoveryUnit,
           traceId,
+          intent,
         );
         units++;
       }
@@ -576,9 +606,34 @@ export class RecommendationOrchestrator {
 function isEmptyIntent(intent: GameSearchIntent): boolean {
   const hasReferences = (intent.gameReferenced ?? []).length > 0;
   const hasKeywords = (intent.keywords ?? []).length > 0;
-  const hasObjective = intent.objective !== null;
-  const hasSemantic = intent.semantic !== null;
-  return !hasReferences && !hasKeywords && !hasObjective && !hasSemantic;
+  /*
+   * El objective/semantic son objetos con campos anulables: {genres:null,...}
+   * NO es señal utilizable (lo devuelve el LLM con mensajes tipo "sí").
+   * Las exclusiones (excluded) NO cuentan como señal: una intención que
+   * solo dice "que no sea X" no define qué se busca → EMPTY_INTENT.
+   */
+  const hasObjective =
+    intent.objective !== null &&
+    [
+      intent.objective.genres,
+      intent.objective.platforms,
+      intent.objective.gameModes,
+      intent.objective.perspectives,
+    ].some((fields) => (fields ?? []).length > 0);
+  const hasYear =
+    intent.releaseYear != null ||
+    intent.yearFrom != null ||
+    intent.yearTo != null;
+  const hasSemantic =
+    intent.semantic !== null &&
+    SEMANTIC_FIELDS.some((field) => intent.semantic?.[field] !== null);
+  return (
+    !hasReferences &&
+    !hasKeywords &&
+    !hasObjective &&
+    !hasYear &&
+    !hasSemantic
+  );
 }
 
 function countValid(
@@ -601,8 +656,13 @@ function toResultItem(item: RankedMatch<Game>): RecommendationResultItem {
 }
 
 function topReasons(reasons: MatchReason[]): MatchReasonDTO[] {
+  /*
+   * Se excluyen los "skipped" (ruido diagnóstico); los bonus a contribución
+   * cero (keyword-match) se muestran tras los que puntúan: la temática no
+   * suma, pero explica.
+   */
   return [...reasons]
-    .filter((reason) => reason.contribution !== 0)
+    .filter((reason) => reason.kind !== "skipped")
     .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
     .slice(0, 3)
     .map((reason) => ({

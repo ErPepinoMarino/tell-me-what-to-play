@@ -17,8 +17,8 @@ export const NOTICE_MESSAGES: Record<NoticeCode, string> = {
     "Esto es lo mejor que he encontrado por ahora; no he llegado a más con la calidad que me gustaría.",
   SEARCH_EXHAUSTED:
     "No queda más por ahora con esta búsqueda. Pídeme más si quieres, o afínala o cambia de tema.",
-  REFINE_WITHOUT_CONTEXT:
-    "Aún no había ninguna búsqueda que afinar: he tratado tu mensaje como una búsqueda nueva.",
+  INTENT_UNCHANGED:
+    "No he entendido nada nuevo en tu mensaje: sigo con la búsqueda que teníamos.",
   DISCOVERY_BUDGET_EXHAUSTED: "Presupuesto diario de descubrimiento agotado.",
   DISCOVERY_UNAVAILABLE: "Descubrimiento de juegos nuevos no disponible.",
   CATALOG_FULL: "El catálogo ha alcanzado su límite.",

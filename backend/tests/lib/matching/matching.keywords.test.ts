@@ -32,17 +32,20 @@ describe("matchGame: matching parcial de keywords", () => {
     );
   });
 
-  it("no inventa matches por prefijo ('sea' no casa con 'season')", () => {
+  it("no inventa matches por prefijo ('sea' no casa con 'season') → must-violated", () => {
     const intent = makeIntent({ keywords: ["sea"] });
     const game = makeGame({ id: 2, slug: "seasons", keywords: ["season"] });
 
     const result = matchGame({ intent, game });
 
+    expect(result.tier).toBe("invalid");
+    expect(result.gatesViolated).toContain("must-violated");
     expect(result.reasons).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           block: "keywords",
-          note: "no-keyword-overlap",
+          field: "kw.sea",
+          note: "must-violated",
         }),
       ]),
     );

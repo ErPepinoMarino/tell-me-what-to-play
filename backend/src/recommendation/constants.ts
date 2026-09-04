@@ -36,6 +36,20 @@ export const RECOMMENDATION_CONFIG = {
     "RECOMMENDATION_MAX_NEW_PER_DISCOVERY_UNIT",
     2,
   ),
+  /*
+   * Candidatos que pide cada búsqueda IGDB del relleno. Más que el techo de
+   * fichas nuevas: los primeros resultados pueden existir ya en el catálogo
+   * o haberse mostrado en la sesión, y el relleno necesita margen para
+   * encontrar juegos NUEVOS sin repetir la llamada.
+   */
+  igdbSearchLimit: intFromEnv("RECOMMENDATION_IGDB_SEARCH_LIMIT", 30),
+  /*
+   * Gate de calidad del descubrimiento: una ficha descubierta por relleno
+   * necesita señal mínima de la comunidad IGDB (nº de ratings) para no
+   * gastar enriquecimiento en basura. undefined/ausente = desconocido = se
+   * conserva ("null no significa cero"). Las anclas nunca pasan por el gate.
+   */
+  minIgdbRatingCount: intFromEnv("RECOMMENDATION_MIN_IGDB_RATING_COUNT", 3),
   unitTimeoutMs: intFromEnv("RECOMMENDATION_UNIT_TIMEOUT_MS", 20000),
   // La explicación conversacional es secundaria: timeout propio más corto
   explanationTimeoutMs: intFromEnv(
@@ -72,6 +86,13 @@ export const RECOMMENDATION_CONFIG = {
    * descubrimiento.
    */
   llmDailyLimit: intFromEnv("LLM_DAILY_LIMIT", 2000),
+
+  /*
+   * Embeddings (léxico de keywords): 1 por canonicalize() que necesite
+   * vectores de términos desconocidos (cacheados). Son llamadas muy baratas;
+   * el límite es la guarda contra bucles patológicos.
+   */
+  embeddingDailyLimit: intFromEnv("EMBEDDING_DAILY_LIMIT", 2000),
 
   // Límite superior del catálogo propio
   maxCatalogSize: intFromEnv("RECOMMENDATION_MAX_CATALOG_SIZE", 350000),

@@ -7,3 +7,6 @@ dist/
 # Environment files
 .env*
 !.env.example
+
+# Artefactos regenerables del léxico (la autoridad es la tabla keyword_lexicon)
+backend/reports/

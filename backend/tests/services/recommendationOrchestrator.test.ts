@@ -182,11 +182,12 @@ describe("RecommendationOrchestrator", () => {
       "pirate-gold",
       "pirate-sea",
     ]);
-    // 1 unidad: "pirates" (2 fichas nuevas). "pirates rpg" sí busca en IGDB
-    // (2ª llamada) pero se agota sin resultados y avanza sin contar unidad.
+    // 1 unidad: "pirates rpg" (keyword+género, sin resultados) y "pirates"
+    // (2 fichas nuevas). El football no entra al pool: falla el must y el
+    // pre-filtro duro lo excluye antes del matcher.
     expect(response.meta.discoveryUnitsUsed).toBe(1);
     expect(response.meta.tierCounts.valid).toBe(2);
-    expect(response.meta.evaluatedCandidates).toBe(3);
+    expect(response.meta.evaluatedCandidates).toBe(2);
     expect(catalog.createCalls).toBe(2);
     expect(budget.remaining("igdb")).toBe(98);
     expect(budget.remaining("brave")).toBe(96);
@@ -221,7 +222,6 @@ describe("RecommendationOrchestrator", () => {
 
     const session = sessions.get(1);
     expect(session?.shownGameIds).toEqual([1]);
-    expect(session?.shownForCurrentIntent).toBe(1);
   });
 
   it("more anónimo exige login", async () => {
@@ -272,16 +272,15 @@ describe("RecommendationOrchestrator", () => {
     expect(sessions.get(1)?.currentIntent).toEqual(makeIntent());
   });
 
-  it("refine pasa la intención previa al extractor y reinicia el contador por pregunta", async () => {
-    const refinedIntent = makeIntent({
-      keywords: ["pirates"],
+  it("search con sesión pasa la intención previa al extractor (el LLM decide extender o reemplazar)", async () => {
+    const extendedIntent = makeIntent({
+      keywords: ["pirates", "pixel art"],
       objective: {
         genres: ["RPG"],
         platforms: null,
         gameModes: null,
         perspectives: null,
       },
-      semantic: { ...NULL_SEMANTIC, violence: 0.1 },
     });
     const { orchestrator, extract, sessions } = setup({
       catalogGames: [PIRATES_GAME],
@@ -294,36 +293,181 @@ describe("RecommendationOrchestrator", () => {
       actor: USER,
     });
 
-    extract.mockImplementation(async () => refinedIntent);
+    extract.mockImplementation(async () => extendedIntent);
     const { response } = await orchestrator.handle({
-      action: "refine",
-      message: "menos violento",
+      action: "search",
+      message: "un RPG de piratas en pixel art",
       actor: USER,
     });
 
-    expect(extract).toHaveBeenLastCalledWith("menos violento", PIRATES_INTENT);
-    expect(response.notices).not.toContain("REFINE_WITHOUT_CONTEXT");
-    expect(response.intent).toEqual(refinedIntent);
-    expect(sessions.get(1)?.currentIntent).toEqual(refinedIntent);
-    // El único candidato ya se mostró en la búsqueda anterior: queda excluido
-    expect(response.results).toHaveLength(0);
-    expect(sessions.get(1)?.shownForCurrentIntent).toBe(0);
+    expect(extract).toHaveBeenLastCalledWith(
+      "un RPG de piratas en pixel art",
+      PIRATES_INTENT,
+    );
+    expect(response.intent).toEqual(extendedIntent);
+    expect(sessions.get(1)?.currentIntent).toEqual(extendedIntent);
   });
 
-  it("refine anónimo degrada a búsqueda con notice", async () => {
+  it("search anónimo extrae sin contexto de sesión", async () => {
     const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
     });
 
-    const { response } = await orchestrator.handle({
-      action: "refine",
-      message: "menos violento",
+    await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
       actor: ANON,
     });
 
-    expect(extract).toHaveBeenCalledWith("menos violento", undefined);
-    expect(response.notices).toContain("REFINE_WITHOUT_CONTEXT");
+    expect(extract).toHaveBeenCalledWith("un RPG de piratas", undefined);
+  });
+
+  it("search no excluye los ya mostrados: los mostrados re-compiten y vuelven si son los mejores", async () => {
+    const { orchestrator } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+    });
+
+    const first = await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
+      actor: USER,
+    });
+    expect(first.response.results.map((item) => item.game.slug)).toEqual([
+      "pirates-cove",
+    ]);
+
+    const second = await orchestrator.handle({
+      action: "search",
+      message: "otro RPG de piratas",
+      actor: USER,
+    });
+    expect(second.response.results.map((item) => item.game.slug)).toEqual([
+      "pirates-cove",
+    ]);
+  });
+
+  it("INTENT_UNCHANGED: un mensaje sin intención nueva reutiliza la intención previa de sesión", async () => {
+    const { orchestrator, extract, sessions } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+    });
+
+    await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
+      actor: USER,
+    });
+
+    // El "modelo" devuelve un objective vacío pero presente (lo típico con
+    // mensajes tipo "sí, quiero"): la salvaguarda debe recuperar el previo.
+    extract.mockImplementation(async () =>
+      makeIntent({
+        objective: {
+          genres: null,
+          platforms: null,
+          gameModes: null,
+          perspectives: null,
+        },
+      }),
+    );
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "si que quiero",
+      actor: USER,
+    });
+
+    expect(response.notices).toContain("INTENT_UNCHANGED");
+    expect(response.intent).toEqual(PIRATES_INTENT);
+    expect(sessions.get(1)?.currentIntent).toEqual(PIRATES_INTENT);
+    expect(response.results.map((item) => item.game.slug)).toEqual([
+      "pirates-cove",
+    ]);
+  });
+
+  it("objective vacío pero presente cuenta como intención vacía (sin sesión previa)", async () => {
+    const { orchestrator, igdb, catalog } = setup({
+      intent: makeIntent({
+        objective: {
+          genres: null,
+          platforms: null,
+          gameModes: null,
+          perspectives: null,
+        },
+      }),
+    });
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "si",
+      actor: ANON,
+    });
+
+    expect(response.notices).toContain("EMPTY_INTENT");
+    expect(catalog.findCandidatesCalls).toBe(0);
+    expect(igdb.calls).toHaveLength(0);
+  });
+
+  it("more pide una tanda nueva de hasta 8: excluye lo mostrado y descubre nuevos", async () => {
+    const shelf = Array.from({ length: 8 }, (_, index) =>
+      makeGame({
+        id: index + 1,
+        slug: `pirates-cove-${index + 1}`,
+        title: `Pirates Cove ${index + 1}`,
+        genres: ["RPG"],
+        keywords: ["pirates"],
+      }),
+    );
+    const { orchestrator, catalog, igdb } = setup({
+      catalogGames: shelf,
+      intent: PIRATES_INTENT,
+      // Aislamos el comportamiento de "more": sin trabajo orgánico en
+      // background (re-enrich/descubrimiento) tras la primera búsqueda.
+      config: { organicUnitsPerRequest: 0 },
+      igdbResults: {
+        pirates: [
+          makeRaw(101, "Pirate Gold", {
+            genres: [{ id: 1, name: "Role-playing (RPG)" }],
+          }),
+          makeRaw(102, "Pirate Sea", {
+            genres: [{ id: 1, name: "Role-playing (RPG)" }],
+          }),
+        ],
+      },
+      limits: { igdb: 100, brave: 100, llm: 100 },
+    });
+
+    const first = await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
+      actor: USER,
+    });
+    // Los 8 locales llenan los slots: no hay descubrimiento en la 1ª búsqueda
+    expect(first.response.results).toHaveLength(8);
+    expect(igdb.calls).toHaveLength(0);
+
+    const { response } = await orchestrator.handle({
+      action: "more",
+      message: "dame más",
+      actor: USER,
+    });
+
+    // "more" NO re-muestra: exclusión estricta. La tanda nueva trae lo descubierto
+    expect(response.results.map((item) => item.game.slug)).toEqual([
+      "pirate-gold",
+      "pirate-sea",
+    ]);
+    expect(catalog.createCalls).toBe(2);
+    // 2 búsquedas IGDB en el orden nuevo: "pirates rpg" (keyword+género,
+    // sin resultados) y "pirates" (productiva) — el FILL agota variantes
+    // antes de rendirse
+    expect(igdb.calls.map((call) => call.query)).toEqual([
+      "pirates rpg",
+      "pirates",
+    ]);
+    expect(response.meta.exhaustedPool).toBe(true);
   });
 
   it("juego pedido explícitamente: el ancla va a requestedGames y nunca a results", async () => {
@@ -371,10 +515,11 @@ describe("RecommendationOrchestrator", () => {
     expect(catalog.createCalls).toBe(1);
   });
 
-  it("bajo weak nunca se muestra: solo tier >= valid", async () => {
+  it("bajo weak nunca se muestra: los no conformes ni entran al pool", async () => {
     const { orchestrator } = setup({
       catalogGames: [PIRATES_GAME],
-      // 1 de 3 keywords pedidas: señal insuficiente → inválido
+      // 1 de 3 keywords pedidas: señal insuficiente → el pre-filtro duro lo
+      // excluye del pool (ya ni llega al matcher como invalid)
       intent: makeIntent({ keywords: ["pirates", "ninjas", "robots"] }),
     });
 
@@ -385,7 +530,7 @@ describe("RecommendationOrchestrator", () => {
     });
 
     expect(response.results).toHaveLength(0);
-    expect(response.meta.tierCounts.invalid).toBe(1);
+    expect(response.meta.evaluatedCandidates).toBe(0);
     expect(response.notices).toContain("PARTIAL_RESULTS");
   });
 

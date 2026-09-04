@@ -12,6 +12,7 @@ import {
   FakeIgdbClient,
   makeGame,
   makeGameEnrichment,
+  makeIntent,
   makeRaw,
   NULL_SEMANTIC,
 } from "../helpers/fakes.js";
@@ -65,7 +66,8 @@ describe("DiscoveryManager.discoverByQuery", () => {
     expect(attempt.outcome).toBe("ok");
     expect(attempt.newGames.map((game) => game.sourceId)).toEqual(["2", "3"]);
     expect(attempt.budgetExhausted).toBe(false);
-    expect(igdb.calls).toEqual([{ query: "pirates", limit: 10 }]);
+    // Límite de candidatos por búsqueda: margen para encontrar juegos NUEVOS
+    expect(igdb.calls).toEqual([{ query: "pirates", limit: 30 }]);
     // 1 IGDB + 2 enrich (2 Brave y 1 LLM cada uno)
     expect(budget.remaining("igdb")).toBe(99);
     expect(budget.remaining("brave")).toBe(96);
@@ -170,6 +172,56 @@ describe("DiscoveryManager.discoverByQuery", () => {
     expect(second.variantExhausted).toBe(true);
   });
 
+  it("pre-filtro must: los candidatos condenados se saltan sin gastar Brave/LLM", async () => {
+    const { discovery, catalog, enrichment } = makeSetup({
+      igdbResults: {
+        horror: [
+          makeRaw(10, "Random Horror", {
+            genres: [{ id: 1, name: "Horror" }],
+          }),
+          makeRaw(11, "Cozy Horror", {
+            genres: [{ id: 1, name: "Horror" }],
+            keywords: [{ id: 11, name: "cozy" }],
+          }),
+        ],
+      },
+    });
+
+    // El intent exige la keyword "cozy" (must): "Random Horror" no la tendrá
+    // ni sembrada; "Cozy Horror" sí (la query "horror" siembra "horror" y la
+    // keyword IGDB aporta "cozy").
+    const intent = makeIntent({
+      keywords: ["cozy"],
+      semantic: { ...NULL_SEMANTIC, coziness: 0.9 },
+    });
+    const attempt = await discovery.discoverByQuery(
+      "horror",
+      2,
+      undefined,
+      intent,
+    );
+
+    expect(attempt.newGames.map((game) => game.title)).toEqual([
+      "Cozy Horror",
+    ]);
+    // El condenado no consumió enriquecimiento
+    expect(enrichment.enrichCalls).toHaveLength(1);
+    expect(catalog.createCalls).toBe(1);
+  });
+
+  it("sin intent no hay pre-filtro must (comportamiento previo intacto)", async () => {
+    const { discovery, catalog } = makeSetup({
+      igdbResults: {
+        pirates: [makeRaw(2, "Pirate Gold", { keywords: [] })],
+      },
+    });
+
+    const attempt = await discovery.discoverByQuery("pirates", 2);
+
+    expect(attempt.newGames).toHaveLength(1);
+    expect(catalog.createCalls).toBe(1);
+  });
+
   it("siembra las palabras de la query en las keywords de la ficha creada", async () => {
     const { discovery, catalog } = makeSetup({
       igdbResults: {
@@ -183,6 +235,59 @@ describe("DiscoveryManager.discoverByQuery", () => {
     // Ficha guardada = IGDB (sin keywords) ∪ búsqueda ("batman") + enrichment
     const created = catalog.all()[0];
     expect(created.keywords).toContain("batman");
+  });
+
+  it("siembra la query completa como UNA keyword además de sus palabras", async () => {
+    const { discovery, catalog } = makeSetup({
+      igdbResults: {
+        "car wash": [makeRaw(301, "Washy Game", { keywords: [] })],
+      },
+    });
+
+    await discovery.discoverByQuery("car wash", 1);
+
+    // El intent pedirá "car wash" como frase: debe casar con la ficha
+    expect(catalog.createCalls).toBe(1);
+    const created = catalog.all()[0];
+    expect(created.keywords).toContain("car wash");
+    expect(created.keywords).toContain("wash");
+  });
+
+  it("una lista IGDB vacía no se cachea como agotada: la query se reintenta", async () => {
+    const { discovery, igdb } = makeSetup({
+      igdbResults: { pirates: [] },
+    });
+
+    const first = await discovery.discoverByQuery("pirates", 2);
+    expect(first.newGames).toHaveLength(0);
+    expect(first.variantExhausted).toBe(true);
+
+    const second = await discovery.discoverByQuery("pirates", 2);
+    expect(second.newGames).toHaveLength(0);
+    expect(second.variantExhausted).toBe(true);
+    // Dos búsquedas: el cursor vacío NO envenena la query
+    expect(igdb.calls).toHaveLength(2);
+  });
+
+  it("gate de calidad: salta candidatos sin señal comunitaria y conserva los desconocidos", async () => {
+    const { discovery, catalog } = makeSetup({
+      igdbResults: {
+        pirates: [
+          makeRaw(2, "Has Ratings", { total_rating_count: 3 }),
+          makeRaw(3, "Too Few", { total_rating_count: 2 }),
+          makeRaw(4, "Unknown Rating"),
+        ],
+      },
+    });
+
+    const attempt = await discovery.discoverByQuery("pirates", 3);
+
+    expect(attempt.newGames.map((game) => game.title)).toEqual([
+      "Has Ratings",
+      "Unknown Rating",
+    ]);
+    // El descartado no consume Brave/LLM
+    expect(catalog.createCalls).toBe(2);
   });
 });
 
@@ -213,6 +318,19 @@ describe("DiscoveryManager.discoverByName", () => {
     if (result.status === "found") {
       expect(result.game.sourceId).toBe("9");
     }
+    expect(catalog.createCalls).toBe(1);
+  });
+
+  it("las anclas no pasan por el gate de calidad (petición explícita del usuario)", async () => {
+    const { discovery, catalog } = makeSetup({
+      igdbResults: {
+        "Obscure Game": [makeRaw(9, "Obscure Game", { total_rating_count: 0 })],
+      },
+    });
+
+    const result = await discovery.discoverByName("Obscure Game");
+
+    expect(result.status).toBe("found");
     expect(catalog.createCalls).toBe(1);
   });
 
@@ -272,14 +390,148 @@ describe("DiscoveryManager.reEnrich", () => {
     expect(updated.title).toBe("Pirates!");
   });
 
-  it("se salta fichas sin sourceId sin gastar presupuesto", async () => {
-    const game = makeGame({ id: 5, sourceId: null });
-    const { discovery, igdb } = makeSetup({});
+  it("fichas sin sourceId (seed): re-enrich por título, adopción de objetivos y compañías", async () => {
+    const game = makeGame({
+      id: 5,
+      sourceId: null,
+      title: "Elden Ring",
+      developers: [],
+      publishers: [],
+    });
+    const catalog = new FakeCatalogLayer();
+    catalog.seed([game]);
+    const { discovery } = makeSetup({
+      catalog,
+      igdbResults: {
+        "Elden Ring": [
+          makeRaw(77, "Elden Ring", {
+            genres: [{ id: 1, name: "Role-playing (RPG)" }],
+            involved_companies: [
+              {
+                id: 1,
+                company: { id: 10, name: "FromSoftware" },
+                developer: true,
+                publisher: false,
+              },
+              {
+                id: 2,
+                company: { id: 11, name: "Bandai Namco" },
+                developer: false,
+                publisher: true,
+              },
+            ],
+          }),
+        ],
+      },
+    });
 
     const result = await discovery.reEnrich(game);
 
-    expect(result.status).toBe("skipped");
-    expect(igdb.calls).toHaveLength(0);
+    expect(result.status).toBe("updated");
+    const updated = catalog.get(5)!;
+    // Identidad y objetivo adoptados de IGDB (la ficha no tenía source_id)
+    expect(updated.sourceId).toBe("77");
+    expect(updated.genres).toContain("RPG");
+    // Compañías rellenadas desde involved_companies
+    expect(updated.developers).toContain("FromSoftware");
+    expect(updated.publishers).toContain("Bandai Namco");
+    // Semánticas del enrichment aplicadas
+    expect(updated.difficulty).toBe(0.6);
+  });
+
+  it("fichas con compañías conocidas: nunca se degradan", async () => {
+    const game = makeGame({
+      id: 5,
+      sourceId: "55",
+      title: "Pirates!",
+      developers: ["Akella"],
+      publishers: ["1C Company"],
+    });
+    const catalog = new FakeCatalogLayer();
+    catalog.seed([game]);
+    const { discovery } = makeSetup({
+      catalog,
+      igdbResults: {
+        "Pirates!": [
+          makeRaw(55, "Pirates!", {
+            involved_companies: [
+              {
+                id: 1,
+                company: { id: 99, name: "Otra Studio" },
+                developer: true,
+                publisher: true,
+              },
+            ],
+          }),
+        ],
+      },
+    });
+
+    const result = await discovery.reEnrich(game);
+
+    expect(result.status).toBe("updated");
+    const updated = catalog.get(5)!;
+    expect(updated.developers).toEqual(["Akella"]);
+    expect(updated.publishers).toEqual(["1C Company"]);
+  });
+
+  it("match por título tolera apóstrofes tipográficos y numeración romana (Baldur’s Gate III)", async () => {
+    // El seed guarda "Baldur's Gate 3"; IGDB usa "Baldur’s Gate III"
+    const game = makeGame({ id: 6, sourceId: null, title: "Baldur's Gate 3" });
+    const catalog = new FakeCatalogLayer();
+    catalog.seed([game]);
+    const { discovery } = makeSetup({
+      catalog,
+      igdbResults: {
+        "Baldur's Gate 3": [
+          makeRaw(88, "Baldur’s Gate III", {
+            involved_companies: [
+              {
+                id: 1,
+                company: { id: 12, name: "Larian Studios" },
+                developer: true,
+                publisher: true,
+              },
+            ],
+          }),
+        ],
+      },
+    });
+
+    const result = await discovery.reEnrich(game);
+
+    expect(result.status).toBe("updated");
+    const updated = catalog.get(6)!;
+    expect(updated.sourceId).toBe("88");
+    expect(updated.developers).toContain("Larian Studios");
+  });
+
+  it("match por título con título canónico más largo (The Witcher 3: Wild Hunt)", async () => {
+    const game = makeGame({ id: 7, sourceId: null, title: "The Witcher 3" });
+    const catalog = new FakeCatalogLayer();
+    catalog.seed([game]);
+    const { discovery } = makeSetup({
+      catalog,
+      igdbResults: {
+        "The Witcher 3": [
+          makeRaw(89, "The Witcher 3: Wild Hunt", {
+            involved_companies: [
+              {
+                id: 1,
+                company: { id: 13, name: "CD Projekt Red" },
+                developer: true,
+                publisher: true,
+              },
+            ],
+          }),
+        ],
+      },
+    });
+
+    const result = await discovery.reEnrich(game);
+
+    expect(result.status).toBe("updated");
+    expect(catalog.get(7)!.developers).toContain("CD Projekt Red");
   });
 
   it("devuelve not-found cuando IGDB no encuentra el juego y consume la llamada", async () => {

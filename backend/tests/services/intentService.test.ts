@@ -16,8 +16,11 @@ import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 const fakeIntent: GameSearchIntent = {
   gameReferenced: null,
   objective: null,
-
   keywords: null,
+  releaseYear: null,
+  yearFrom: null,
+  yearTo: null,
+  excluded: null,
   semantic: null,
 };
 //Puesto que basicamente devuelve lo que le pasamos ha poco que testear:
@@ -85,8 +88,8 @@ describe("createBudgetedIntentExtractor", () => {
   });
 });
 
-describe("intentService refine context", () => {
-  it("includes the previous intent in the system message when refining", async () => {
+describe("intentService session context", () => {
+  it("includes the previous intent and the merge rules in the system message", async () => {
     const invoke = vi.fn().mockResolvedValue(fakeIntent);
     vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
 
@@ -94,10 +97,14 @@ describe("intentService refine context", () => {
       gameReferenced: null,
       objective: null,
       keywords: ["pirates"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
       semantic: null,
     };
 
-    await intentService.extractIntent("menos violento", previous);
+    await intentService.extractIntent("con combates navales", previous);
 
     const messages = invoke.mock.calls[0][0] as {
       role: string;
@@ -106,5 +113,27 @@ describe("intentService refine context", () => {
     const system = messages.find((m) => m.role === "system");
     expect(system?.content).toContain("Conversation context");
     expect(system?.content).toContain("pirates");
+    // Reglas de merge conservador: extender no borra el tema; mensaje sin
+    // contenido devuelve la intención previa.
+    expect(system?.content).toContain("KEEP the previous keywords");
+    expect(system?.content).toContain("completely different topic");
+    expect(system?.content).toContain("UNCHANGED");
+    // Reglas de clasificación (ERROR 2): atmósfera → semánticas, nunca keywords
+    expect(system?.content).toContain("SEMANTIC attributes, NEVER keywords");
+    expect(system?.content).toContain("NOT keywords");
+  });
+
+  it("does not include session context without a previous intent", async () => {
+    const invoke = vi.fn().mockResolvedValue(fakeIntent);
+    vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
+
+    await intentService.extractIntent("un RPG de piratas");
+
+    const messages = invoke.mock.calls[0][0] as {
+      role: string;
+      content: string;
+    }[];
+    const system = messages.find((m) => m.role === "system");
+    expect(system?.content).not.toContain("Conversation context");
   });
 });

@@ -191,9 +191,7 @@ export function fallbackExplanation(input: ExplanationInput): string {
   const prefix =
     input.action === "more"
       ? "He buscado más juegos de"
-      : input.action === "refine"
-        ? "He ajustado tu búsqueda:"
-        : "He entendido que buscas";
+      : "He entendido que buscas";
   parts.push(`${prefix} ${description}.`);
 
   if (input.results.length === 0) {

@@ -18,8 +18,6 @@ import RecommendationResults from "@/components/SearchResults/RecommendationResu
 import { DemoMetaPanel, RequestedGamesRow } from "@/components/SearchResults/RecommendationExtras";
 import Login from "@/components/Login/Login";
 
-type PendingAction = Exclude<RecommendationAction, "more">;
-
 /*
  * USER INPUT → POST /api/recommendations → SEARCH RESULTS + AI CHAT.
  * Dueño del estado de la conversación en el cliente. El contexto real de
@@ -36,7 +34,6 @@ function RecommendationFlow() {
   const [intent, setIntent] = useState<GameSearchIntent | null>(null);
   const [meta, setMeta] = useState<RecommendationMeta | null>(null);
   const [notices, setNotices] = useState<NoticeCode[]>([]);
-  const [pendingAction, setPendingAction] = useState<PendingAction>("search");
   const [demoMode, setDemoMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +66,6 @@ function RecommendationFlow() {
       { role: "user", text: userMessage },
       { role: "assistant", text: response.explanation },
     ]);
-    setPendingAction("search");
   }
 
   function applyFailure(failure: {
@@ -144,10 +140,8 @@ function RecommendationFlow() {
       {error ? <p className="notice notice-error">{error}</p> : null}
 
       <SearchBar
-        onSubmit={(message) => void send(message, pendingAction)}
+        onSubmit={(message) => void send(message, "search")}
         onMore={() => void send("dame más", "more")}
-        pendingAction={pendingAction}
-        onPendingActionChange={setPendingAction}
         canMore={canMore}
         authenticated={authenticated}
         busy={status === "searching"}

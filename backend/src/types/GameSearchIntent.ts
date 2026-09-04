@@ -83,6 +83,22 @@ const ObjectiveSchema = z.object({
   perspectives: z.array(PerspectiveSchema).nullable(),
 });
 
+/*
+ * Red flags: elementos que el usuario ha EXCLUIDO explícitamente ("que no
+ * sea X", "sin X"). Cualquier candidato que los contenga queda fuera del
+ * match, aunque sea ideal en todo lo demás.
+ */
+const ExcludedSchema = z.object({
+  keywords: z.array(z.string()).nullable(),
+  genres: z.array(GenreSchema).nullable(),
+  platforms: z.array(PlatformSchema).nullable(),
+  gameModes: z.array(GameModeSchema).nullable(),
+  perspectives: z.array(PerspectiveSchema).nullable(),
+  releaseYear: z.number().int().nullable(),
+  yearFrom: z.number().int().nullable(),
+  yearTo: z.number().int().nullable(),
+});
+
 const SemanticSchema = z.object({
   complexity: SemanticScore,
   coziness: SemanticScore,
@@ -99,10 +115,24 @@ const SemanticSchema = z.object({
   violence: SemanticScore,
 });
 
+/*
+ * Contrato: TODO campo no-semántico que el intérprete rellene es un
+ * requisito DURO (must): los resultados deben tenerlos todos — pueden
+ * tener más (más géneros, más plataformas, más keywords), nunca menos.
+ * Los campos null = "no pedido". Las semánticas (0..1) son la única
+ * ponderación numérica del ranking.
+ */
 export const GameSearchIntentSchema = z.object({
   gameReferenced: z.array(z.string()).nullable(),
   objective: ObjectiveSchema.nullable(),
   keywords: z.array(z.string()).nullable(),
+  // Año exacto pedido ("del 2004")
+  releaseYear: z.number().int().nullable(),
+  // Rangos pedidos ("de los 90" → 1990/1999, "anteriores a 2010" → yearTo 2009)
+  yearFrom: z.number().int().nullable(),
+  yearTo: z.number().int().nullable(),
+  // Elementos excluidos explícitamente (red flags)
+  excluded: ExcludedSchema.nullable(),
   semantic: SemanticSchema.nullable(),
 });
 

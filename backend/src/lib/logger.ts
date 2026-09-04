@@ -13,8 +13,17 @@ export function newTraceId(): string {
   return randomUUID().slice(0, 8);
 }
 
+/*
+ * Silencio por defecto bajo Vitest (define VITEST=true en el entorno): el
+ * ruido de trazas en la salida de tests enturbia los fallos reales.
+ * TMWTP_LOG=on fuerza el logging dentro de tests para depurar un caso.
+ */
+const enabled =
+  process.env.TMWTP_LOG === "on" || process.env.VITEST !== "true";
+
 export function createTrace(traceId: string): Trace {
   return (message: string, data?: unknown) => {
+    if (!enabled) return;
     if (data === undefined) {
       console.log(`[rec:${traceId}] ${message}`);
       return;

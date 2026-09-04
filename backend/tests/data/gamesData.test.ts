@@ -60,6 +60,23 @@ const platforms = new Set([
   "UNKNOWN",
 ]);
 
+const gameModes = new Set([
+  "SINGLE_PLAYER",
+  "MULTIPLAYER",
+  "COOPERATIVE",
+  "COMPETITIVE",
+  "UNKNOWN",
+]);
+const perspectives = new Set([
+  "FIRST_PERSON",
+  "THIRD_PERSON",
+  "TOP_DOWN",
+  "ISOMETRIC",
+  "SIDE_VIEW",
+  "TEXT",
+  "UNKNOWN",
+]);
+
 describe("objective game fixture", () => {
   it("contains only valid objective enum values and defaults", () => {
     for (const game of games) {
@@ -67,18 +84,30 @@ describe("objective game fixture", () => {
       expect(game.platforms.every((platform) => platforms.has(platform))).toBe(
         true,
       );
-      expect(game.gameModes).toEqual(["UNKNOWN"]);
-      expect(game.perspectives).toEqual(["UNKNOWN"]);
-      expect(game.developers).toEqual([]);
-      expect(game.publishers).toEqual([]);
+      expect(game.gameModes.every((mode) => gameModes.has(mode))).toBe(true);
+      expect(
+        game.perspectives.every((perspective) =>
+          perspectives.has(perspective),
+        ),
+      ).toBe(true);
+      expect(
+        game.developers.every(
+          (developer) => typeof developer === "string" && developer.length > 0,
+        ),
+      ).toBe(true);
+      expect(
+        game.publishers.every(
+          (publisher) => typeof publisher === "string" && publisher.length > 0,
+        ),
+      ).toBe(true);
       expect(game.searchCount).toBe(0);
       expect(game).not.toHaveProperty("rating");
     }
   });
 
-  it("uses title-year slugs for games with a release year", () => {
+  it("uses lowercase kebab-case slugs (opcionalmente con año)", () => {
     for (const game of games) {
-      expect(game.slug).toContain(`-${game.releaseYear}`);
+      expect(game.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*(-\d{4})?$/);
     }
   });
 

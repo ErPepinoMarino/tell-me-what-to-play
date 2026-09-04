@@ -62,11 +62,13 @@ export function rankMatches<T extends MatchableGame>(
   return { ranked, excluded };
 }
 
-// score desc → tier desc → cobertura semántica desc → slug asc (codepoints).
+// tier desc → score desc → cobertura semántica desc → slug asc (codepoints).
+// El tier VA PRIMERO: un candidato que falla filtros (invalid) nunca compite
+// con uno que los pasa, aunque su acuerdo semántico sea mayor.
 function compareRankedMatches(a: RankedMatch, b: RankedMatch): number {
-  if (Math.abs(a.score - b.score) > EPSILON) return b.score - a.score;
   const tierDiff = TIER_RANK[b.tier] - TIER_RANK[a.tier];
   if (tierDiff !== 0) return tierDiff;
+  if (Math.abs(a.score - b.score) > EPSILON) return b.score - a.score;
   if (a.coverage.semanticDims !== b.coverage.semanticDims) {
     return b.coverage.semanticDims - a.coverage.semanticDims;
   }

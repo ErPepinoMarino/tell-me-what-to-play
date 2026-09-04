@@ -1,17 +1,23 @@
 import type { Game } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 import { GENRE_QUERY_TERMS } from "../services/enrichmentService.js";
+import { passesHardFilters } from "../matching/matchGame.js";
 import type { RecommendationConfig } from "../recommendation/constants.js";
 import type { CacheLayer, CatalogLayer } from "./types.js";
 
+// Señales objetivas del intent para el pre-filtro SQL. Con el contrato de
+// filtros duros, TODO lo pedido debe estar: el pre-filtro es conjuntivo
+// (AND). Las keywords se normalizan a minúsculas porque así viven en la
+// BDD; UNKNOWN no filtra.
 export interface PoolFilter {
   genres: string[];
   keywords: string[];
   platforms: string[];
+  releaseYear: number | null;
+  yearFrom: number | null;
+  yearTo: number | null;
 }
 
-// Señales objetivas del intent para el pre-filtro SQL. Las keywords se
-// normalizan a minúsculas porque así viven en la BDD; UNKNOWN no filtra.
 export function buildPoolFilter(intent: GameSearchIntent): PoolFilter {
   return {
     genres: (intent.objective?.genres ?? []).filter((g) => g !== "UNKNOWN"),
@@ -21,6 +27,9 @@ export function buildPoolFilter(intent: GameSearchIntent): PoolFilter {
     keywords: (intent.keywords ?? [])
       .map((k) => k.trim().toLowerCase())
       .filter((k) => k.length > 0),
+    releaseYear: intent.releaseYear,
+    yearFrom: intent.yearFrom,
+    yearTo: intent.yearTo,
   };
 }
 
@@ -37,12 +46,28 @@ export function buildQueryVariants(intent: GameSearchIntent): string[] {
 
   const variants: string[] = [];
   if (keywords.length > 0) {
-    variants.push(keywords.slice(0, 3).join(" "));
-    if (genreTerms.length > 0) {
+    if (keywords.length === 1 && genreTerms.length > 0) {
+      /*
+       * Con una sola keyword la combinada colapsa en la keyword sola:
+       * la variante con género (más productiva: acota el tema) va primero.
+       */
       variants.push(`${keywords[0]} ${genreTerms[0]}`);
-    }
-    if (keywords.length > 3) {
-      variants.push(keywords.slice(3, 6).join(" "));
+      variants.push(keywords[0]);
+    } else {
+      variants.push(keywords.slice(0, 3).join(" "));
+      if (genreTerms.length > 0) {
+        variants.push(`${keywords[0]} ${genreTerms[0]}`);
+      }
+      if (keywords.length > 3) {
+        variants.push(keywords.slice(3, 6).join(" "));
+      }
+      /*
+       * Rescate por keyword individual: IGDB busca por título y una query
+       * combinada suele devolver 0 aunque cada término por separado rinda
+       * (p. ej. "batman pixel art" → 0, "pixel art" → decenas). Van al final:
+       * primero se agotan las variantes más específicas.
+       */
+      variants.push(...keywords);
     }
   } else if (genreTerms.length > 0) {
     variants.push(genreTerms.slice(0, 2).join(" "));
@@ -89,7 +114,14 @@ export async function gatherCandidates(
   const canonicalized = await catalog.getBySlugs(cacheOnlySlugs);
 
   const pool = dedupeBySlug([...pgGames, ...canonicalized.values()]);
-  return pool.slice(0, config.matchPoolCap);
+  /*
+   * La cache es proyección y el pre-filtro SQL solo aplica a PG: sin este
+   * filtro, un intent con must estricto llenaría el pool de condenados
+   * (p. ej. el pre-filtro SQL devuelve 0 y entran TODAS las de cache).
+   * El filtro duro es puro y barato: se aplica a TODO el pool.
+   */
+  const filtered = pool.filter((game) => passesHardFilters(intent, game));
+  return filtered.slice(0, config.matchPoolCap);
 }
 
 // Resolución de ancla por título: catálogo primero, cache como atajo.

@@ -16,22 +16,34 @@ import { prismaUserRepository } from "../../src/repositories/prismaUserRepositor
 import { prisma } from "../../src/lib/prisma.js";
 import { resetTestDatabase } from "../helpers/resetTestDatabase.js";
 
+// Estado compartido con el mock (vi.hoisted: disponible dentro de la factory).
+// La cola permite simular intents "vacíos" en mensajes de seguimiento;
+// sin cola, el mock devuelve la intención por defecto (piratas RPG).
+const intentMock = vi.hoisted(() => {
+  const DEFAULT_INTENT = {
+    gameReferenced: null,
+    objective: {
+      genres: ["RPG"],
+      platforms: null,
+      gameModes: null,
+      perspectives: null,
+    },
+    keywords: ["pirates"],
+    releaseYear: null,
+    yearFrom: null,
+    yearTo: null,
+    excluded: null,
+    semantic: null,
+  };
+  return { DEFAULT_INTENT, queue: [] as Record<string, unknown>[] };
+});
+
 // Los mocks van ANTES de los imports de app (Vitest los hoistea).
 // El e2e corre in-process: así se prueban ruta, middleware, sesión, orquestador
 // y matcher con la BD real, sustituyendo solo la IA y las APIs externas.
 vi.mock("../../src/lib/ai.js", () => ({
   gameIntentAIModel: () => ({
-    invoke: async () => ({
-      gameReferenced: null,
-      objective: {
-        genres: ["RPG"],
-        platforms: null,
-        gameModes: null,
-        perspectives: null,
-      },
-      keywords: ["pirates"],
-      semantic: null,
-    }),
+    invoke: async () => intentMock.queue.shift() ?? intentMock.DEFAULT_INTENT,
   }),
 }));
 
@@ -104,6 +116,7 @@ describe("POST /api/recommendations E2E", () => {
   });
 
   beforeEach(async () => {
+    intentMock.queue.length = 0;
     await resetTestDatabase();
   });
 
@@ -128,7 +141,8 @@ describe("POST /api/recommendations E2E", () => {
     expect(body.results).toHaveLength(1);
     expect(body.results[0].game.slug).toBe("pirates-cove");
     expect(body.results[0].tier).toBe("valid");
-    expect(body.results[0].score).toBeGreaterThan(0);
+    // El score solo refleja semántica: sin dims comparables es 0 (y no importa)
+    expect(body.results[0].score).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(body.results[0].reasons)).toBe(true);
     // Las reasons traen block y kind para los chips de la UI
     expect(body.results[0].reasons[0]).toMatchObject({
@@ -195,6 +209,70 @@ describe("POST /api/recommendations E2E", () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it("mensaje sin intención nueva reutiliza la intención previa de sesión (INTENT_UNCHANGED)", async () => {
+    await seedPiratesGame();
+    const { accessToken } = await createUserAndToken();
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/recommendations",
+      payload: { message: "quiero un juego de piratas" },
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(first.statusCode).toBe(200);
+
+    // El "LLM" devuelve un objective vacío pero presente (mensaje tipo "sí")
+    intentMock.queue.push({
+      gameReferenced: null,
+      objective: {
+        genres: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+      },
+      keywords: null,
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      semantic: null,
+    });
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/recommendations",
+      payload: { message: "si que quiero" },
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    expect(second.statusCode).toBe(200);
+    const body = second.json();
+    expect(body.notices).toContain("INTENT_UNCHANGED");
+    expect(body.intent.keywords).toEqual(["pirates"]);
+    // Sin exclusión en search: los mostrados re-compiten y vuelven
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0].game.slug).toBe("pirates-cove");
+  });
+
+  it("search sin exclusión: repetir la búsqueda vuelve a mostrar los mejores", async () => {
+    await seedPiratesGame();
+    const { accessToken } = await createUserAndToken();
+
+    const payload = {
+      method: "POST",
+      url: "/api/recommendations",
+      payload: { message: "quiero un juego de piratas" },
+      headers: { authorization: `Bearer ${accessToken}` },
+    } as const;
+
+    const first = await app.inject(payload);
+    const second = await app.inject(payload);
+
+    expect(first.json().results).toHaveLength(1);
+    expect(second.json().results).toHaveLength(1);
+    expect(second.json().results[0].game.slug).toBe("pirates-cove");
+  });
+
   it("valida el cuerpo de la petición", async () => {
     const missing = await app.inject({
       method: "POST",
@@ -216,5 +294,21 @@ describe("POST /api/recommendations E2E", () => {
       payload: { message: "hola", action: "explode" },
     });
     expect(badAction.statusCode).toBe(400);
+
+    // Acciones del contrato antiguo retiradas: afinar/cambiar de tema es
+    // decisión del LLM, no del cliente
+    const legacyRefine = await app.inject({
+      method: "POST",
+      url: "/api/recommendations",
+      payload: { message: "menos violento", action: "refine" },
+    });
+    expect(legacyRefine.statusCode).toBe(400);
+
+    const legacyPivot = await app.inject({
+      method: "POST",
+      url: "/api/recommendations",
+      payload: { message: "otro tema", action: "pivot" },
+    });
+    expect(legacyPivot.statusCode).toBe(400);
   });
 });

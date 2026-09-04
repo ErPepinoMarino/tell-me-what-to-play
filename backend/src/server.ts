@@ -1,4 +1,19 @@
 import { buildApp } from "./app.js";
+import { prismaCatalogLayer } from "./orchestrator/adapters.js";
+import { ensureSeedCatalog } from "./services/seedCatalogService.js";
+
+// Bootstrap del catálogo popular: garantiza el baseline del seed en PG en
+// cualquier entorno (compose, Railway). Idempotente (skip de existentes) y
+// best-effort: si la BDD no responde, el server arranca igual y las rutas
+// degradan con sus notices como siempre.
+try {
+  const bootstrap = await ensureSeedCatalog(prismaCatalogLayer);
+  console.log(
+    `[bootstrap] catálogo seed: ${bootstrap.created} creadas, ${bootstrap.skipped} ya existentes.`,
+  );
+} catch (error) {
+  console.error("[bootstrap] no se pudo sembrar el catálogo seed:", error);
+}
 
 const app = await buildApp();
 

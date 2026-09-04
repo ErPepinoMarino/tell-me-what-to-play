@@ -1,4 +1,4 @@
-export type BudgetService = "igdb" | "brave" | "llm";
+export type BudgetService = "igdb" | "brave" | "llm" | "embedding";
 
 export interface BudgetLedger {
   remaining(service: BudgetService): number;
@@ -10,19 +10,30 @@ export interface BudgetLedger {
   release(service: BudgetService, cost: number): void;
 }
 
-export type BudgetLimits = Record<BudgetService, number>;
+/*
+ * "embedding" es opcional para no forzar a todos los constructores a declarar
+ * el cubo nuevo: sin límite declarado, remaining() = 0 y las llamadas de
+ * embedding caen al fallback literal de forma segura.
+ */
+export interface BudgetLimits {
+  igdb: number;
+  brave: number;
+  llm: number;
+  embedding?: number;
+}
 
 interface DailyCounters {
   igdb: number;
   brave: number;
   llm: number;
+  embedding: number;
 }
 
 // Contadores por día en memoria. Un reinicio subestima el gasto real, así que
 // los límites se configuran con margen bajo el tope real de cada API.
 export class InMemoryBudgetLedger implements BudgetLedger {
   private usedByDay = new Map<string, DailyCounters>();
-  private reserved: DailyCounters = { igdb: 0, brave: 0, llm: 0 };
+  private reserved: DailyCounters = { igdb: 0, brave: 0, llm: 0, embedding: 0 };
   private now: () => Date;
 
   constructor(
@@ -39,7 +50,7 @@ export class InMemoryBudgetLedger implements BudgetLedger {
   private countersFor(dayKey: string): DailyCounters {
     let counters = this.usedByDay.get(dayKey);
     if (!counters) {
-      counters = { igdb: 0, brave: 0, llm: 0 };
+      counters = { igdb: 0, brave: 0, llm: 0, embedding: 0 };
       this.usedByDay.set(dayKey, counters);
       this.pruneOldDays(dayKey);
     }
@@ -53,8 +64,9 @@ export class InMemoryBudgetLedger implements BudgetLedger {
   }
 
   remaining(service: BudgetService): number {
+    const limit = this.limits[service] ?? 0;
     const used = this.countersFor(this.dayKey())[service];
-    return Math.max(0, this.limits[service] - used - this.reserved[service]);
+    return Math.max(0, limit - used - this.reserved[service]);
   }
 
   tryReserve(service: BudgetService, cost: number): boolean {

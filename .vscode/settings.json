@@ -1,1 +1,4 @@
-{}
+{
+  "terminal.integrated.gpuAcceleration": "off",
+  "terminal.integrated.rendererType": "dom"
+}

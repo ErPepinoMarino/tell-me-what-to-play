@@ -33,6 +33,10 @@ const emptyIntent = {
   objective: null,
 
   keywords: null,
+  releaseYear: null,
+  yearFrom: null,
+  yearTo: null,
+  excluded: null,
   semantic: null,
 } satisfies GameSearchIntent;
 

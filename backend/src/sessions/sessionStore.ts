@@ -2,10 +2,12 @@ import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 export interface SessionState {
   currentIntent: GameSearchIntent | null;
-  // Exclusión global durante la sesión (juegos ya mostrados, cap FIFO)
+  /*
+   * Exclusión de "mostrar más": juegos ya presentados al usuario en esta
+   * sesión (cap FIFO). Una búsqueda nueva NO los excluye (compiten de
+   * nuevo: siempre se muestran los mejores); solo "more" los evita.
+   */
   shownGameIds: number[];
-  // Mostrados para la intención ACTUAL: define el cap de 8 por pregunta
-  shownForCurrentIntent: number;
   createdAt: number;
   lastUsedAt: number;
 }
@@ -55,7 +57,6 @@ export class InMemorySessionStore implements SessionStore {
     const session: SessionState = {
       currentIntent: null,
       shownGameIds: [],
-      shownForCurrentIntent: 0,
       createdAt: now,
       lastUsedAt: now,
     };

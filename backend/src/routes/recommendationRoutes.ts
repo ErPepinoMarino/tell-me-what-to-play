@@ -20,7 +20,7 @@ const recommendationBodySchema = {
     },
     action: {
       type: "string",
-      enum: ["search", "more", "refine", "pivot"],
+      enum: ["search", "more"],
     },
   },
 };

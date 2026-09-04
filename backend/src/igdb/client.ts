@@ -16,6 +16,7 @@ const FIELDS = [
   "summary",
   "first_release_date",
   "game_type",
+  "total_rating_count",
   "cover.image_id",
   "genres.name",
   "platforms.name",

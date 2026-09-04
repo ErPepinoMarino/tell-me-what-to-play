@@ -11,6 +11,13 @@
     "test": "vitest run",
     "test:setup": "tsx scripts/setupTestDb.ts",
     "test:watch": "vitest",
+    "seed:catalog": "tsx scripts/seedCatalog.ts",
+    "seed:export": "tsx scripts/exportSeed.ts",
+    "enrich:backfill": "tsx scripts/enrichBackfill.ts",
+    "lexicon:mine": "tsx scripts/mineLexicon.ts",
+    "lexicon:accept": "tsx scripts/acceptLexicon.ts",
+    "lexicon:calibrate": "tsx scripts/calibrateLexicon.ts",
+    "lexicon:migrate": "tsx scripts/migrateKeywords.ts",
     "import:games": "tsx scripts/importGames.ts"
   },
   "keywords": [],

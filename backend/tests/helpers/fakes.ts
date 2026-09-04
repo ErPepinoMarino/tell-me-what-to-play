@@ -73,6 +73,10 @@ export function makeIntent(
     gameReferenced: null,
     objective: null,
     keywords: null,
+    releaseYear: null,
+    yearFrom: null,
+    yearTo: null,
+    excluded: null,
     semantic: null,
     ...overrides,
   };

@@ -2,13 +2,16 @@ import { prisma } from "../lib/prisma.js";
 import type { Genre, Platform } from "../generated/prisma/enums.js";
 import type { Game, GameToPersist } from "../types/Game.js";
 
-// Filtro de pre-selección de candidatos para el orquestador. El matcher es
-// rápido, pero traer el catálogo completo por petición no escala: el SQL
-// selecciona los más plausibles por solape objetivo y corta con un límite.
+// Filtro de pre-selección de candidatos para el orquestador. Semántica
+// conjuntiva: TODO lo pedido debe estar (contrato de filtros duros). El SQL
+// selecciona los juegos que cumplen todos los requisitos y corta con un límite.
 export interface CandidateFilter {
   genres: string[];
   keywords: string[];
   platforms: string[];
+  releaseYear: number | null;
+  yearFrom: number | null;
+  yearTo: number | null;
   limit: number;
 }
 
@@ -99,19 +102,38 @@ export const prismaGameRepository = {
   },
 
   async findCandidates(filter: CandidateFilter): Promise<Game[]> {
-    const overlaps = [];
-    if (filter.genres.length > 0) {
-      overlaps.push({ genres: { hasSome: filter.genres as Genre[] } });
+    /*
+     * Pre-filtro conjuntivo (contrato de filtros duros): cada keyword,
+     * género y plataforma pedida debe estar en el juego (el juego puede
+     * tener más). Un candidato que falle un requisito está condenado en el
+     * matcher: no merece sitio en el pool (cap).
+     */
+    const requirements: Record<string, unknown>[] = [];
+    for (const keyword of filter.keywords) {
+      requirements.push({ keywords: { has: keyword } });
     }
-    if (filter.platforms.length > 0) {
-      overlaps.push({ platforms: { hasSome: filter.platforms as Platform[] } });
+    for (const genre of filter.genres) {
+      requirements.push({ genres: { has: genre as Genre } });
     }
-    if (filter.keywords.length > 0) {
-      overlaps.push({ keywords: { hasSome: filter.keywords } });
+    for (const platform of filter.platforms) {
+      requirements.push({ platforms: { has: platform as Platform } });
+    }
+
+    const yearCondition: {
+      equals?: number;
+      gte?: number;
+      lte?: number;
+    } = {};
+    if (filter.releaseYear !== null) yearCondition.equals = filter.releaseYear;
+    if (filter.yearFrom !== null) yearCondition.gte = filter.yearFrom;
+    if (filter.yearTo !== null) yearCondition.lte = filter.yearTo;
+    if (Object.keys(yearCondition).length > 0) {
+      requirements.push({ release_year: yearCondition });
     }
 
     const games = await prisma.games.findMany({
-      where: overlaps.length > 0 ? { OR: overlaps } : undefined,
+      where:
+        requirements.length > 0 ? { AND: requirements } : undefined,
       orderBy: [{ search_count: "desc" }, { id: "asc" }],
       take: filter.limit,
     });

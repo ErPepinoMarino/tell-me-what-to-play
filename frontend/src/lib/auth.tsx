@@ -68,7 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Se ejecuta al cargar la pagina solo una vez y lanza refreshToken() y de nuevo en cada carga completa de página (F5, vuelta de Google)"
   // lo de void y [refreshToken] es la forma de evitar problemas ya que refresToken devuelve un promise y useEffect no espera promesas.
   // El array de dependencias [refreshToken] es para que se ejecute solo una vez, ya que refreshToken es estable gracias a useCallback.
+  //
+  // set-state-in-effect es un falso positivo controlado: los setState de
+  // refreshToken ocurren SIEMPRE tras await fetch (continuación asíncrona),
+  // nunca de forma síncrona en el cuerpo del efecto — el patrón legítimo de
+  // "sincronizar con un sistema externo al montar" (https://react.dev/learn/you-might-not-need-an-effect).
+  // El linter no puede seguir la asincronía a través de la función extraída.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshToken();
   }, [refreshToken]);
 

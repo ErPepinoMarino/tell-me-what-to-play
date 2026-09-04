@@ -13,13 +13,16 @@ import type {
 } from "../../../src/matching/types.js";
 
 /*
- * Golden fixtures del matcher (contrato acordado):
- * - Fase 1: tiers, gates, razones y rangos de score (robustos a calibración).
- * - Fase 2: tras calibrar umbrales, snapshot exacto de scores.
+ * Golden fixtures del matcher (modelo de filtros duros):
+ * - Fase FILTRO: must (todas las señales no-semánticas pedidas deben estar;
+ *   UNKNOWN = no verificable = falla) y red flags (excluyen siempre).
+ * - Fase RANKING: solo semántica — media de acuerdo, contradicciones
+ *   amplificadas en negativo (peor que desconocido).
  */
 
 type Objective = NonNullable<GameSearchIntent["objective"]>;
 type Semantic = NonNullable<GameSearchIntent["semantic"]>;
+type Excluded = NonNullable<GameSearchIntent["excluded"]>;
 
 function nullSemantic(): Semantic {
   return Object.fromEntries(
@@ -33,6 +36,8 @@ export function makeGame(
 ): MatchableGame {
   return {
     sourceId: null,
+    title: `Game ${overrides.id}`,
+    releaseYear: 2020,
     genres: ["UNKNOWN"],
     platforms: ["UNKNOWN"],
     gameModes: ["UNKNOWN"],
@@ -43,13 +48,30 @@ export function makeGame(
   };
 }
 
-// Objetivo con todos los campos a null; los overrides añaden señal.
+// Objetivo con todos los campos a null; los overrides añaden requisito.
 export function makeObjective(overrides: Partial<Objective> = {}): Objective {
   return {
     genres: null,
     platforms: null,
     gameModes: null,
     perspectives: null,
+    ...overrides,
+  };
+}
+
+// Red flags todas a null; los overrides añaden exclusiones.
+export function makeExcluded(
+  overrides: Partial<Excluded> = {},
+): Excluded {
+  return {
+    keywords: null,
+    genres: null,
+    platforms: null,
+    gameModes: null,
+    perspectives: null,
+    releaseYear: null,
+    yearFrom: null,
+    yearTo: null,
     ...overrides,
   };
 }
@@ -69,6 +91,10 @@ export function makeIntent(
     gameReferenced: null,
     objective: null,
     keywords: null,
+    releaseYear: null,
+    yearFrom: null,
+    yearTo: null,
+    excluded: null,
     semantic: null,
     ...overrides,
   });
@@ -99,265 +125,319 @@ export interface MatchFixture {
 }
 
 export const FIXTURES: MatchFixture[] = [
-  // ---- Gates (inválido) ----
+  // ---- Must: keywords ----
   {
-    name: "G1 plataformas disjoint → gate",
-    intent: makeIntent({ objective: makeObjective({ platforms: ["SWITCH"] }) }),
-    game: makeGame({ id: 1, slug: "ps5-exclusive", platforms: ["PS5", "PC"] }),
+    name: "F1 keyword pedida ausente → invalid (must)",
+    intent: makeIntent({ keywords: ["cozy"] }),
+    game: makeGame({ id: 1, slug: "dark-elves", keywords: ["horror", "elves"] }),
     expect: {
       tier: "invalid",
-      gatesViolated: ["platforms-disjoint"],
+      gatesViolated: ["must-violated"],
       scoreRange: [0, 0],
-      coverage: { objectiveFields: 1 },
       mustHaveReasons: [
-        {
-          block: "objective",
-          field: "platforms",
-          kind: "gate",
-          note: "platforms-disjoint",
-        },
+        { block: "keywords", field: "kw.cozy", kind: "gate", note: "must-violated" },
       ],
     },
   },
   {
-    name: "G2 plataformas UNKNOWN → gate omitido",
-    intent: makeIntent({
-      objective: makeObjective({ platforms: ["PC"] }),
-      keywords: ["space"],
-    }),
-    game: makeGame({ id: 2, slug: "unknown-platform", keywords: ["space"] }),
+    name: "F2 keyword pedida presente → valid + razón informativa",
+    intent: makeIntent({ keywords: ["cozy"] }),
+    game: makeGame({ id: 2, slug: "farm-sim", keywords: ["cozy", "farming"] }),
     expect: {
       tier: "valid",
       gatesViolated: [],
-      scoreRange: [0.99, 1],
-      coverage: { hasKeywords: true, objectiveFields: 0 },
-      mustHaveReasons: [
-        { field: "kw.space", kind: "bonus", note: "keyword-match" },
-      ],
-      mustNotHaveReasons: [{ kind: "gate" }],
-    },
-  },
-  {
-    name: "G3 ausencia explícita violada → gate",
-    intent: makeIntent({ semantic: makeSemantic({ horror: 0 }) }),
-    game: makeGame({ id: 3, slug: "very-scary", horror: 0.9 }),
-    expect: {
-      tier: "invalid",
-      gatesViolated: ["absence-violated"],
-      scoreRange: [0, 0.05],
-      mustHaveReasons: [
-        {
-          block: "semantic",
-          field: "horror",
-          kind: "gate",
-          note: "absence-violated",
-        },
-        {
-          block: "semantic",
-          field: "horror",
-          kind: "penalty",
-          note: "amplified-contradiction",
-        },
-      ],
-    },
-  },
-  {
-    name: "G4 ausencia respetada → bonus",
-    intent: makeIntent({ semantic: makeSemantic({ horror: 0 }) }),
-    game: makeGame({ id: 4, slug: "not-scary", horror: 0.05 }),
-    expect: {
-      tier: "weak",
-      scoreRange: [0.94, 0.96],
-      mustHaveReasons: [
-        {
-          block: "semantic",
-          field: "horror",
-          kind: "bonus",
-          note: "semantic-agreement",
-        },
-      ],
-      mustNotHaveReasons: [{ kind: "gate" }],
-    },
-  },
-  {
-    name: "G5 intención vacía → inválido",
-    intent: makeIntent(),
-    game: makeGame({ id: 5, slug: "anything" }),
-    expect: {
-      tier: "invalid",
       scoreRange: [0, 0],
-      coverage: {
-        semanticDims: 0,
-        objectiveFields: 0,
-        hasKeywords: false,
-        hasAnchors: false,
-      },
-      mustHaveReasons: [{ kind: "skipped", note: "no-usable-signal" }],
+      coverage: { hasKeywords: true, semanticDims: 0 },
+      mustHaveReasons: [
+        { block: "keywords", field: "kw.cozy", kind: "bonus", note: "keyword-match" },
+      ],
+      mustNotHaveReasons: [{ kind: "gate" }],
     },
   },
-
-  // ---- Bloque objetivo ----
   {
-    name: "O1 objetivo pleno → válido (tope por cobertura)",
-    intent: makeIntent({
-      objective: makeObjective({
-        genres: ["RPG", "ACTION"],
-        gameModes: ["COOPERATIVE"],
-        perspectives: ["THIRD_PERSON"],
-      }),
-    }),
+    name: "F3 keyword pedida presente por título (palabra)",
+    intent: makeIntent({ keywords: ["batman"] }),
     game: makeGame({
-      id: 6,
-      slug: "objective-perfect",
-      genres: ["RPG", "ACTION"],
-      gameModes: ["COOPERATIVE"],
-      perspectives: ["THIRD_PERSON"],
-      platforms: ["PC"],
+      id: 3,
+      slug: "arkham",
+      title: "Batman: Arkham City",
+      keywords: ["action"],
     }),
     expect: {
       tier: "valid",
-      scoreRange: [0.99, 1],
-      coverage: { objectiveFields: 3, semanticDims: 0 },
+      gatesViolated: [],
       mustHaveReasons: [
-        { field: "genres.RPG", kind: "bonus", note: "genre-match" },
-        { field: "genres.ACTION", kind: "bonus", note: "genre-match" },
-        { field: "gameModes.COOPERATIVE", kind: "bonus", note: "mode-match" },
-        {
-          field: "perspectives.THIRD_PERSON",
-          kind: "bonus",
-          note: "perspective-match",
-        },
+        { block: "keywords", field: "kw.batman", kind: "bonus", note: "keyword-match" },
       ],
     },
   },
   {
-    name: "O2 géneros sin overlap → penalty, no gate",
+    name: "F4 talo de keyword: 'zombies' casa con 'zombie'",
+    intent: makeIntent({ keywords: ["zombies"] }),
+    game: makeGame({ id: 4, slug: "undead", keywords: ["zombie"] }),
+    expect: {
+      tier: "valid",
+      gatesViolated: [],
+    },
+  },
+
+  // ---- Must: enums (superset OK, UNKNOWN falla) ----
+  {
+    name: "F5 género pedido con juego UNKNOWN → invalid (no verificable)",
+    intent: makeIntent({ objective: makeObjective({ genres: ["RPG"] }) }),
+    game: makeGame({ id: 5, slug: "unknown-genre", genres: ["UNKNOWN"] }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["must-violated"],
+      mustHaveReasons: [
+        { block: "objective", field: "genres", kind: "gate", note: "must-violated" },
+      ],
+    },
+  },
+  {
+    name: "F6 género pedido presente con superset → valid",
+    intent: makeIntent({ objective: makeObjective({ genres: ["RPG"] }) }),
+    game: makeGame({ id: 6, slug: "rpg-action", genres: ["RPG", "ACTION"] }),
+    expect: {
+      tier: "valid",
+      gatesViolated: [],
+      mustNotHaveReasons: [{ kind: "gate" }],
+    },
+  },
+  {
+    name: "F7 género pedido ausente → invalid",
     intent: makeIntent({ objective: makeObjective({ genres: ["RPG"] }) }),
     game: makeGame({ id: 7, slug: "pure-puzzle", genres: ["PUZZLE"] }),
     expect: {
       tier: "invalid",
-      gatesViolated: [],
-      scoreRange: [0, 0],
+      gatesViolated: ["must-violated"],
       mustHaveReasons: [
-        {
-          block: "objective",
-          field: "genres",
-          kind: "penalty",
-          note: "no-overlap",
-        },
-      ],
-      mustNotHaveReasons: [{ kind: "gate" }],
-    },
-  },
-  {
-    name: "O3 overlap parcial → bonus proporcional",
-    intent: makeIntent({
-      objective: makeObjective({ genres: ["RPG", "ACTION"] }),
-    }),
-    game: makeGame({ id: 8, slug: "half-rpg", genres: ["RPG"] }),
-    expect: {
-      tier: "invalid",
-      scoreRange: [0.24, 0.26],
-      mustHaveReasons: [
-        { field: "genres.RPG", kind: "bonus", note: "genre-match" },
-      ],
-      mustNotHaveReasons: [{ note: "no-overlap" }],
-    },
-  },
-  {
-    name: "O4 modos contradictorios → penalty fuerte",
-    intent: makeIntent({
-      objective: makeObjective({ gameModes: ["COOPERATIVE"] }),
-    }),
-    game: makeGame({ id: 9, slug: "solo-game", gameModes: ["SINGLE_PLAYER"] }),
-    expect: {
-      tier: "invalid",
-      scoreRange: [0, 0],
-      mustHaveReasons: [
-        {
-          block: "objective",
-          field: "gameModes",
-          kind: "penalty",
-          note: "no-overlap",
-        },
+        { block: "objective", field: "genres", kind: "gate", note: "must-violated" },
       ],
     },
   },
   {
-    name: "O5 plataforma overlap → bonus fijo",
-    intent: makeIntent({
-      objective: makeObjective({ genres: ["RPG"], platforms: ["SWITCH"] }),
-    }),
-    game: makeGame({
-      id: 10,
-      slug: "switch-rpg",
-      genres: ["RPG"],
-      platforms: ["SWITCH", "PC"],
-    }),
+    name: "F8 plataforma pedida presente entre varias → valid (superset)",
+    intent: makeIntent({ objective: makeObjective({ platforms: ["PC"] }) }),
+    game: makeGame({ id: 8, slug: "multiplatform", platforms: ["PC", "PS5"] }),
     expect: {
       tier: "valid",
-      scoreRange: [0.59, 0.61],
+      gatesViolated: [],
+    },
+  },
+  {
+    name: "F9 plataforma pedida ausente → invalid",
+    intent: makeIntent({ objective: makeObjective({ platforms: ["PSP"] }) }),
+    game: makeGame({ id: 9, slug: "pc-only", platforms: ["PC"] }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["must-violated"],
+    },
+  },
+
+  // ---- Must: año exacto y rangos ----
+  {
+    name: "F10 año exacto distinto → invalid; juego sin año → invalid",
+    intent: makeIntent({ releaseYear: 2004 }),
+    game: makeGame({ id: 10, slug: "wrong-year", releaseYear: 2003 }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["must-violated"],
       mustHaveReasons: [
-        { field: "platforms", kind: "bonus", note: "platform-overlap" },
-        { field: "genres.RPG", kind: "bonus", note: "genre-match" },
+        { block: "objective", field: "releaseYear", kind: "gate", note: "must-violated" },
+      ],
+    },
+  },
+  {
+    name: "F11 año exacto coincidente → valid",
+    intent: makeIntent({ releaseYear: 2004 }),
+    game: makeGame({ id: 11, slug: "right-year", releaseYear: 2004 }),
+    expect: {
+      tier: "valid",
+      gatesViolated: [],
+    },
+  },
+  {
+    name: "F12 rango de años: dentro → valid, fuera → invalid",
+    intent: makeIntent({ yearFrom: 1990, yearTo: 1999 }),
+    game: makeGame({ id: 12, slug: "nineties", releaseYear: 1995 }),
+    expect: {
+      tier: "valid",
+      gatesViolated: [],
+    },
+  },
+  {
+    name: "F13 rango de años: fuera por arriba → invalid",
+    intent: makeIntent({ yearFrom: 1990, yearTo: 1999 }),
+    game: makeGame({ id: 13, slug: "two-thousands", releaseYear: 2005 }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["must-violated"],
+      mustHaveReasons: [
+        { block: "objective", field: "yearTo", kind: "gate", note: "must-violated" },
+      ],
+    },
+  },
+  {
+    name: "F14 rango de años: juego sin año → invalid (no verificable)",
+    intent: makeIntent({ yearFrom: 1990, yearTo: 1999 }),
+    game: makeGame({ id: 14, slug: "no-year", releaseYear: null }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["must-violated"],
+    },
+  },
+
+  // ---- Red flags ----
+  {
+    name: "R1 keyword excluida presente → invalid (red flag)",
+    intent: makeIntent({
+      keywords: ["crime"],
+      excluded: makeExcluded({ keywords: ["gta"] }),
+    }),
+    game: makeGame({ id: 20, slug: "gta-like", keywords: ["gta", "crime"] }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["red-flag-violated"],
+      scoreRange: [0, 0],
+      mustHaveReasons: [
+        { block: "keywords", field: "xkw.gta", kind: "gate", note: "red-flag-violated" },
+      ],
+    },
+  },
+  {
+    name: "R2 término excluido multi-palabra por título (Grand Theft Auto)",
+    intent: makeIntent({
+      keywords: ["car stealing"],
+      excluded: makeExcluded({ keywords: ["grand theft auto"] }),
+    }),
+    game: makeGame({
+      id: 21,
+      slug: "gta-san-andreas",
+      title: "Grand Theft Auto: San Andreas",
+      keywords: ["car stealing", "open world"],
+    }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["red-flag-violated"],
+      mustHaveReasons: [
+        {
+          block: "keywords",
+          field: "xkw.grand theft auto",
+          kind: "gate",
+          note: "red-flag-violated",
+        },
+      ],
+    },
+  },
+  {
+    name: "R3 plataforma excluida presente → invalid",
+    intent: makeIntent({
+      excluded: makeExcluded({ platforms: ["SWITCH"] }),
+    }),
+    game: makeGame({ id: 22, slug: "switch-exclusive", platforms: ["SWITCH"] }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["red-flag-violated"],
+    },
+  },
+  {
+    name: "R4 año excluido → invalid",
+    intent: makeIntent({
+      excluded: makeExcluded({ releaseYear: 2004 }),
+    }),
+    game: makeGame({ id: 23, slug: "year-2004", releaseYear: 2004 }),
+    expect: {
+      tier: "invalid",
+      gatesViolated: ["red-flag-violated"],
+    },
+  },
+  {
+    name: "R5 red flag que NO está presente → valid (solo filtra lo excluido)",
+    intent: makeIntent({
+      keywords: ["crime"],
+      excluded: makeExcluded({ keywords: ["gta", "grand theft auto"] }),
+    }),
+    game: makeGame({ id: 24, slug: "heist-sim", keywords: ["crime", "heist"] }),
+    expect: {
+      tier: "valid",
+      gatesViolated: [],
+      mustHaveReasons: [
+        { block: "keywords", field: "kw.crime", kind: "bonus", note: "keyword-match" },
       ],
     },
   },
 
-  // ---- Bloque semántico ----
+  // ---- Ranking semántico ----
   {
-    name: "S1 acuerdo alto",
+    name: "S1 media de acuerdo → score 0.95",
     intent: makeIntent({ semantic: makeSemantic({ narrative: 0.9 }) }),
-    game: makeGame({ id: 11, slug: "narrative-heavy", narrative: 0.85 }),
-    expect: {
-      tier: "weak",
-      scoreRange: [0.94, 0.96],
-      mustHaveReasons: [
-        {
-          block: "semantic",
-          field: "narrative",
-          kind: "bonus",
-          note: "semantic-agreement",
-        },
-      ],
-    },
-  },
-  {
-    name: "S2 contradicción amplificada",
-    intent: makeIntent({ semantic: makeSemantic({ horror: 0.9 }) }),
-    game: makeGame({ id: 12, slug: "not-horror", horror: 0.1 }),
-    expect: {
-      tier: "invalid",
-      scoreRange: [0.03, 0.05],
-      mustHaveReasons: [
-        {
-          block: "semantic",
-          field: "horror",
-          kind: "penalty",
-          note: "amplified-contradiction",
-        },
-      ],
-    },
-  },
-  {
-    name: "S3 semántico null → bloque renormalizado",
-    intent: makeIntent({ keywords: ["cozy"] }),
-    game: makeGame({
-      id: 13,
-      slug: "cozy-game",
-      keywords: ["cozy", "farming"],
-    }),
+    game: makeGame({ id: 30, slug: "narrative-heavy", narrative: 0.85 }),
     expect: {
       tier: "valid",
-      scoreRange: [0.99, 1],
+      scoreRange: [0.94, 0.96],
+      coverage: { semanticDims: 1 },
       mustHaveReasons: [
-        { block: "semantic", kind: "skipped", note: "weight-renormalized" },
-        { field: "kw.cozy", kind: "bonus", note: "keyword-match" },
+        { block: "semantic", field: "narrative", kind: "bonus", note: "semantic-agreement" },
       ],
     },
   },
   {
-    name: "S4 cobertura parcial → válido, no excelente",
+    name: "S2 contradicción amplificada → score negativo (peor que desconocido)",
+    intent: makeIntent({ semantic: makeSemantic({ horror: 0.9 }) }),
+    game: makeGame({ id: 31, slug: "not-horror", horror: 0.1 }),
+    expect: {
+      tier: "valid",
+      scoreRange: [-0.05, -0.03],
+      mustHaveReasons: [
+        { block: "semantic", field: "horror", kind: "penalty", note: "amplified-contradiction" },
+      ],
+    },
+  },
+  {
+    name: "S3 sin semánticas comparables → valid con score 0",
+    intent: makeIntent({ keywords: ["cozy"] }),
+    game: makeGame({ id: 32, slug: "cozy-game", keywords: ["cozy"] }),
+    expect: {
+      tier: "valid",
+      scoreRange: [0, 0],
+      mustHaveReasons: [
+        { block: "semantic", kind: "skipped", note: "no-semantic-signal" },
+      ],
+    },
+  },
+  {
+    name: "S4 excelente: acuerdo pleno en 7 dims (cobertura ≥ 0.5)",
+    intent: makeIntent({
+      semantic: makeSemantic({
+        difficulty: 0.8,
+        pace: 0.2,
+        narrative: 0.7,
+        complexity: 0.6,
+        darkness: 0.9,
+        tension: 0.7,
+        exploration: 0.8,
+      }),
+    }),
+    game: makeGame({
+      id: 33,
+      slug: "seven-dims",
+      difficulty: 0.8,
+      pace: 0.2,
+      narrative: 0.7,
+      complexity: 0.6,
+      darkness: 0.9,
+      tension: 0.7,
+      exploration: 0.8,
+    }),
+    expect: {
+      tier: "excellent",
+      scoreRange: [0.99, 1],
+      coverage: { semanticDims: 7 },
+    },
+  },
+  {
+    name: "S5 acuerdo pleno en 4 dims: score 1 pero cobertura < 0.5 → no excellent",
     intent: makeIntent({
       semantic: makeSemantic({
         difficulty: 0.8,
@@ -367,7 +447,7 @@ export const FIXTURES: MatchFixture[] = [
       }),
     }),
     game: makeGame({
-      id: 14,
+      id: 34,
       slug: "four-dims",
       difficulty: 0.8,
       horror: 0.2,
@@ -381,161 +461,39 @@ export const FIXTURES: MatchFixture[] = [
     },
   },
   {
-    name: "S5 neutral 0.5 vs 0.5 → acuerdo pleno",
-    intent: makeIntent({ semantic: makeSemantic({ difficulty: 0.5 }) }),
-    game: makeGame({ id: 15, slug: "mid-game", difficulty: 0.5 }),
+    name: "S6 intención vacía pasa filtros → valid (el orquestador la captura antes)",
+    intent: makeIntent(),
+    game: makeGame({ id: 35, slug: "anything" }),
     expect: {
-      tier: "weak",
-      scoreRange: [0.99, 1],
-      mustHaveReasons: [
-        { field: "difficulty", kind: "bonus", note: "semantic-agreement" },
-      ],
+      tier: "valid",
+      scoreRange: [0, 0],
+      mustHaveReasons: [{ kind: "skipped", note: "no-semantic-signal" }],
     },
   },
 
-  // ---- Bloque keywords ----
+  // ---- Ausencia explícita (gate semántico) ----
   {
-    name: "K1 keywords todas → bonus por cada una",
-    intent: makeIntent({ keywords: ["cozy", "farming", "pixel"] }),
-    game: makeGame({
-      id: 16,
-      slug: "farm-sim",
-      keywords: ["cozy", "farming", "pixel", "retro"],
-    }),
-    expect: {
-      tier: "valid",
-      scoreRange: [0.99, 1],
-      mustHaveReasons: [
-        { field: "kw.cozy", kind: "bonus", note: "keyword-match" },
-        { field: "kw.farming", kind: "bonus", note: "keyword-match" },
-        { field: "kw.pixel", kind: "bonus", note: "keyword-match" },
-      ],
-    },
-  },
-  {
-    name: "K2 keywords sin overlap → skipped, sin penalty",
-    intent: makeIntent({ keywords: ["cozy"] }),
-    game: makeGame({
-      id: 17,
-      slug: "dark-elves",
-      keywords: ["horror", "elves"],
-    }),
+    name: "A1 ausencia explícita violada → invalid (gate)",
+    intent: makeIntent({ semantic: makeSemantic({ horror: 0 }) }),
+    game: makeGame({ id: 40, slug: "very-scary", horror: 0.9 }),
     expect: {
       tier: "invalid",
-      scoreRange: [0, 0],
+      gatesViolated: ["absence-violated"],
+      scoreRange: [-0.02, 0],
       mustHaveReasons: [
-        { block: "keywords", kind: "skipped", note: "no-keyword-overlap" },
+        { block: "semantic", field: "horror", kind: "gate", note: "absence-violated" },
+        { block: "semantic", field: "horror", kind: "penalty", note: "amplified-contradiction" },
       ],
     },
   },
   {
-    name: "K3 case-insensitive",
-    intent: makeIntent({ keywords: ["Cozy"] }),
-    game: makeGame({ id: 18, slug: "COZY", keywords: ["COZY"] }),
+    name: "A2 ausencia respetada → bonus",
+    intent: makeIntent({ semantic: makeSemantic({ horror: 0 }) }),
+    game: makeGame({ id: 41, slug: "not-scary", horror: 0.05 }),
     expect: {
       tier: "valid",
-      scoreRange: [0.99, 1],
-      mustHaveReasons: [
-        { field: "kw.cozy", kind: "bonus", note: "keyword-match" },
-      ],
-    },
-  },
-  {
-    name: "K4 juego sin keywords → renormalización a objetivo",
-    intent: makeIntent({
-      objective: makeObjective({ genres: ["PUZZLE"] }),
-      keywords: ["cozy"],
-    }),
-    game: makeGame({ id: 19, slug: "puzzle-no-kw", genres: ["PUZZLE"] }),
-    expect: {
-      tier: "valid",
-      scoreRange: [0.49, 0.51],
-      mustHaveReasons: [
-        { block: "keywords", kind: "skipped", note: "weight-renormalized" },
-        { field: "genres.PUZZLE", kind: "bonus", note: "genre-match" },
-      ],
-    },
-  },
-
-  // ---- Bloque reference (anclas) ----
-  {
-    name: "R1 ancla con keyword compartida",
-    intent: makeIntent({ gameReferenced: ["GTA V"] }),
-    anchors: [
-      makeGame({ id: 100, slug: "gta-v", keywords: ["crime", "open-world"] }),
-    ],
-    game: makeGame({
-      id: 101,
-      slug: "heist-sim",
-      keywords: ["crime", "driving"],
-    }),
-    expect: {
-      tier: "weak",
-      scoreRange: [0.49, 0.51],
-      coverage: { hasAnchors: true },
-      mustHaveReasons: [
-        {
-          block: "reference",
-          field: "ref.crime",
-          kind: "bonus",
-          note: "reference-keyword",
-        },
-      ],
-    },
-  },
-  {
-    name: "R2 candidato ES el ancla → is-anchor",
-    intent: makeIntent({ gameReferenced: ["GTA V"] }),
-    anchors: [
-      makeGame({ id: 100, slug: "gta-v", keywords: ["crime", "open-world"] }),
-    ],
-    game: makeGame({
-      id: 100,
-      slug: "gta-v",
-      keywords: ["crime", "open-world"],
-    }),
-    expect: {
-      tier: "weak",
-      scoreRange: [0.99, 1],
-      mustHaveReasons: [
-        { block: "reference", kind: "bonus", note: "is-anchor" },
-      ],
-    },
-  },
-  {
-    name: "R3 gameReferenced sin anclas → sin señal utilizable",
-    intent: makeIntent({ gameReferenced: ["GTA V"] }),
-    game: makeGame({ id: 102, slug: "anything" }),
-    expect: {
-      tier: "invalid",
-      scoreRange: [0, 0],
-      coverage: { hasAnchors: false },
-      mustHaveReasons: [{ kind: "skipped", note: "no-usable-signal" }],
-    },
-  },
-
-  // ---- Renormalización ----
-  {
-    name: "N1 solo objetivo+keywords → válido, tope por cobertura",
-    intent: makeIntent({
-      objective: makeObjective({ genres: ["RPG"] }),
-      keywords: ["soulslike"],
-    }),
-    game: makeGame({
-      id: 20,
-      slug: "souls-rpg",
-      genres: ["RPG"],
-      keywords: ["soulslike"],
-    }),
-    expect: {
-      tier: "valid",
-      scoreRange: [0.83, 0.85],
-      mustHaveReasons: [
-        { block: "semantic", note: "weight-renormalized" },
-        { block: "reference", note: "weight-renormalized" },
-        { field: "genres.RPG", kind: "bonus", note: "genre-match" },
-        { field: "kw.soulslike", kind: "bonus", note: "keyword-match" },
-      ],
+      scoreRange: [0.94, 0.96],
+      mustNotHaveReasons: [{ kind: "gate" }],
     },
   },
 ];

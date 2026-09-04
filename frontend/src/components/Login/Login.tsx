@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 
 /*
  * Estado de sesión + CTA. Anónimo se le recuerda qué gana al iniciar
- * sesión (refine/more/pivot, historial de sesión); autenticado puede cerrar.
+ * sesión (más resultados, historial de sesión); autenticado puede cerrar.
  */
 export default function Login() {
   const { status, login, logout } = useAuth();

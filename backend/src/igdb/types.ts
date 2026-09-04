@@ -17,6 +17,7 @@ export interface IgdbGameRaw {
   summary?: string;
   first_release_date?: number; // epoch seconds
   game_type?: number; // id de game_types (0 Main Game ... 14 Update)
+  total_rating_count?: number; // nº de valoraciones de usuarios (señal de calidad)
   cover?: { image_id: string };
   genres?: { id: number; name: string }[];
   platforms?: { id: number; name: string }[];

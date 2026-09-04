@@ -3,17 +3,21 @@
  * (backend/src/types/Recommendation.ts). Mantener sincronizados a mano:
  * el frontend NO comparte código con el backend a propósito (clientes
  * independientes de la API pública).
+ *
+ * "search" es cualquier mensaje nuevo: el backend (LLM) decide con el
+ * contexto de sesión si el mensaje extiende la búsqueda anterior o empieza
+ * otra. Afinar o cambiar de tema NO es decisión del cliente.
  */
 
-export type RecommendationAction = "search" | "more" | "refine" | "pivot";
+export type RecommendationAction = "search" | "more";
 
 export type NoticeCode =
   | "EXPLICIT_GAME_REQUESTED"
   | "ANCHOR_NOT_FOUND"
   | "EMPTY_INTENT"
+  | "INTENT_UNCHANGED"
   | "PARTIAL_RESULTS"
   | "SEARCH_EXHAUSTED"
-  | "REFINE_WITHOUT_CONTEXT"
   | "DISCOVERY_BUDGET_EXHAUSTED"
   | "DISCOVERY_UNAVAILABLE"
   | "CATALOG_FULL"
@@ -143,6 +147,21 @@ export interface GameSearchIntent {
     perspectives: Perspective[] | null;
   } | null;
   keywords: string[] | null;
+  // Año exacto pedido ("del 2004"); rangos ("de los 90")
+  releaseYear: number | null;
+  yearFrom: number | null;
+  yearTo: number | null;
+  // Red flags: elementos excluidos explícitamente ("que no sea X")
+  excluded: {
+    keywords: string[] | null;
+    genres: Genre[] | null;
+    platforms: Platform[] | null;
+    gameModes: GameMode[] | null;
+    perspectives: Perspective[] | null;
+    releaseYear: number | null;
+    yearFrom: number | null;
+    yearTo: number | null;
+  } | null;
   semantic: Partial<Record<string, number | null>> | null;
 }
 
