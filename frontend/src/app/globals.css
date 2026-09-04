@@ -52,3 +52,302 @@ main {
   margin: 0 auto;
   padding: 2rem;
 }
+
+/* ---- Layout general ---- */
+main > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+section {
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.muted {
+  color: #9ca3af;
+}
+
+/* ---- Botones ---- */
+button {
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: transparent;
+  color: inherit;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.button-primary {
+  background: #e11d48;
+  border-color: #e11d48;
+  color: #fff;
+}
+
+.button-secondary {
+  border-color: #666;
+}
+
+/* ---- AI Chat ---- */
+.chat {
+  min-height: 8rem;
+}
+
+.chat-empty {
+  color: #9ca3af;
+}
+
+.bubble-user,
+.bubble-assistant {
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  max-width: 85%;
+  line-height: 1.45;
+}
+
+.bubble-user {
+  margin-left: auto;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.bubble-assistant {
+  background: #262626;
+}
+
+.bubble-searching {
+  color: #9ca3af;
+  font-style: italic;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.intent-summary {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #a5b4fc;
+}
+
+.notice {
+  font-size: 0.9rem;
+  color: #fbbf24;
+  padding: 0.25rem 0;
+}
+
+.notice-error {
+  color: #f87171;
+}
+
+/* ---- Search bar ---- */
+.action-chips {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.action-chip.active {
+  border-color: #e11d48;
+  color: #e11d48;
+}
+
+.search-bar form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-bar input {
+  flex: 1;
+  font: inherit;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: transparent;
+  color: inherit;
+}
+
+/* ---- Resultados ---- */
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.game-card {
+  border: 1px solid #333;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1a1a1a;
+}
+
+.tier-excellent {
+  border-color: #16a34a;
+}
+
+.game-card-link {
+  display: flex;
+  gap: 0.9rem;
+  padding: 0.9rem;
+}
+
+.game-card-media img {
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.game-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.game-card-body h3 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.description {
+  font-size: 0.85rem;
+  color: #d1d5db;
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #555;
+  color: #d1d5db;
+}
+
+.badge-excellent {
+  border-color: #16a34a;
+  color: #4ade80;
+}
+
+.badge-valid {
+  border-color: #2563eb;
+  color: #93c5fd;
+}
+
+.reason-chips {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.reason-chip {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #3f3f46;
+}
+
+.chip-check {
+  color: #4ade80;
+  border-color: #166534;
+}
+
+.chip-partial {
+  color: #fbbf24;
+  border-color: #92400e;
+}
+
+.chip-cross {
+  color: #f87171;
+  border-color: #7f1d1d;
+}
+
+.chip-icon {
+  margin-right: 0.3rem;
+  font-weight: 700;
+}
+
+/* ---- Anclas / requested games ---- */
+.requested-cards {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.requested-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: #d1d5db;
+  padding: 0.5rem;
+  border: 1px dashed #555;
+  border-radius: 8px;
+}
+
+/* ---- Modo demo ---- */
+.demo-panel {
+  border-top: 1px dashed #444;
+  margin: 0 0.9rem 0.9rem;
+  padding-top: 0.6rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: #a1a1aa;
+}
+
+.demo-panel ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+}
+
+.demo-meta {
+  border: 1px dashed #444;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin: 0;
+}
+
+.demo-toggle {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- Login ---- */
+.login {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.login p {
+  color: #9ca3af;
+  font-size: 0.9rem;
+}

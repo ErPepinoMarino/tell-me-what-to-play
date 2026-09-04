@@ -12,15 +12,26 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   fastify.post("/api/auth/refresh", async (request, reply) => {
-    const refreshToken = request.cookies.refresh_token;
+    /*
+     * Transporte dual (API pública multiplataforma):
+     * - Web: cookie httpOnly (path /api/auth) → el refresh token NUNCA va
+     *   en el body para no exponerlo a JS.
+     * - Nativo (Android/iOS): body { refreshToken } → tokens en JSON para
+     *   guardarlos en Keystore/Keychain. Sin cookie, sin CORS.
+     * Si llegan ambos, la cookie tiene prioridad (cliente navegador).
+     */
+    const cookieToken = request.cookies.refresh_token;
+    const bodyToken = (request.body as { refreshToken?: string } | undefined)
+      ?.refreshToken;
+    const token = cookieToken ?? bodyToken;
 
-    if (!refreshToken) {
+    if (!token) {
       return reply.code(401).send({
         message: "No hay refresh token",
       });
     }
 
-    const result = await authService.refreshSession(refreshToken);
+    const result = await authService.refreshSession(token);
 
     if (!result) {
       return reply.code(401).send({
@@ -28,16 +39,23 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       });
     }
 
-    reply.setCookie("refresh_token", result.refreshToken, {
-      httpOnly: true,
-      secure: false, // true cuando usemos HTTPS
-      sameSite: "lax",
-      path: "/api/auth",
-      maxAge: 60 * 60,
-    });
+    if (cookieToken !== undefined) {
+      reply.setCookie("refresh_token", result.refreshToken, {
+        httpOnly: true,
+        secure: false, // true cuando usemos HTTPS
+        sameSite: "lax",
+        path: "/api/auth",
+        maxAge: 60 * 60,
+      });
+
+      return {
+        accessToken: result.accessToken,
+      };
+    }
 
     return {
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
     };
   });
 
@@ -129,9 +147,13 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           maxAge: 60 * 60,
         });
 
-        return {
-          accessToken: result.accessToken,
-        };
+        /*
+         * El navegador ya tiene la cookie httpOnly: redirigimos al frontend,
+         * que obtiene su access token con POST /api/auth/refresh al montar.
+         * (Cliente nativo usará su propio redirect/token-exchange: la API
+         * no asume que todos los clientes pasen por Next.js.)
+         */
+        return reply.redirect(process.env.FRONTEND_URL ?? "/");
       } catch (error) {
         console.error("GOOGLE AUTH ERROR:", error);
 

@@ -4,8 +4,12 @@
 // el reference es un apaño para que TypeScript reconozca los tipos de Node.js y evitar errores de compilación relacionados con el entorno de ejecución.
 //de no ponerlo da un error en process.env["DATABASE_URL"] porque TypeScript no reconoce process.env como un objeto válido sin los tipos de Node.js.
 /// <reference types="node" />
-import "dotenv/config";
+
+import dotenv from "dotenv";
+import path from "node:path";
 import { defineConfig } from "prisma/config";
+
+dotenv.config({ path: path.resolve(process.cwd(), "../.env") });
 
 export default defineConfig({
   schema: "prisma/schema.prisma",

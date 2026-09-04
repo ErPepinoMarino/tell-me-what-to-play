@@ -2,27 +2,40 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prismaGameRepository } from "../../src/repositories/prismaGameRepository.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { resetTestDatabase } from "../helpers/resetTestDatabase.js";
-import type { Game } from "../../src/types/Game.js";
+import type { Game, GameToPersist } from "../../src/types/Game.js";
+import type {
+  GameMode,
+  Perspective,
+} from "../../src/generated/prisma/enums.js";
 
-describe("prismaGameRepository.getBySlug integration", () => {
+const defaults = {
+  game_modes: ["UNKNOWN"] as GameMode[],
+  perspectives: ["UNKNOWN"] as Perspective[],
+  developers: [] as string[],
+  publishers: [] as string[],
+  search_count: 0,
+};
+
+describe("prismaGameRepository", () => {
   beforeEach(async () => {
     await resetTestDatabase();
   });
 
-  it("returns a game when the slug exists", async () => {
+  it("returns a game by slug", async () => {
     await prisma.games.create({
       data: {
-        slug: "elden-ring",
+        ...defaults,
+        slug: "elden-ring-2022",
         title: "Elden Ring",
-        genres: ["Action RPG"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
 
-    const result = await prismaGameRepository.getBySlug("elden-ring");
+    const result = await prismaGameRepository.getBySlug("elden-ring-2022");
 
     expect(result).toMatchObject({
-      slug: "elden-ring",
+      slug: "elden-ring-2022",
       title: "Elden Ring",
     });
   });
@@ -31,15 +44,17 @@ describe("prismaGameRepository.getBySlug integration", () => {
     await prisma.games.createMany({
       data: [
         {
-          slug: "elden-ring",
+          ...defaults,
+          slug: "elden-ring-2022",
           title: "Elden Ring",
-          genres: ["Action RPG"],
+          genres: ["ACTION"],
           platforms: ["PC"],
         },
         {
-          slug: "hades",
+          ...defaults,
+          slug: "hades-2020",
           title: "Hades",
-          genres: ["Action"],
+          genres: ["ACTION"],
           platforms: ["PC"],
         },
       ],
@@ -49,22 +64,23 @@ describe("prismaGameRepository.getBySlug integration", () => {
 
     expect(result).toHaveLength(2);
     expect(result.map((game) => game.slug)).toEqual(
-      expect.arrayContaining(["elden-ring", "hades"]),
+      expect.arrayContaining(["elden-ring-2022", "hades-2020"]),
     );
   });
 
-  it("returns the expected empty value when the slug does not exist", async () => {
-    const result = await prismaGameRepository.getBySlug("does-not-exist");
-
-    expect(result).toBeUndefined();
+  it("returns undefined for an unknown slug", async () => {
+    await expect(
+      prismaGameRepository.getBySlug("does-not-exist"),
+    ).resolves.toBeUndefined();
   });
 
-  it("finds a game by partial title match", async () => {
+  it("searches by partial title", async () => {
     await prisma.games.create({
       data: {
-        slug: "elden-ring",
+        ...defaults,
+        slug: "elden-ring-2022",
         title: "Elden Ring",
-        genres: ["Action RPG"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -75,17 +91,38 @@ describe("prismaGameRepository.getBySlug integration", () => {
     expect(result[0]?.title).toBe("Elden Ring");
   });
 
-  it("creates and returns a game", async () => {
+  it("creates and returns an objective game", async () => {
     const game: Game = {
       id: 0,
-      slug: "hades",
+      sourceId: null,
+      slug: "hades-2020",
       title: "Hades",
-      description: "A rogue-like dungeon crawler.",
+      description_es: "A rogue-like dungeon crawler.",
+      description_en: "A rogue-like dungeon crawler.",
       coverUrl: "https://example.com/hades.jpg",
       releaseYear: 2020,
-      genres: ["Action", "Roguelike"],
+      genres: ["ACTION"],
+
       platforms: ["PC"],
-      rating: 9.0,
+      gameModes: ["UNKNOWN"],
+      perspectives: ["UNKNOWN"],
+      developers: [],
+      publishers: [],
+      keywords: [],
+      searchCount: 0,
+      difficulty: null,
+      pace: null,
+      narrative: null,
+      complexity: null,
+      strategy: null,
+      exploration: null,
+      violence: null,
+      horror: null,
+      darkness: null,
+      tension: null,
+      humor: null,
+      isolation: null,
+      coziness: null,
     };
 
     const result = await prismaGameRepository.create(game);
@@ -93,77 +130,159 @@ describe("prismaGameRepository.getBySlug integration", () => {
       where: { slug: game.slug },
     });
 
+    expect(result).toEqual({ ...game, id: expect.any(Number) });
+    expect(persistedGame).toMatchObject({
+      slug: game.slug,
+      genres: ["ACTION"],
+      platforms: ["PC"],
+      game_modes: ["UNKNOWN"],
+      perspectives: ["UNKNOWN"],
+      developers: [],
+      publishers: [],
+      keywords: [],
+      search_count: 0,
+    });
+  });
+
+  it("creates a game from GameToPersist (importer path): BDD assigns id and search_count", async () => {
+    const game: GameToPersist = {
+      sourceId: "53354",
+      slug: "elden-ring-2022",
+      title: "Elden Ring",
+      description_es: null,
+      description_en: null,
+      coverUrl:
+        "https://images.igdb.com/igdb/image/upload/t_cover_big/coXXYY.jpg",
+      releaseYear: 2022,
+      genres: ["ACTION", "RPG"],
+      platforms: ["PC", "PS5"],
+      gameModes: ["SINGLE_PLAYER"],
+      perspectives: ["THIRD_PERSON"],
+      keywords: ["open world", "souls-like"],
+      developers: ["FromSoftware"],
+      publishers: ["Bandai Namco"],
+      difficulty: null,
+      pace: null,
+      narrative: null,
+      complexity: null,
+      coziness: null,
+      strategy: null,
+      exploration: null,
+      violence: null,
+      horror: null,
+      darkness: null,
+      tension: null,
+      humor: null,
+      isolation: null,
+    };
+
+    const result = await prismaGameRepository.create(game);
+
+    // id y search_count los genera PostgreSQL
+    expect(result.id).toEqual(expect.any(Number));
+    expect(result.searchCount).toBe(0);
     expect(result).toMatchObject({
       slug: game.slug,
       title: game.title,
-      description: game.description,
-      coverUrl: game.coverUrl,
-      releaseYear: game.releaseYear,
-      genres: game.genres,
-      platforms: game.platforms,
-      rating: game.rating,
+      releaseYear: 2022,
+      genres: ["ACTION", "RPG"],
+      keywords: ["open world", "souls-like"],
     });
-    expect(result.id).toBeGreaterThan(0);
 
-    expect(persistedGame).toMatchObject({
-      slug: game.slug,
-      title: game.title,
-      description: game.description,
-      cover_url: game.coverUrl,
-      release_year: game.releaseYear,
-      genres: game.genres,
-      platforms: game.platforms,
+    // description_es/description_en se persisten como null (toGame las expone como string vacio)
+    const persisted = await prisma.games.findUnique({
+      where: { slug: game.slug },
     });
-    expect(Number(persistedGame?.rating)).toBe(game.rating);
+    expect(persisted?.description_es).toBeNull();
+    expect(persisted?.description_en).toBeNull();
+
+    // getBySlug permite al ImportService detectar colisiones de slug
+    const found = await prismaGameRepository.getBySlug("elden-ring-2022");
+    expect(found?.id).toBe(result.id);
   });
-
   it("updates and persists a game", async () => {
     const createdGame = await prisma.games.create({
       data: {
-        slug: "hades",
+        ...defaults,
+        slug: "hades-2020",
         title: "Hades",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
-
     const updatedGame: Game = {
       id: createdGame.id,
-      slug: "hades-ii",
+      sourceId: null,
+      slug: "hades-ii-2024",
       title: "Hades II",
-      description: "A sequel.",
+      description_es: "A sequel.",
+      description_en: "A sequel.",
       coverUrl: "https://example.com/hades-ii.jpg",
       releaseYear: 2024,
-      genres: ["Action", "Roguelike"],
-      platforms: ["PC", "Nintendo Switch"],
-      rating: 9.2,
+      genres: ["ACTION"],
+
+      platforms: ["PC", "SWITCH"],
+      gameModes: ["UNKNOWN"],
+      perspectives: ["UNKNOWN"],
+      developers: [],
+      publishers: [],
+      keywords: [],
+      searchCount: 0,
+      difficulty: null,
+      pace: null,
+      narrative: null,
+      complexity: null,
+      strategy: null,
+      exploration: null,
+      violence: null,
+      horror: null,
+      darkness: null,
+      tension: null,
+      humor: null,
+      isolation: null,
+      coziness: null,
     };
 
     const result = await prismaGameRepository.update(updatedGame);
-    const persistedGame = await prisma.games.findUnique({
-      where: { id: createdGame.id },
-    });
 
-    expect(result).toMatchObject(updatedGame);
-    expect(persistedGame).toMatchObject({
-      id: createdGame.id,
-      slug: updatedGame.slug,
-      title: updatedGame.title,
-      description: updatedGame.description,
-      cover_url: updatedGame.coverUrl,
-      release_year: updatedGame.releaseYear,
-      genres: updatedGame.genres,
-      platforms: updatedGame.platforms,
-    });
-    expect(Number(persistedGame?.rating)).toBe(updatedGame.rating);
+    expect(result).toEqual(updatedGame);
   });
 
-  it("deletes a game and removes it from the database", async () => {
+  it("allows the same title in different years", async () => {
+    const first = await prisma.games.create({
+      data: {
+        ...defaults,
+        slug: "example-1998",
+        title: "Example",
+        release_year: 1998,
+        genres: ["UNKNOWN"],
+        platforms: ["UNKNOWN"],
+      },
+    });
+    const second = await prisma.games.create({
+      data: {
+        ...defaults,
+        slug: "example-2024",
+        title: "Example",
+        release_year: 2024,
+        genres: ["UNKNOWN"],
+        platforms: ["UNKNOWN"],
+      },
+    });
+
+    expect(first.slug).not.toBe(second.slug);
+    await expect(
+      prisma.games.findMany({ where: { title: "Example" } }),
+    ).resolves.toHaveLength(2);
+  });
+
+  it("deletes a game", async () => {
     const createdGame = await prisma.games.create({
       data: {
-        slug: "hades",
+        ...defaults,
+        slug: "hades-2020",
         title: "Hades",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -171,38 +290,232 @@ describe("prismaGameRepository.getBySlug integration", () => {
     await expect(
       prismaGameRepository.delete(createdGame.id),
     ).resolves.toBeUndefined();
-
-    const persistedGame = await prisma.games.findUnique({
-      where: { id: createdGame.id },
-    });
-
-    expect(persistedGame).toBeNull();
+    await expect(
+      prisma.games.findUnique({ where: { id: createdGame.id } }),
+    ).resolves.toBeNull();
   });
 
-  it("propagates the unique slug constraint error", async () => {
+  it("propagates duplicate slug errors", async () => {
     await prisma.games.create({
       data: {
-        slug: "hades",
+        ...defaults,
+        slug: "hades-2020",
         title: "Hades",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
-
     const duplicateGame: Game = {
       id: 0,
-      slug: "hades",
+      sourceId: null,
+      slug: "hades-2020",
       title: "Another Hades",
-      description: "A duplicate slug.",
+      description_es: "A duplicate slug.",
+      description_en: "A duplicate slug.",
       coverUrl: "https://example.com/another-hades.jpg",
       releaseYear: 2020,
-      genres: ["Action"],
+      genres: ["ACTION"],
+
       platforms: ["PC"],
-      rating: 8.0,
+      gameModes: ["UNKNOWN"],
+      perspectives: ["UNKNOWN"],
+      developers: [],
+      publishers: [],
+      keywords: [],
+      searchCount: 0,
+      difficulty: null,
+      pace: null,
+      narrative: null,
+      complexity: null,
+      strategy: null,
+      exploration: null,
+      violence: null,
+      horror: null,
+      darkness: null,
+      tension: null,
+      humor: null,
+      isolation: null,
+      coziness: null,
     };
 
     await expect(
       prismaGameRepository.create(duplicateGame),
     ).rejects.toMatchObject({ code: "P2002" });
+  });
+
+  describe("semantic attributes", () => {
+    beforeEach(async () => {
+      await resetTestDatabase();
+    });
+
+    it("returns null for all semantic attributes when none are set", async () => {
+      await prisma.games.create({
+        data: {
+          ...defaults,
+          slug: "elden-ring-2022",
+          title: "Elden Ring",
+          genres: ["ACTION"],
+          platforms: ["PC"],
+        },
+      });
+
+      const result = await prismaGameRepository.getBySlug("elden-ring-2022");
+
+      expect(result?.difficulty).toBeNull();
+      expect(result?.pace).toBeNull();
+      expect(result?.narrative).toBeNull();
+      expect(result?.complexity).toBeNull();
+      expect(result?.strategy).toBeNull();
+      expect(result?.exploration).toBeNull();
+      expect(result?.violence).toBeNull();
+      expect(result?.horror).toBeNull();
+      expect(result?.darkness).toBeNull();
+      expect(result?.tension).toBeNull();
+      expect(result?.humor).toBeNull();
+      expect(result?.isolation).toBeNull();
+    });
+
+    it("persists and reads all twelve semantic attribute values", async () => {
+      const game: Game = {
+        id: 0,
+        sourceId: null,
+        slug: "hades-2020",
+        title: "Hades",
+        description_es: "Action roguelite.",
+        description_en: "Action roguelite.",
+        coverUrl: "https://example.com/hades.jpg",
+        releaseYear: 2020,
+        genres: ["ACTION"],
+
+        platforms: ["PC"],
+        gameModes: ["UNKNOWN"],
+        perspectives: ["UNKNOWN"],
+        developers: [],
+        publishers: [],
+        keywords: [],
+        searchCount: 0,
+        difficulty: 0.8,
+        pace: 0.7,
+        narrative: 0.2,
+        complexity: 0.5,
+        strategy: 0.3,
+        exploration: 0.4,
+        violence: 0.6,
+        horror: 0.1,
+        darkness: 0.5,
+        tension: 0.7,
+        humor: 0.1,
+        isolation: 0.4,
+        coziness: null,
+      };
+
+      const created = await prismaGameRepository.create(game);
+
+      expect(created.difficulty).toBe(0.8);
+      expect(created.pace).toBe(0.7);
+      expect(created.narrative).toBe(0.2);
+      expect(created.complexity).toBe(0.5);
+      expect(created.strategy).toBe(0.3);
+      expect(created.exploration).toBe(0.4);
+      expect(created.violence).toBe(0.6);
+      expect(created.horror).toBe(0.1);
+      expect(created.darkness).toBe(0.5);
+      expect(created.tension).toBe(0.7);
+      expect(created.humor).toBe(0.1);
+      expect(created.isolation).toBe(0.4);
+
+      const read = await prismaGameRepository.getBySlug(game.slug);
+      expect(read?.difficulty).toBe(0.8);
+      expect(read?.isolation).toBe(0.4);
+    });
+
+    it("accepts the boundary values 0 and 1", async () => {
+      const game: Game = {
+        id: 0,
+        sourceId: null,
+        slug: "portal-2-2011",
+        title: "Portal 2",
+        description_es: "Puzzle.",
+        description_en: "Puzzle.",
+        coverUrl: "https://example.com/portal.jpg",
+        releaseYear: 2011,
+        genres: ["PUZZLE"],
+
+        platforms: ["PC"],
+        gameModes: ["UNKNOWN"],
+        perspectives: ["UNKNOWN"],
+        developers: [],
+        publishers: [],
+        keywords: [],
+        searchCount: 0,
+        difficulty: 0,
+        pace: 1,
+        narrative: 0,
+        complexity: 1,
+        strategy: 0,
+        exploration: 0,
+        violence: 0,
+        horror: 0,
+        darkness: 0,
+        tension: 1,
+        humor: 1,
+        isolation: 0,
+        coziness: null,
+      };
+
+      const created = await prismaGameRepository.create(game);
+      expect(created.difficulty).toBe(0);
+      expect(created.pace).toBe(1);
+      expect(created.humor).toBe(1);
+      expect(created.tension).toBe(1);
+    });
+
+    it("persists an update to semantic attribute values", async () => {
+      const base = await prisma.games.create({
+        data: {
+          ...defaults,
+          slug: "celeste-2018",
+          title: "Celeste",
+          genres: ["PLATFORMER"],
+          platforms: ["PC"],
+        },
+      });
+
+      const updated = await prismaGameRepository.update({
+        id: base.id,
+        sourceId: null,
+        slug: "celeste-2018",
+        title: "Celeste",
+        description_es: "",
+        description_en: "",
+        coverUrl: "",
+        releaseYear: 2018,
+        genres: ["PLATFORMER"],
+
+        platforms: ["PC"],
+        gameModes: ["UNKNOWN"],
+        perspectives: ["UNKNOWN"],
+        developers: [],
+        publishers: [],
+        keywords: [],
+        searchCount: 0,
+        difficulty: 0.75,
+        pace: 0.6,
+        narrative: 0.5,
+        complexity: 0.4,
+        strategy: 0.2,
+        exploration: 0.3,
+        violence: 0,
+        horror: 0,
+        darkness: 0.4,
+        tension: 0.8,
+        humor: 0.3,
+        isolation: 0.5,
+        coziness: null,
+      });
+
+      expect(updated.difficulty).toBe(0.75);
+      expect(updated.tension).toBe(0.8);
+    });
   });
 });

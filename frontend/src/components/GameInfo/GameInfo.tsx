@@ -23,14 +23,16 @@ export default function GameInfo({ game }: GameInfoProps) {
           <h3>{game.title}</h3>
           <p>Year: {game.releaseYear}</p>
           <p>Genres: {game.genres.join(", ")}</p>
-          <p>Description: {game.description}</p>
+          <p>
+            Description:{" "}
+            {game.description_es || game.description_en || "Sin descripción."}
+          </p>
           {game.genres.map((genre) => (
             <p key={genre}>{genre}</p>
           ))}
           {game.platforms.map((platform) => (
             <p key={platform}>{platform}</p>
           ))}
-          <p>Rating: {game.rating}</p>
         </div>
       </section>
     );

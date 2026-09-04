@@ -1,0 +1,12 @@
+{
+  // Config de EMISIÓN (build). Solo compila src/ a dist/.
+  // `npm run build` → tsc -p tsconfig.build.json
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests", "src/generated"]
+}

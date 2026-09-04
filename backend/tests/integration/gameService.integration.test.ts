@@ -13,7 +13,7 @@ describe("gameService.search integration", () => {
       data: {
         slug: "elden-ring",
         title: "Elden Ring",
-        genres: ["Action RPG"],
+          genres: ["ACTION", "RPG"],
         platforms: ["PC"],
       },
     });
@@ -30,7 +30,7 @@ describe("gameService.search integration", () => {
       data: {
         slug: "elden-ring",
         title: "Elden Ring",
-        genres: ["Action RPG"],
+          genres: ["ACTION", "RPG"],
         platforms: ["PC"],
       },
     });
@@ -47,19 +47,19 @@ describe("gameService.search integration", () => {
         {
           slug: "elden-ring",
           title: "Elden Ring",
-          genres: ["Action RPG"],
+            genres: ["ACTION", "RPG"],
           platforms: ["PC"],
         },
         {
           slug: "elden-ring-nightreign",
           title: "Elden Ring Nightreign",
-          genres: ["Action RPG"],
+            genres: ["ACTION", "RPG"],
           platforms: ["PC"],
         },
         {
           slug: "skyrim",
           title: "Skyrim",
-          genres: ["Action RPG"],
+            genres: ["ACTION", "RPG"],
           platforms: ["PC"],
         },
       ],
@@ -79,7 +79,7 @@ describe("gameService.search integration", () => {
       data: {
         slug: "elden-ring",
         title: "Elden Ring",
-        genres: ["Action RPG"],
+          genres: ["ACTION", "RPG"],
         platforms: ["PC"],
       },
     });

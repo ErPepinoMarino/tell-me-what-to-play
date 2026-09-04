@@ -105,7 +105,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-b",
         title: "Game B",
-        genres: ["Adventure"],
+        genres: ["ADVENTURE"],
         platforms: ["PC"],
       },
     });
@@ -152,7 +152,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-a",
         title: "Game A",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -252,7 +252,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-post",
         title: "Game POST",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -303,7 +303,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-foreign",
         title: "Game Foreign",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -350,7 +350,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-duplicate",
         title: "Game Duplicate",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -434,7 +434,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-update-missing-entry",
         title: "Game Update Missing Entry",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -484,7 +484,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-delete",
         title: "Game Delete",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -532,7 +532,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-delete-foreign",
         title: "Game Delete Foreign",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -562,7 +562,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-delete-missing",
         title: "Game Delete Missing",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -588,7 +588,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-get",
         title: "Game Get",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -678,7 +678,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-admin-post",
         title: "Game Admin POST",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -718,7 +718,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-admin-put",
         title: "Game Admin PUT",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -760,7 +760,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-admin-delete",
         title: "Game Admin DELETE",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -795,7 +795,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-post-coerced",
         title: "Game POST Coerced",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -828,7 +828,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-post-extra",
         title: "Game POST Extra",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -905,7 +905,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-put-extra",
         title: "Game PUT Extra",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -962,7 +962,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-concurrent-post",
         title: "Game Concurrent POST",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });
@@ -1031,7 +1031,7 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-recommendation",
         title: "Game Recommendation",
-        genres: ["Action"],
+        genres: ["ACTION"],
         platforms: ["PC"],
       },
     });

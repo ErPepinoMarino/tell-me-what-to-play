@@ -136,14 +136,14 @@
 
     {
       "title": "CI/CD y Despliegue",
-      "completed": false,
+      "completed": true,
       "competencies": [
-        { "title": "GitHub Actions", "completed": false },
-        { "title": "Vercel", "completed": false },
-        { "title": "Railway / Render", "completed": false },
-        { "title": "CI/CD", "completed": false }
+        { "title": "GitHub Actions", "completed": true },
+        { "title": "Vercel", "completed": true },
+        { "title": "Railway / Render", "completed": true },
+        { "title": "CI/CD", "completed": true }
       ],
-      "projects": [{ "title": "Pipeline de despliegue", "completed": false }]
+      "projects": [{ "title": "Pipeline de despliegue", "completed": true }]
     },
 
     {
@@ -153,7 +153,7 @@
         { "title": "OpenAI API", "completed": false },
         { "title": "Prompts", "completed": false },
         { "title": "Function Calling", "completed": false },
-        { "title": "Structured Output", "completed": false },
+        { "title": "Structured Output", "completed": true },
         { "title": "Embeddings", "completed": false },
         { "title": "RAG", "completed": false },
         { "title": "LangChain", "completed": false },

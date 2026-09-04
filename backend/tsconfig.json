@@ -1,19 +1,29 @@
 {
+  // Proyecto de TYPES (editor + `tsc --noEmit` + `vitest --typecheck`).
+  // Incluye TODO el código TypeScript del backend. La emisión de código
+  // (build) se hace con tsconfig.build.json, que solo compila src/.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
 
-    "rootDir": "./src",
-    "outDir": "./dist",
-
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
 
-    "forceConsistentCasingInFileNames": true
+    "types": ["node"],
+    "noEmit": true
   },
 
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "scripts/**/*",
+    "prisma/seed.ts",
+    "prisma.config.ts"
+  ],
+  "exclude": ["node_modules", "dist", "src/generated"]
 }
+

@@ -1,33 +1,6 @@
-//Fastify
-import fastify from "fastify";
-import fastifyJwt from "@fastify/jwt";
-import fastifyCookie from "@fastify/cookie";
+import { buildApp } from "./app.js";
 
-//Esto es para usar el secreto de JWT desde el archivo .env
-import "dotenv/config";
-
-//rutas
-import { healthRoutes } from "./routes/healthRoutes.js";
-import { gameRoutes } from "./routes/gameRoutes.js";
-import { authRoutes } from "./routes/authRoutes.js";
-import { userGamesRoutes } from "./routes/userGamesRoutes.js";
-
-const app = fastify();
-
-//registro el plugin de JWT con el secreto de JWT desde el archivo .env
-app.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET!,
-  sign: {
-    expiresIn: "15m",
-  },
-});
-
-//Rutas
-app.register(fastifyCookie);
-app.register(authRoutes);
-app.register(healthRoutes);
-app.register(gameRoutes);
-app.register(userGamesRoutes);
+const app = await buildApp();
 
 //Completado registro de middleware y rutas - Levanto el servidor en el puerto 3001 y muestro la dirección en consola. (para no compartir puerto con el frontend)
 try {

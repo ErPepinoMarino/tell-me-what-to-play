@@ -34,7 +34,7 @@ describe("GET /api/auth/google E2E", () => {
         "--import",
         "tsx/esm",
         "--import",
-        "./tests/e2e/googleProviderMock.ts",
+        "./tests/e2e/googleProviderMock.ts", // Mock de Google para pruebas E2E
         "src/server.ts",
       ],
       {
@@ -117,7 +117,7 @@ describe("GET /api/auth/google E2E", () => {
     expect(body).toEqual({ message: "No se pudo autenticar con Google" });
   });
 
-  it("completes OAuth and creates the local user session", async () => {
+  it("completes OAuth, creates the local user session and redirects to the frontend", async () => {
     //Montamos una llamada correcta, con un code valido y el state correcto.
     const startResponse = await fetch(`${baseUrl}/api/auth/google`, {
       redirect: "manual",
@@ -130,10 +130,10 @@ describe("GET /api/auth/google E2E", () => {
     const response = await fetch(
       `${baseUrl}/api/auth/google/callback?code=valid-code&state=${state}`,
       {
+        redirect: "manual",
         headers: { cookie: oauthCookie },
       },
     );
-    const body = await response.json();
     const users = await prisma.users.findMany({
       include: {
         identities: true,
@@ -146,9 +146,12 @@ describe("GET /api/auth/google E2E", () => {
     //Falso pero que coincide con el contrato de la API.
     //Así que para el backend todo ha ido bien.
 
-    expect(response.status).toBe(200);
-    expect(body.accessToken).toEqual(expect.any(String));
-    expect(body.accessToken).not.toBe("");
+    // El navegador ya tiene la cookie httpOnly: el callback redirige al
+    // frontend, que obtiene su access token con POST /api/auth/refresh.
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      process.env.FRONTEND_URL ?? "/",
+    );
     expect(refreshCookie).toContain("refresh_token=");
     expect(refreshCookie).toContain("HttpOnly");
     expect(users).toHaveLength(1);
@@ -183,6 +186,7 @@ describe("GET /api/auth/google E2E", () => {
     const response = await fetch(
       `${baseUrl}/api/auth/google/callback?code=valid-code&state=${state}`,
       {
+        redirect: "manual",
         headers: { cookie: setCookie!.split(";")[0] },
       },
     );
@@ -190,7 +194,7 @@ describe("GET /api/auth/google E2E", () => {
       include: { identities: true, session: true },
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(302);
     expect(users).toHaveLength(1);
     expect(users[0]?.id).toBe(user.id);
     expect(users[0]?.identities).toHaveLength(1);

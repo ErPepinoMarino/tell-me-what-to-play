@@ -378,4 +378,60 @@ describe("POST /api/auth/refresh E2E", () => {
     expect(persistedToken?.revoked_at).toBeInstanceOf(Date);
     expect(persistedSession?.revoked_at).toBeInstanceOf(Date);
   });
+
+  // ---- Transporte nativo (sin cookies): refresh por body ----
+
+  async function bodyRefreshRequest(refreshToken: string) {
+    return fetch(`${baseUrl}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+  }
+
+  it("renews with a refresh token sent in the body (native clients)", async () => {
+    const user = await createUser();
+    const session = await createAuthSession(user.id);
+
+    // Cliente nativo: sin cookie jar. El refresh viaja en el body y la
+    // respuesta incluye el nuevo refresh token para Keystore/Keychain.
+    const response = await bodyRefreshRequest(session.refreshToken);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.accessToken).toEqual(expect.any(String));
+    expect(body.refreshToken).toEqual(expect.any(String));
+    expect(body.refreshToken).not.toBe(session.refreshToken);
+    // El refresh token no debe fugarse en cookies para clientes nativos
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("returns 401 when the body refresh token is unknown", async () => {
+    const response = await bodyRefreshRequest("token-that-does-not-exist");
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body).toEqual({ message: "No se pudo renovar la sesión" });
+  });
+
+  it("the cookie has priority when both cookie and body transport are present", async () => {
+    const user = await createUser();
+    const cookieSession = await createAuthSession(user.id);
+    const bodySession = await createAuthSession(user.id);
+    // createAuthSession rota: la segunda sesión revoca los tokens de la
+    // primera, así que usamos el token vivo más reciente en el body y un
+    // token de cookie inválido para forzar la prioridad inversa.
+    const cookieResponse = await fetch(`${baseUrl}/api/auth/refresh`, {
+      method: "POST",
+      headers: {
+        cookie: "refresh_token=invalid-cookie-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ refreshToken: bodySession.refreshToken }),
+    });
+
+    // La cookie (aunque inválida) gana: el body se ignora y falla la rotación.
+    expect(cookieResponse.status).toBe(401);
+    expect(cookieSession.refreshToken).toEqual(expect.any(String));
+  });
 });

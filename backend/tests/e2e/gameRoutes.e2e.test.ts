@@ -56,7 +56,7 @@ describe("GET /api/games E2E", () => {
       data: {
         slug: "elden-ring",
         title: "Elden Ring",
-        genres: ["Action RPG"],
+        genres: ["ACTION", "RPG"],
         platforms: ["PC"],
       },
     });
@@ -85,7 +85,7 @@ describe("GET /api/games E2E", () => {
       data: {
         slug: "elden-ring",
         title: "Elden Ring",
-        genres: ["Action RPG"],
+        genres: ["ACTION", "RPG"],
         platforms: ["PC"],
       },
     });

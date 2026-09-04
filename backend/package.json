@@ -5,28 +5,35 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx src/server.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:setup": "tsx scripts/setupTestDb.ts",
+    "test:watch": "vitest",
+    "import:games": "tsx scripts/importGames.ts"
   },
   "keywords": [],
   "type": "module",
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
     "@fastify/jwt": "^10.2.1",
+    "@langchain/core": "^1.2.9",
+    "@langchain/openai": "^1.5.10",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "fastify": "^5.11.2",
-    "google-auth-library": "^11.0.2"
+    "google-auth-library": "^11.0.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.3",
+    "@types/pg": "^8.11.10",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
+    "pg": "^8.13.1",
     "prettier": "^3.9.6",
     "prisma": "^7.9.1",
     "tsx": "^4.23.5",

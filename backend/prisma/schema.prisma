@@ -8,17 +8,37 @@ datasource db {
 }
 
 model games {
-  id           Int          @id @default(autoincrement())
-  slug         String       @unique
-  title        String
-  description  String?
-  cover_url    String?
-  release_year Int?
-  genres       String[]
-  platforms    String[]
-  rating       Decimal?     @db.Decimal
-  updated_at   DateTime     @updatedAt
-  user_games   user_games[]
+  id             Int            @id @default(autoincrement())
+  slug           String         @unique
+  source_id      String?        @unique
+  title          String
+  description_es String?
+  description_en String?
+  cover_url      String?
+  release_year   Int?
+  updated_at     DateTime       @updatedAt
+  complexity     Float?
+  coziness       Float?
+  darkness       Float?
+  developers     String[]       @default([])
+  difficulty     Float?
+  exploration    Float?
+  game_modes     GameMode[]     @default([UNKNOWN])
+  horror         Float?
+  humor          Float?
+  isolation      Float?
+  keywords       String[]       @default([])
+  narrative      Float?
+  pace           Float?
+  perspectives   Perspective[]  @default([UNKNOWN])
+  publishers     String[]       @default([])
+  search_count   Int            @default(0)
+  strategy       Float?
+  tension        Float?
+  violence       Float?
+  genres         Genre[]        @default([UNKNOWN])
+  platforms      Platform[]     @default([UNKNOWN])
+  user_games     user_games[]
 }
 
 model user_games {
@@ -33,19 +53,14 @@ model user_games {
   @@id([user_id, game_id])
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
 model users {
-  id         Int          @id @default(autoincrement())
-  email      String       @unique
-  role       Role         @default(USER)
-  created_at DateTime     @default(now())
+  id         Int               @id @default(autoincrement())
+  email      String            @unique
+  created_at DateTime          @default(now())
+  role       Role              @default(USER)
+  session    sessions?
   user_games user_games[]
   identities user_identities[]
-  session    sessions?
 }
 
 model permissions {
@@ -55,10 +70,9 @@ model permissions {
 }
 
 model role_permissions {
-  role          Role        // USER / ADMIN
+  role          Role
   permission_id Int
-
-  permissions permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade)
 
   @@id([role, permission_id])
 }
@@ -69,8 +83,7 @@ model user_identities {
   provider     String
   provider_sub String
   created_at   DateTime @default(now())
-
-  users users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([provider, provider_sub])
 }
@@ -81,19 +94,22 @@ model sessions {
   created_at     DateTime         @default(now())
   expires_at     DateTime
   revoked_at     DateTime?
-
-  users          users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   refresh_tokens refresh_tokens[]
+  users          users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model refresh_tokens {
-  id          Int       @id @default(autoincrement())
-  session_id  Int
-  token_hash  String    @unique
-  created_at  DateTime  @default(now())
-  revoked_at  DateTime?
+  id         Int       @id @default(autoincrement())
+  session_id Int
+  token_hash String    @unique
+  created_at DateTime  @default(now())
+  revoked_at DateTime?
+  sessions   sessions  @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
 
-  sessions sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+enum Role {
+  USER
+  ADMIN
 }
 
 enum game_status {
@@ -107,4 +123,74 @@ enum recommendation {
   RECOMMENDED
   MEH
   NOT_RECOMMENDED
+}
+
+enum Genre {
+  ACTION
+  ADVENTURE
+  ARCADE
+  CASUAL
+  FIGHTING
+  HORROR
+  INDIE
+  MMO
+  PLATFORMER
+  PUZZLE
+  RACING
+  RPG
+  SHOOTER
+  SIMULATION
+  SPORTS
+  STRATEGY
+  VISUAL_NOVEL
+  UNKNOWN
+}
+
+enum Platform {
+  PC
+  MAC
+  LINUX
+  PS5
+  PS4
+  PS3
+  PS2
+  PS1
+  PS_VITA
+  PSP
+  XBOX_SERIES
+  XBOX_ONE
+  XBOX_360
+  XBOX
+  SWITCH
+  WII_U
+  WII
+  GAMECUBE
+  N64
+  SNES
+  NES
+  NINTENDO_3DS
+  DS
+  GAME_BOY
+  GAME_BOY_ADVANCE
+  IOS
+  ANDROID
+  UNKNOWN
+}
+
+enum GameMode {
+  SINGLE_PLAYER
+  MULTIPLAYER
+  COOPERATIVE
+  COMPETITIVE
+  UNKNOWN
+}
+
+enum Perspective {
+  FIRST_PERSON
+  THIRD_PERSON
+  TOP_DOWN
+  ISOMETRIC
+  SIDE_VIEW
+  TEXT
+  UNKNOWN
 }

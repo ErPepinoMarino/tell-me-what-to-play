@@ -11,7 +11,7 @@ async function createUserAndGame() {
     data: {
       slug: "elden-ring",
       title: "Elden Ring",
-      genres: ["Action RPG"],
+      genres: ["ACTION", "RPG"],
       platforms: ["PC"],
     },
   });
@@ -54,15 +54,15 @@ describe("prismaUserGamesRepository integration", () => {
         data: {
           slug: "zelda",
           title: "Zelda",
-          genres: ["Adventure"],
-          platforms: ["Switch"],
+            genres: ["ADVENTURE"],
+          platforms: ["SWITCH"],
         },
       }),
       prisma.games.create({
         data: {
           slug: "elden-ring",
           title: "Elden Ring",
-          genres: ["Action RPG"],
+            genres: ["ACTION", "RPG"],
           platforms: ["PC"],
         },
       }),
