@@ -46,6 +46,9 @@ vi.mock("../../src/lib/ai.js", () => ({
   gameIntentAIModel: () => ({
     invoke: async () => intentMock.queue.shift() ?? intentMock.DEFAULT_INTENT,
   }),
+  gameRelationAIModel: () => ({
+    invoke: async () => ({ relation: "new" }),
+  }),
 }));
 
 vi.mock("../../src/lib/explanationAi.js", () => ({

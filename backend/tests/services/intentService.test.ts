@@ -3,15 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 // Reproducimos la exportación de lib/ai.js con un vi.fn() que podemos configurar.
 vi.mock("../../src/lib/ai.js", async () => ({
   gameIntentAIModel: vi.fn(),
+  gameRelationAIModel: vi.fn(),
 }));
 //Ahora sí importamos el código real que queremos testear.
 import {
   intentService,
   applyYearGuard,
   applyThemeGuard,
+  classifyRelation,
   createBudgetedIntentExtractor,
 } from "../../src/services/intentService.js";
-import { gameIntentAIModel } from "../../src/lib/ai.js";
+import { gameIntentAIModel, gameRelationAIModel } from "../../src/lib/ai.js";
 import type { GameSearchIntent } from "../../src/types/GameSearchIntent.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import { makeIntent } from "../helpers/fakes.js";
@@ -121,7 +123,7 @@ describe("intentService session context", () => {
     // Reglas de merge conservador: extender no borra el tema; mensaje sin
     // contenido devuelve la intención previa.
     expect(system?.content).toContain("KEEP the previous keywords");
-    expect(system?.content).toContain("completely different topic");
+    expect(system?.content).toContain("STARTING A NEW search");
     expect(system?.content).toContain("UNCHANGED");
     // Reglas de clasificación (ERROR 2): atmósfera → semánticas, nunca keywords
     expect(system?.content).toContain("SEMANTIC attributes, NEVER keywords");
@@ -197,5 +199,44 @@ describe("applyThemeGuard", () => {
     const out = applyThemeGuard(withTheme);
     expect(out.objective?.themes).toEqual(["HORROR"]);
     expect(applyThemeGuard(makeIntent())).toEqual(makeIntent());
+  });
+});
+
+describe("classifyRelation", () => {
+  it("devuelve la relación que decide el modelo", async () => {
+    const invoke = vi.fn().mockResolvedValue({ relation: "refine" });
+    vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
+
+    const relation = await classifyRelation(
+      "más violento",
+      makeIntent({ keywords: ["violence"] }),
+    );
+
+    expect(relation).toBe("refine");
+    const messages = invoke.mock.calls[0][0] as { role: string; content: string }[];
+    expect(messages[0].role).toBe("system");
+    expect(messages[1].content).toContain("Previous search intent");
+    expect(messages[1].content).toContain("más violento");
+  });
+
+  it("el extractor con presupuesto clasifica y gasta 1 llamada LLM", async () => {
+    const invoke = vi.fn().mockResolvedValue({ relation: "new" });
+    vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
+    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 5 });
+    const extractor = createBudgetedIntentExtractor(budget);
+
+    const relation = await extractor.classifyRelation!("futbol", makeIntent());
+
+    expect(relation).toBe("new");
+    expect(budget.remaining("llm")).toBe(4);
+  });
+
+  it("sin presupuesto de LLM asume búsqueda nueva (no bloquea la búsqueda fresca)", async () => {
+    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 0 });
+    const extractor = createBudgetedIntentExtractor(budget);
+
+    const relation = await extractor.classifyRelation!("más violento", makeIntent());
+
+    expect(relation).toBe("new");
   });
 });

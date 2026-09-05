@@ -536,23 +536,46 @@ export class RecommendationOrchestrator {
     /*
      * ANON: sin sesión → las búsquedas son siempre frescas. Pero si el
      * cliente envió su última intención (contextIntent), la usamos SOLO para
-     * clasificar: si la LLM dice que el mensaje es un REFINAMIENTO, devolvemos
-     * la intención clasificada con relation "refine" y el handle() responde el
-     * CTA de login (el refinamiento es una feature de sesión). Si es tema
-     * nuevo, se re-extrae SIN contexto para garantizar una intención fresca.
+     * clasificar refine-vs-new con un paso dedicado: si el mensaje AFINA la
+     * búsqueda anterior → relation "refine" → CTA de login (el refinamiento
+     * es feature de sesión). Si es búsqueda nueva (reformulación, otro tema,
+     * "quiero/busco/ahora quiero X") → se re-extrae SIN contexto (intención
+     * fresca, la consulta anterior es irrelevante).
      */
     if (request.contextIntent) {
-      const classified = await this.extractWithRetry(
+      const relation = await this.classifyAnonRelation(
         request.message,
         request.contextIntent,
       );
-      if (classified.relation === "refine") {
-        return { intent: classified, shownGameIds: [] };
+      if (relation === "refine") {
+        // El intent devuelto lleva relation "refine" para que handle() emita
+        // el CTA (el refinamiento es feature de sesión).
+        return {
+          intent: { ...request.contextIntent, relation: "refine" },
+          shownGameIds: [],
+        };
       }
     }
 
     const intent = await this.extractWithRetry(request.message, undefined);
     return { intent, shownGameIds: [] };
+  }
+
+  /*
+   * Clasificación refine-vs-new para anon. Usa el paso dedicado
+   * (classifyRelation) cuando el extractor lo provee; fallback: la
+   * extracción con contexto (que ya decide relation) para fakes/tests.
+   */
+  private async classifyAnonRelation(
+    message: string,
+    previousIntent: GameSearchIntent,
+  ): Promise<"new" | "refine"> {
+    const classifier = this.deps.intents.classifyRelation;
+    if (classifier) {
+      return classifier(message, previousIntent);
+    }
+    const classified = await this.extractWithRetry(message, previousIntent);
+    return classified.relation === "refine" ? "refine" : "new";
   }
 
   private async extractWithRetry(

@@ -188,6 +188,13 @@ button:disabled {
   background: rgba(248, 113, 113, 0.12);
 }
 
+/* Leyenda de dirección de los chips semánticos: ▲ alto · ▼ bajo. */
+.intent-legend {
+  margin-left: 0.5rem;
+  font-size: 0.72rem;
+  color: #6b7280;
+}
+
 .notice {
   font-size: 0.9rem;
   color: #fbbf24;

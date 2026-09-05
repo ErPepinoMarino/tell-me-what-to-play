@@ -8,15 +8,15 @@ import type { GameSearchIntent, MatchReason, MatchTier } from "@/types/Recommend
 
 export const SEMANTIC_LABELS: Record<string, string> = {
   difficulty: "Dificultad",
-  pace: "Ritmo pausado",
+  pace: "Ritmo",
   narrative: "Narrativa",
   complexity: "Complejidad",
-  coziness: "Ambiente acogedor",
+  coziness: "Ambiente",
   strategy: "Estrategia",
   exploration: "Exploración",
   violence: "Violencia",
   horror: "Horror",
-  darkness: "Tono oscuro",
+  darkness: "Oscuridad",
   tension: "Tensión",
   humor: "Humor",
   isolation: "Aislamiento",
@@ -230,9 +230,14 @@ export function intentSummaryChips(intent: GameSearchIntent): IntentChip[] {
     for (const [field, value] of Object.entries(intent.semantic)) {
       if (value === null || value === undefined) continue;
       const label = SEMANTIC_LABELS[field] ?? field;
-      if (value >= 0.7) chips.push({ label: `++ ${label}`, tone: "positive" });
-      else if (value === 0) chips.push({ label: `-- ${label}`, tone: "negative" });
-      else if (value < 0.4) chips.push({ label: `poco ${label}`, tone: "neutral" });
+      // Dirección explícita con flechas sobre el nombre plano de la
+      // dimensión: ▲ alto (trepidante/violento...), ▼ bajo (pausado/poco
+      // violento...). "Ritmo" nunca se etiqueta como "pausado" cuando es alto.
+      if (value >= 0.7) chips.push({ label: `▲ ${label}`, tone: "positive" });
+      else if (value === 0)
+        chips.push({ label: `▼ ${label}`, tone: "negative" });
+      else if (value < 0.4)
+        chips.push({ label: `▼ ${label}`, tone: "neutral" });
     }
   }
 

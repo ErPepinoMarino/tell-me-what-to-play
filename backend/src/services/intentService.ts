@@ -1,4 +1,4 @@
-import { gameIntentAIModel } from "../lib/ai.js";
+import { gameIntentAIModel, gameRelationAIModel } from "../lib/ai.js";
 import type { BudgetLedger } from "../budget/budgetLedger.js";
 import type { IntentExtractor } from "../orchestrator/types.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
@@ -85,11 +85,14 @@ The user already had this previous intent in the current session:
 ${JSON.stringify(previousIntent)}
 
 Produce the COMPLETE updated intent:
-- Set relation: "refine" when the message continues or adjusts the previous intent; "new" when the user starts a different topic.
-- If the user EXPLICITLY signals a new search (e.g., "esta es una búsqueda nueva", "olvida lo anterior", "sin todo lo anterior", "no, otro tema", "fresh search"), produce a COMPLETELY FRESH intent: IGNORE the previous intent ENTIRELY — do NOT carry forward any keyword, genre, platform, year, exclusion or semantic value from it. Set relation: "new".
+- DECIDE FIRST: is the user REFINING the previous query, or STARTING A NEW search?
+  - REFINING: they adjust, extend or detail the SAME search ("más violento", "menos violento", "y de jardinería", "similar pero", "un poco más de X"). Set relation: "refine" and carry forward the relevant previous fields.
+  - NEW SEARCH: they CHANGED THEIR MIND and are searching ANOTHER game — the previous query is irrelevant. That includes: naming a different topic, restating a request with different words, and starting with "quiero", "busco", "ahora quiero", "otro tema". Set relation: "new" and IGNORE the previous intent ENTIRELY: produce a fresh intent with ONLY the new message.
+    - Example: after a violent-action search, "quiero un juego de futbol en 2d" → relation: "new", intent = { keywords: ["2d","football"], semantic: null } — DO NOT carry violence, pace or any previous keyword.
+    - Example: after a violent-action search, "un juego de acción muy violento, por favor" (a restatement) → relation: "new" (the user wants a fresh search, not a refinement).
+- If the user EXPLICITLY signals a new search (e.g., "esta es una búsqueda nueva", "olvida lo anterior", "sin todo lo anterior", "no, otro tema", "fresh search"), produce a COMPLETELY FRESH intent: IGNORE the previous intent ENTIRELY — do NOT carry forward any keyword, genre, theme, platform, year, exclusion or semantic value from it. Set relation: "new".
 - CARRY FORWARD every field of the previous intent (keywords, themes, genres, platforms, gameModes, perspectives, releaseYear, yearFrom, yearTo, excluded, AND all semantic values) UNLESS the message explicitly changes or removes it. Never silently drop a year range, a platform, a genre, a theme or a semantic value.
 - If the message adds details to the same topic (e.g., "in pixel art", "with naval combat", "less violent", "y de jardinería"), KEEP the previous keywords and theme and ADD or ADJUST the new details. Never drop the previous keywords unless the message contradicts them.
-- If the message is clearly a completely different topic, IGNORE the previous intent and produce a fresh one.
 - If the message adds nothing interpretable (e.g., "yes", "sure", "ok"), return the previous intent UNCHANGED (relation: "refine").
 - The same HARD-REQUIREMENT contract applies: every field you fill must be present in the results, and exclusions (excluded.*) discard any candidate containing them.
 - Output a single complete intent object, never a diff.`;
@@ -208,6 +211,53 @@ export function applyThemeGuard(intent: GameSearchIntent): GameSearchIntent {
 }
 
 /*
+ * Clasificador de relación refine-vs-new para el caso SIN sesión (anon).
+ * Paso dedicado y mínimo: NO interpreta la intención (eso lo hace extract),
+ * solo decide si el mensaje AFINA la búsqueda anterior o EMPIEZA OTRA.
+ *
+ * Regla (en inglés, como todo el prompt): refine SOLO cuando el usuario
+ * continúa/ajusta la búsqueda anterior con lenguaje comparativo o aditivo
+ * ("más", "menos", "y también", "similar pero", "menos violento"); new
+ * cuando ha cambiado de idea, reformula ("por favor"), dice "quiero/busco/
+ * ahora quiero X" o nombra otro tema — la consulta anterior es irrelevante.
+ * Sin sesión, una REFORMULACIÓN es búsqueda nueva, no refinamiento.
+ */
+export const classifyRelationInstructions = `You decide whether a new video game search message REFINES the previous search or STARTS A NEW one.
+
+Previous search intent: provided in the message.
+New message: provided in the message.
+
+Return "refine" ONLY when the user is clearly refining the previous query: they adjust, extend or detail the SAME search (e.g., "más violento", "menos violento", "y de jardinería", "similar pero", "un poco más de X").
+Return "new" when the user has changed their mind and is searching ANOTHER game and the previous query is irrelevant:
+- they RESTATE the same request with different words (e.g., "un juego de acción muy violento, por favor" after a violent-action search),
+- they start with "quiero", "busco", "ahora quiero", "otro tema",
+- they name a DIFFERENT topic (e.g., "quiero un juego de futbol en 2d" after a violent-action search),
+- WITHOUT A SESSION (anonymous user), a restatement is a NEW search, not a refinement.
+
+Examples:
+- previous: violent action game; new: "más violento" → refine.
+- previous: violent action game; new: "y de jardinería" → refine.
+- previous: violent action game; new: "un juego de acción muy violento, por favor" → new.
+- previous: violent action game; new: "ahora quiero un juego lento y sin violencia en 2d" → new.
+- previous: violent action game; new: "quiero un juego de futbol en 2d" → new.
+
+Output only {"relation": "new"} or {"relation": "refine"}.`;
+
+export async function classifyRelation(
+  userText: string,
+  previousIntent: GameSearchIntent,
+): Promise<"new" | "refine"> {
+  const result = await gameRelationAIModel().invoke([
+    { role: "system", content: classifyRelationInstructions },
+    {
+      role: "user",
+      content: `Previous search intent:\n${JSON.stringify(previousIntent)}\n\nNew message:\n${userText}`,
+    },
+  ]);
+  return (result as { relation: "new" | "refine" }).relation ?? "new";
+}
+
+/*
  * Envoltorio con registro de gasto: la interpretación también consume LLM
  * (1 llamada por búsqueda; 0 en more). Si el presupuesto diario está
  * agotado, lanza: sin intención no hay producto (la ruta responde 502 tras
@@ -231,6 +281,22 @@ export function createBudgetedIntentExtractor(
       } catch (error) {
         budget.release("llm", 1);
         throw error;
+      }
+    },
+    async classifyRelation(userText: string, previousIntent: GameSearchIntent) {
+      if (!budget.tryReserve("llm", 1)) {
+        // Sin presupuesto no se puede clasificar: se asume búsqueda nueva
+        // (una búsqueda fresca siempre es posible; el refinamiento es el
+        // caso que exige el clasificador).
+        return "new";
+      }
+      try {
+        const relation = await classifyRelation(userText, previousIntent);
+        budget.commit("llm", 1);
+        return relation;
+      } catch {
+        budget.release("llm", 1);
+        return "new";
       }
     },
   };

@@ -74,6 +74,7 @@ export default function AIChat({
                   {chip.label}
                 </span>
               ))}
+              <span className="intent-legend">▲ alto · ▼ bajo</span>
             </p>
           ) : null}
         </div>

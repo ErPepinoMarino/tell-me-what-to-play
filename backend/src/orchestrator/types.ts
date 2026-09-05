@@ -42,6 +42,15 @@ export interface IntentExtractor {
     userText: string,
     previousIntent?: GameSearchIntent,
   ): Promise<GameSearchIntent>;
+  /*
+   * Clasificador de relación refine-vs-new (anon sin sesión): paso mínimo
+   * que solo decide si el mensaje afina la búsqueda anterior o empieza otra.
+   * Sin clasificador, el orquestador usa extract como fallback (tests).
+   */
+  classifyRelation?(
+    userText: string,
+    previousIntent: GameSearchIntent,
+  ): Promise<"new" | "refine">;
 }
 
 export type Actor = { kind: "anon" } | { kind: "user"; userId: number };

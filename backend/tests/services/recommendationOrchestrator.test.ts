@@ -59,6 +59,7 @@ interface SetupOptions {
   enrichment?: FakeEnrichment;
   config?: Partial<RecommendationConfig>;
   limits?: { igdb?: number; brave?: number; llm?: number };
+  classifyRelation?: (message: string, previous: GameSearchIntent) => Promise<"new" | "refine">;
 }
 
 function setup(options: SetupOptions) {
@@ -66,7 +67,10 @@ function setup(options: SetupOptions) {
   catalog.seed(options.catalogGames ?? []);
   const cache = new FakeCacheLayer(options.cacheGames ?? []);
   const extract = vi.fn(async () => options.intent);
-  const intents: IntentExtractor = { extract };
+  const intents: IntentExtractor = {
+    extract,
+    classifyRelation: options.classifyRelation,
+  };
   const igdb = new FakeIgdbClient(options.igdbResults ?? {});
   const enrichment = options.enrichment ?? new FakeEnrichment();
   const budget = new InMemoryBudgetLedger({
@@ -556,6 +560,53 @@ describe("RecommendationOrchestrator", () => {
     expect(response.results.map((item) => item.game.slug)).toEqual([
       "pirates-cove",
     ]);
+  });
+
+  it("anon con clasificador dedicado 'refine' → CTA sin tocar extract", async () => {
+    const classify = vi.fn(async () => "refine" as const);
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: classify,
+    });
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "más violento",
+      actor: ANON,
+      contextIntent: PIRATES_INTENT,
+    });
+
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledWith("más violento", PIRATES_INTENT);
+    expect(response.notices).toContain("REFINE_REQUIRES_LOGIN");
+    // La clasificación es un paso dedicado: extract no interpreta nada.
+    expect(extract).not.toHaveBeenCalled();
+  });
+
+  it("anon con clasificador dedicado 'new' → búsqueda fresca con una sola extracción", async () => {
+    const classify = vi.fn(async () => "new" as const);
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: classify,
+    });
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "quiero un juego de futbol en 2d",
+      actor: ANON,
+      contextIntent: PIRATES_INTENT,
+    });
+
+    expect(classify).toHaveBeenCalledTimes(1);
+    // Búsqueda nueva: una única extracción SIN contexto (la previa es irrelevante)
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect(extract).toHaveBeenCalledWith(
+      "quiero un juego de futbol en 2d",
+      undefined,
+    );
+    expect(response.notices).not.toContain("REFINE_REQUIRES_LOGIN");
   });
 
   it("bajo weak nunca se muestra: los no conformes ni entran al pool", async () => {

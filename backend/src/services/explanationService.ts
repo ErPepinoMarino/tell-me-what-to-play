@@ -55,12 +55,14 @@ export interface ExplanationComposer {
   compose(input: ExplanationInput): Promise<string>;
 }
 
-// Un idioma por respuesta: la web V1 está en español. Cuando exista
-// versión inglesa, el endpoint recibirá el idioma y este prompt se
-//parametrizará (misma estructura, reglas en inglés).
+// Un idioma por respuesta: la explicación se redacta en el MISMO idioma del
+// mensaje del usuario (userMessage). La web V1 está en español, pero si el
+// usuario escribe en inglés se responde en inglés.
 const instructions = `Eres la voz de Tell Me What To Play, un servicio que recomienda videojuegos con un motor determinista de matching.
 
-Redacta una explicación MUY breve (1-2 frases, máximo ~40 palabras) en ESPAÑOL, en primera persona.
+Responde SIEMPRE en el MISMO idioma que el mensaje del usuario ("userMessage"): si escribió en español, responde en español; si escribió en inglés, responde en inglés; y así con cualquier idioma.
+
+Redacta una explicación MUY breve (1-2 frases, máximo ~40 palabras) en primera persona, en el idioma del usuario.
 
 Reglas:
 - Usa SIEMPRE las PALABRAS DEL USUARIO para describir su búsqueda (el mensaje original está en "userMessage"). NUNCA cites keywords internas ni términos técnicos: si el usuario dijo "coches", no digas "cars".
@@ -124,17 +126,19 @@ export function createExplanationComposer(
 }
 
 // Etiquetas ES de las dimensiones semánticas para la plantilla determinista.
+// Nombres PLANOS (sin adjetivo): la dirección (alto/bajo) la expresa la
+// plantilla ("muy"/"poco") y los chips del frontend (▲/▼).
 const SEMANTIC_LABELS: Record<(typeof SEMANTIC_FIELDS)[number], string> = {
   difficulty: "dificultad",
-  pace: "ritmo pausado",
+  pace: "ritmo",
   narrative: "narrativa",
   complexity: "complejidad",
-  coziness: "ambiente acogedor",
+  coziness: "ambiente",
   strategy: "estrategia",
   exploration: "exploración",
   violence: "violencia",
   horror: "horror",
-  darkness: "tono oscuro",
+  darkness: "oscuridad",
   tension: "tensión",
   humor: "humor",
   isolation: "aislamiento",
