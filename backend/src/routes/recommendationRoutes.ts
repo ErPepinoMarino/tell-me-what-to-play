@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { optionalAuthMiddleware } from "../middlewares/optionalAuthMiddleware.js";
 import type { RecommendationAction } from "../types/Recommendation.js";
+import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 import {
   InterpretationError,
   LoginRequiredError,
@@ -22,12 +23,18 @@ const recommendationBodySchema = {
       type: "string",
       enum: ["search", "more"],
     },
+    // Última intención del cliente: permite clasificar refine-vs-new para anon
+    contextIntent: {
+      type: ["object", "null"],
+      additionalProperties: true,
+    },
   },
 };
 
 interface RecommendationBody {
   message: string;
   action?: RecommendationAction;
+  contextIntent?: unknown;
 }
 
 export async function recommendationRoutes(
@@ -63,6 +70,9 @@ export async function recommendationRoutes(
           action,
           message: request.body.message,
           actor,
+          contextIntent:
+            (request.body.contextIntent as GameSearchIntent | null | undefined) ??
+            undefined,
         });
 
         // Trabajo orgánico post-respuesta: no bloquea ni hace fallar el request.

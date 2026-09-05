@@ -33,7 +33,8 @@ describe("buildQueryVariants", () => {
       makeIntent({
         keywords: ["3d"],
         objective: {
-          genres: ["HORROR"],
+          genres: ["SHOOTER"],
+          themes: null,
           platforms: null,
           gameModes: null,
           perspectives: null,
@@ -41,9 +42,9 @@ describe("buildQueryVariants", () => {
       }),
     );
 
-    // "3d" a secas atrae juegos de cualquier género (doomed con must HORROR):
-    // la variante productiva "3d horror" va antes.
-    expect(variants).toEqual(["3d horror", "3d"]);
+    // "3d" a secas atrae juegos de cualquier género (doomed con must SHOOTER):
+    // la variante productiva "3d shooter" va antes.
+    expect(variants).toEqual(["3d shooter", "3d"]);
   });
 
   it("normaliza y descarta keywords vacías", () => {
@@ -56,7 +57,8 @@ describe("buildQueryVariants", () => {
     const variants = buildQueryVariants(
       makeIntent({
         objective: {
-          genres: ["RPG"],
+          genres: ["ROLE_PLAYING_RPG"],
+          themes: null,
           platforms: null,
           gameModes: null,
           perspectives: null,

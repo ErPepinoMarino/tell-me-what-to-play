@@ -59,6 +59,26 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     };
   });
 
+  fastify.post("/api/auth/logout", async (request, reply) => {
+    /*
+     * Logout real: mismo transporte dual que refresh (cookie httpOnly para
+     * web, body { refreshToken } para nativos). Revoca la sesión del token
+     * y limpia la cookie — sin esto, el F5 re-loginea con la cookie viva.
+     * Idempotente: sin token o token ya revocado → 204 igual.
+     */
+    const cookieToken = request.cookies.refresh_token;
+    const bodyToken = (request.body as { refreshToken?: string } | undefined)
+      ?.refreshToken;
+    const token = cookieToken ?? bodyToken;
+
+    if (token) {
+      await authService.logoutSession(token);
+    }
+    reply.clearCookie("refresh_token", { path: "/api/auth" });
+
+    return reply.code(204).send();
+  });
+
   fastify.get("/api/auth/google", async (request, reply) => {
     const state = crypto.randomUUID();
 

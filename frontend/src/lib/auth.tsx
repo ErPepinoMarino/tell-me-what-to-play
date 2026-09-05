@@ -23,7 +23,7 @@ interface AuthValue {
   token: string | null;
   status: "loading" | "authenticated" | "anonymous";
   login: () => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   // Renueva el access token (cookie) y devuelve el nuevo; null si anónimo.
   refreshToken: () => Promise<string | null>;
 }
@@ -84,8 +84,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/api/auth/google";
   }, []);
 
-  // Lo mismo, al pulsar logout, borramos el token y ponemos el status a anonymous.
-  const logout = useCallback(() => {
+  // Lo mismo, al pulsar logout, avisamos al backend para que revoque la
+  // sesión y borre la cookie httpOnly, y después limpiamos la memoria.
+  // Best-effort: si la llamada falla la cookie persiste y el F5 re-loginea
+  // (el usuario puede reintentar); el refresh token NUNCA se borra de la
+  // memoria por sí solo porque vive en la cookie, no en JS.
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // best-effort
+    }
     setToken(null);
     setStatus("anonymous");
   }, []);

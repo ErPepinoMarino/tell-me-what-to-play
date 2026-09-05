@@ -29,6 +29,25 @@ export const AGREEMENT_BONUS_THRESHOLD = 0.5;
 // se viola el gate absence-violated.
 export const ABSENCE_GATE_MIN = 0.5;
 
+/*
+ * Gate de presencia (decisión de producto): una demanda semántica MAXIMAL
+ * (intent ≥ SEMANTIC_DEMAND_GATE_MIN = 0.9) es un requisito — el juego debe
+ * APROBAR (game ≥ SEMANTIC_PASS_MIN = 0.5); suspenso (< 0.5) o sin dato
+ * (null = no verificable) → fuera. Demandas medias (0.2-0.89) solo rankean;
+ * 0 exacto = ausencia (gate absence-violated existente).
+ *
+ * POR QUÉ 0.9 Y NO 0.7: los dos escenarios calibrados lo exigen (los tests
+ * lo demostraron). S1 "piratas oscuro" (darkness 0.8): el gate a 0.7
+ * excluiría al "pirata algo menos oscuro" (0.4) que DEBE ganar. S4 "cozy"
+ * (coziness 1.0): el gate a 0.9 excluye suspenso y desconocidos. La LLM
+ * emite 1.0 cuando el atributo ES la petición central y ~0.8 cuando es un
+ * modificador — el umbral 0.9 distingue ambos. Consecuencia asumida: la
+ * cobertura de semánticas del catálogo se vuelve crítica (el enrichment
+ * re-enrich la hace crecer).
+ */
+export const SEMANTIC_DEMAND_GATE_MIN = 0.9;
+export const SEMANTIC_PASS_MIN = 0.5;
+
 // Límites defensivos del score: media de acuerdos con contradicciones
 // amplificadas negadas → rango natural [-1, 1] (negativo = peor que
 // desconocido; 0 = sin señal semántica).
@@ -75,3 +94,9 @@ export const GATE_MUST_VIOLATED = "must-violated";
 export const GATE_RED_FLAG_VIOLATED = "red-flag-violated";
 // absence-violated: el usuario pidió la AUSENCIA total de una semántica (0).
 export const GATE_ABSENCE_VIOLATED = "absence-violated";
+// presence-violated: el usuario exigió una semántica (≥ 0.7) y el juego
+// suspende (< 0.5) o no la tiene (null).
+export const GATE_PRESENCE_VIOLATED = "presence-violated";
+// anchor-overlap-violated: en búsquedas "similar a X" el candidato no comparte
+// NINGUNA keyword con el ancla — no hay señal de parecido.
+export const GATE_ANCHOR_OVERLAP_VIOLATED = "anchor-overlap-violated";

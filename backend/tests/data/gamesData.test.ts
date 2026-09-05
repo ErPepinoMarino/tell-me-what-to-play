@@ -11,22 +11,29 @@ const seedGames = JSON.parse(
 ) as typeof games;
 
 const genres = new Set([
-  "ACTION",
   "ADVENTURE",
   "ARCADE",
-  "CASUAL",
+  "CARD_AND_BOARD_GAME",
   "FIGHTING",
-  "HORROR",
+  "HACK_AND_SLASH_BEAT_EM_UP",
   "INDIE",
-  "MMO",
-  "PLATFORMER",
+  "MOBA",
+  "MUSIC",
+  "PINBALL",
+  "PLATFORM",
+  "POINT_AND_CLICK",
   "PUZZLE",
+  "QUIZ_TRIVIA",
   "RACING",
-  "RPG",
+  "REAL_TIME_STRATEGY",
+  "ROLE_PLAYING_RPG",
   "SHOOTER",
-  "SIMULATION",
-  "SPORTS",
+  "SIMULATOR",
+  "SPORT",
   "STRATEGY",
+  "TACTICAL",
+  "TURN_BASED_STRATEGY",
+  "VISUAL_NOVEL",
   "UNKNOWN",
 ]);
 const platforms = new Set([
@@ -65,6 +72,7 @@ const gameModes = new Set([
   "MULTIPLAYER",
   "COOPERATIVE",
   "COMPETITIVE",
+  "MASSIVELY_MULTIPLAYER",
   "UNKNOWN",
 ]);
 const perspectives = new Set([
@@ -77,10 +85,37 @@ const perspectives = new Set([
   "UNKNOWN",
 ]);
 
+const themes = new Set([
+  "SHOOTER",
+  "BUSINESS",
+  "COMEDY",
+  "DRAMA",
+  "EDUCATIONAL",
+  "EROTIC",
+  "FANTASY",
+  "FOUR_X",
+  "HISTORICAL",
+  "HORROR",
+  "KIDS",
+  "MYSTERY",
+  "NON_FICTION",
+  "OPEN_WORLD",
+  "PARTY",
+  "ROMANCE",
+  "SANDBOX",
+  "SCIENCE_FICTION",
+  "STEALTH",
+  "SURVIVAL",
+  "THRILLER",
+  "WARFARE",
+  "UNKNOWN",
+]);
+
 describe("objective game fixture", () => {
   it("contains only valid objective enum values and defaults", () => {
     for (const game of games) {
       expect(game.genres.every((genre) => genres.has(genre))).toBe(true);
+      expect(game.themes.every((theme) => themes.has(theme))).toBe(true);
       expect(game.platforms.every((platform) => platforms.has(platform))).toBe(
         true,
       );

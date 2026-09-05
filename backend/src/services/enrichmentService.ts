@@ -36,6 +36,10 @@ Produce a structured enrichment with these rules:
    - 0 = the quality is completely absent; 1 = the quality is abundant or central.
    - Use null when there is NOT enough clear evidence to infer the dimension.
    - NEVER invent a value to fill a record. Do not confuse null with 0.
+   - NEVER output exactly 0.5 as a neutral/unsure default. 0.5 means the
+     evidence GENUINELY supports a moderate degree of the quality. If the
+     evidence is weak, mixed or absent, use null. A record where many
+     dimensions are exactly 0.5 is a data-quality defect.
 
 2. additionalKeywords:
    - OPEN vocabulary, descriptive thematic/search terms (e.g. "cooking", "western", "pirates", "zombies", "soulslike", "roguelike").
@@ -64,22 +68,28 @@ const NOISE_EXCLUSIONS = ["walkthrough", "wiki", "cheats", "download"]
 // Término de búsqueda humano para cada género, usado para desambiguar la query.
 // Exportado: el orquestador lo reutiliza para construir queries de descubrimiento.
 export const GENRE_QUERY_TERMS: Record<Exclude<Genre, "UNKNOWN">, string> = {
-  ACTION: "action",
   ADVENTURE: "adventure",
   ARCADE: "arcade",
-  CASUAL: "casual",
+  CARD_AND_BOARD_GAME: "card board game",
   FIGHTING: "fighting",
-  HORROR: "horror",
+  HACK_AND_SLASH_BEAT_EM_UP: "hack and slash",
   INDIE: "indie",
-  MMO: "mmo",
-  PLATFORMER: "platformer",
+  MOBA: "moba",
+  MUSIC: "music",
+  PINBALL: "pinball",
+  PLATFORM: "platform",
+  POINT_AND_CLICK: "point and click",
   PUZZLE: "puzzle",
+  QUIZ_TRIVIA: "quiz trivia",
   RACING: "racing",
-  RPG: "rpg",
+  REAL_TIME_STRATEGY: "rts",
+  ROLE_PLAYING_RPG: "rpg",
   SHOOTER: "shooter",
-  SIMULATION: "simulation",
-  SPORTS: "sports",
+  SIMULATOR: "simulator",
+  SPORT: "sports",
   STRATEGY: "strategy",
+  TACTICAL: "tactical",
+  TURN_BASED_STRATEGY: "turn based strategy",
   VISUAL_NOVEL: "visual novel",
 };
 
@@ -168,6 +178,7 @@ export class EnrichmentServiceImpl implements EnrichmentService {
       coverUrl: candidate.coverUrl,
       releaseYear: candidate.releaseYear,
       genres: candidate.genres,
+      themes: candidate.themes,
       platforms: candidate.platforms,
       gameModes: candidate.gameModes,
       perspectives: candidate.perspectives,

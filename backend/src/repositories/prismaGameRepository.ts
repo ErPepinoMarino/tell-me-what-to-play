@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma.js";
-import type { Genre, Platform } from "../generated/prisma/enums.js";
+import type { Genre, Platform, Theme } from "../generated/prisma/enums.js";
 import type { Game, GameToPersist } from "../types/Game.js";
 
 // Filtro de pre-selección de candidatos para el orquestador. Semántica
@@ -7,6 +7,7 @@ import type { Game, GameToPersist } from "../types/Game.js";
 // selecciona los juegos que cumplen todos los requisitos y corta con un límite.
 export interface CandidateFilter {
   genres: string[];
+  themes: string[];
   keywords: string[];
   platforms: string[];
   releaseYear: number | null;
@@ -28,6 +29,7 @@ function toGame(
     coverUrl: game.cover_url ?? "",
     releaseYear: game.release_year ?? 0,
     genres: game.genres,
+    themes: game.themes,
     platforms: game.platforms,
     gameModes: game.game_modes,
     perspectives: game.perspectives,
@@ -115,6 +117,9 @@ export const prismaGameRepository = {
     for (const genre of filter.genres) {
       requirements.push({ genres: { has: genre as Genre } });
     }
+    for (const theme of filter.themes) {
+      requirements.push({ themes: { has: theme as Theme } });
+    }
     for (const platform of filter.platforms) {
       requirements.push({ platforms: { has: platform as Platform } });
     }
@@ -164,7 +169,7 @@ export const prismaGameRepository = {
         cover_url: game.coverUrl,
         release_year: game.releaseYear,
         genres: game.genres,
-
+        themes: game.themes,
         platforms: game.platforms,
         game_modes: game.gameModes,
         perspectives: game.perspectives,
@@ -203,7 +208,7 @@ export const prismaGameRepository = {
         cover_url: game.coverUrl,
         release_year: game.releaseYear,
         genres: game.genres,
-
+        themes: game.themes,
         platforms: game.platforms,
         game_modes: game.gameModes,
         perspectives: game.perspectives,

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { IgdbClient, IgdbGameRaw } from "../../src/igdb/types.js";
 import type { Candidate, Game, GameToPersist } from "../../src/types/Game.js";
 import {
@@ -17,6 +17,18 @@ class FakeIgdbClient implements IgdbClient {
   async searchGames(): Promise<IgdbGameRaw[]> {
     return this.games;
   }
+  async fetchGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
+    return this.games.filter((game) => ids.includes(game.id));
+  }
+  async filteredSearch(): Promise<IgdbGameRaw[]> {
+    return this.games;
+  }
+  async fetchAllKeywords(): Promise<{ id: number; name: string; slug: string }[]> {
+    return [];
+  }
+  async fetchThemesByGameIds(): Promise<{ id: number; themes?: { name: string }[] }[]> {
+    return [];
+  }
 }
 
 class FakeEnrichmentService implements EnrichmentService {
@@ -29,6 +41,7 @@ class FakeEnrichmentService implements EnrichmentService {
       coverUrl: candidate.coverUrl,
       releaseYear: candidate.releaseYear,
       genres: candidate.genres,
+      themes: candidate.themes,
       platforms: candidate.platforms,
       gameModes: candidate.gameModes,
       perspectives: candidate.perspectives,
@@ -90,6 +103,7 @@ function makeExistingGame(overrides: Partial<Game> = {}): Game {
     coverUrl: null,
     releaseYear: null,
     genres: ["UNKNOWN"],
+    themes: ["UNKNOWN"],
     platforms: ["UNKNOWN"],
     gameModes: ["UNKNOWN"],
     perspectives: ["UNKNOWN"],
@@ -166,6 +180,7 @@ describe("ImportService.importByQuery", () => {
           coverUrl: candidate.coverUrl,
           releaseYear: candidate.releaseYear,
           genres: candidate.genres,
+          themes: candidate.themes,
           platforms: candidate.platforms,
           gameModes: candidate.gameModes,
           perspectives: candidate.perspectives,
@@ -218,6 +233,7 @@ describe("ImportService.importByQuery", () => {
           coverUrl: candidate.coverUrl,
           releaseYear: candidate.releaseYear,
           genres: candidate.genres,
+          themes: candidate.themes,
           platforms: candidate.platforms,
           gameModes: candidate.gameModes,
           perspectives: candidate.perspectives,

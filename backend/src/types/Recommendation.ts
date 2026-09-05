@@ -3,6 +3,7 @@ import type {
   Genre,
   Perspective,
   Platform,
+  Theme,
 } from "../generated/prisma/enums.js";
 import type { GameSearchIntent } from "./GameSearchIntent.js";
 import type {
@@ -24,6 +25,7 @@ export type NoticeCode =
   | "ANCHOR_NOT_FOUND"
   | "EMPTY_INTENT"
   | "INTENT_UNCHANGED"
+  | "REFINE_REQUIRES_LOGIN"
   | "PARTIAL_RESULTS"
   | "SEARCH_EXHAUSTED"
   | "DISCOVERY_BUDGET_EXHAUSTED"
@@ -38,6 +40,7 @@ export interface RecommendedGameDTO {
   coverUrl: string | null;
   releaseYear: number | null;
   genres: Genre[];
+  themes: Theme[];
   platforms: Platform[];
   gameModes: GameMode[];
   perspectives: Perspective[];

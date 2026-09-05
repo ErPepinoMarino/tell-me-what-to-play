@@ -118,6 +118,72 @@ describe("HttpIgdbClient.searchGames", () => {
   });
 });
 
+describe("HttpIgdbClient.filteredSearch", () => {
+  it("construye condiciones de themes, game_modes y keywords AND-encadenadas", async () => {
+    const { fakeClientHttp, fakeclientIgdb } = makeClient([
+      jsonResponse(200, [{ id: 5, name: "Shooter" }]),
+      jsonResponse(200, [{ id: 19, slug: "horror" }]),
+      jsonResponse(200, [{ id: 6, name: "PC (Microsoft Windows)" }]),
+      jsonResponse(200, [{ id: 5, name: "Massively Multiplayer Online (MMO)" }]),
+      jsonResponse(200, [
+        { id: 906, slug: "steampunk" },
+        { id: 250, slug: "3d" },
+      ]),
+      gamesResponse([{ id: 1, name: "Lies of P" }]),
+    ]);
+
+    await fakeclientIgdb.filteredSearch({
+      genreIgbNames: ["Shooter"],
+      themeSlugs: ["horror"],
+      gameModeIgbNames: ["Massively Multiplayer Online (MMO)"],
+      keywordSlugs: ["steampunk", "3d"],
+      platformIgbNames: ["PC (Microsoft Windows)"],
+    });
+
+    const call = fakeClientHttp.calls[6];
+    expect(call.url).toBe("https://api.igdb.com/v4/games");
+    expect(call.body).toContain("genres = (5)");
+    expect(call.body).toContain("themes = (19)");
+    expect(call.body).toContain("platforms = (6)");
+    expect(call.body).toContain("game_modes = (5)");
+    // Keywords AND (cada término su condición): NO un OR `keywords = (a,b)`
+    expect(call.body).toContain("keywords = (906) & keywords = (250)");
+  });
+
+  it("reporta taxonomy-unresolved por término vía onFilterDropped", async () => {
+    const dropped: unknown[] = [];
+    const { fakeClientHttp, fakeclientIgdb } = makeClient([
+      jsonResponse(200, []), // genres: "Action" no existe en IGDB
+      jsonResponse(200, [{ id: 19, slug: "horror" }]),
+      jsonResponse(200, []), // platforms
+      jsonResponse(200, []), // game_modes
+      jsonResponse(200, [{ id: 906, slug: "steampunk" }]), // keywords: falta "3d"
+      gamesResponse([]),
+    ]);
+
+    await fakeclientIgdb.filteredSearch({
+      genreIgbNames: ["Action"],
+      themeSlugs: ["horror"],
+      platformIgbNames: ["Sega Saturn"],
+      gameModeIgbNames: ["Competitive"],
+      keywordSlugs: ["steampunk", "3d"],
+      onFilterDropped: (details) => dropped.push(details),
+    });
+
+    expect(dropped).toEqual([
+      { field: "genres", terms: ["Action"] },
+      { field: "platforms", terms: ["Sega Saturn"] },
+      { field: "gameModes", terms: ["Competitive"] },
+      { field: "keywords", terms: ["3d"] },
+    ]);
+    // El tema resuelto sí va al where; el drop de keywords no lo rompe.
+    const call = fakeClientHttp.calls[6];
+    expect(call.body).toContain("themes = (19)");
+    expect(call.body).toContain("keywords = (906)");
+    expect(call.body).not.toContain("keywords = (3d)");
+  });
+});
+
 describe("HttpIgdbClient error mapping", () => {
   beforeEach(() => {
     vi.useFakeTimers();

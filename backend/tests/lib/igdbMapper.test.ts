@@ -74,7 +74,8 @@ describe("mapIGDBGame", () => {
     expect(game.coverUrl).toBe(
       "https://images.igdb.com/igdb/image/upload/t_cover_big/co1h2v.jpg",
     );
-    expect(game.genres).toEqual(["SHOOTER"]);
+    expect(game.genres).toEqual(["SHOOTER", "CARD_AND_BOARD_GAME"]);
+    expect(game.themes).toEqual(["HORROR"]);
     expect(game.platforms).toEqual(["XBOX_360"]);
     expect(game.gameModes).toEqual(["SINGLE_PLAYER", "MULTIPLAYER"]);
     expect(game.perspectives).toEqual(["FIRST_PERSON"]);
@@ -83,18 +84,12 @@ describe("mapIGDBGame", () => {
     expect(game.publishers).toEqual(["Microsoft Game Studios"]);
   });
 
-  it("never discards data: unclassified enums and themes end up as keywords", () => {
+  it("never discards data: unclassified enums and themes go to keywords", () => {
     const game = mapIGDBGame(FULL_GAME);
 
-    // keywords IGDB + themes + unclassified, dedupe case-insensitive,
-    // en orden de llegada y sin duplicar "sci-fi"
-    expect(game.keywords).toEqual([
-      "sci-fi",
-      "aliens",
-      "Horror",
-      "Card & Board Game",
-      "Sega Saturn",
-    ]);
+    // keywords IGDB + unclassified (platforma Sega Saturn, theme "sci-fi"),
+    // dedupe case-insensitive y en orden de llegada: sin duplicar "sci-fi"
+    expect(game.keywords).toEqual(["sci-fi", "aliens", "Sega Saturn"]);
   });
 
   it("maps a minimal game: everything absent becomes null, UNKNOWN or []", () => {

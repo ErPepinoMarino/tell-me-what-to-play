@@ -11,6 +11,7 @@ import {
   normalizeKeywords,
   normalizePerspectives,
   normalizePlatforms,
+  normalizeThemes,
 } from "./normalizers.js";
 import type { IgdbGameRaw } from "./types.js";
 
@@ -51,6 +52,7 @@ function extractCompanies(
 export function mapIGDBGame(raw: IgdbGameRaw): GameToPersist {
   // 1. Normalizamos las clasificaciones (enums + unclassified)
   const genres = normalizeGenres(extractNames(raw.genres));
+  const themes = normalizeThemes(extractNames(raw.themes));
   const platforms = normalizePlatforms(extractNames(raw.platforms));
   const gameModes = normalizeGameModes(extractNames(raw.game_modes));
   const perspectives = normalizePerspectives(
@@ -64,11 +66,7 @@ export function mapIGDBGame(raw: IgdbGameRaw): GameToPersist {
     ...gameModes.unclassified,
     ...perspectives.unclassified,
   ];
-  const keywords = normalizeKeywords(
-    extractNames(raw.keywords),
-    extractNames(raw.themes),
-    unclassified,
-  );
+  const keywords = normalizeKeywords(extractNames(raw.keywords), unclassified);
 
   // 3. Fecha -> año (null si IGDB no la trae)
   const releaseYear = extractYear(raw.first_release_date);
@@ -82,6 +80,7 @@ export function mapIGDBGame(raw: IgdbGameRaw): GameToPersist {
     releaseYear,
     // Defaults del schema: sin clasificación clasificable -> UNKNOWN
     genres: genres.values.length > 0 ? genres.values : ["UNKNOWN"],
+    themes: themes.values.length > 0 ? themes.values : ["UNKNOWN"],
     platforms: platforms.values.length > 0 ? platforms.values : ["UNKNOWN"],
     gameModes: gameModes.values.length > 0 ? gameModes.values : ["UNKNOWN"],
     perspectives:
@@ -115,6 +114,7 @@ export function mapIGDBGame(raw: IgdbGameRaw): GameToPersist {
  */
 export function mapToCandidate(raw: IgdbGameRaw): Candidate {
   const genres = normalizeGenres(extractNames(raw.genres));
+  const themes = normalizeThemes(extractNames(raw.themes));
   const platforms = normalizePlatforms(extractNames(raw.platforms));
   const gameModes = normalizeGameModes(extractNames(raw.game_modes));
   const perspectives = normalizePerspectives(
@@ -127,11 +127,7 @@ export function mapToCandidate(raw: IgdbGameRaw): Candidate {
     ...gameModes.unclassified,
     ...perspectives.unclassified,
   ];
-  const keywords = normalizeKeywords(
-    extractNames(raw.keywords),
-    extractNames(raw.themes),
-    unclassified,
-  );
+  const keywords = normalizeKeywords(extractNames(raw.keywords), unclassified);
 
   return {
     slug: generateSlug(raw.name, extractYear(raw.first_release_date)),
@@ -139,6 +135,7 @@ export function mapToCandidate(raw: IgdbGameRaw): Candidate {
     coverUrl: buildCoverUrl(raw.cover),
     releaseYear: extractYear(raw.first_release_date),
     genres: genres.values.length > 0 ? genres.values : ["UNKNOWN"],
+    themes: themes.values.length > 0 ? themes.values : ["UNKNOWN"],
     platforms: platforms.values.length > 0 ? platforms.values : ["UNKNOWN"],
     gameModes: gameModes.values.length > 0 ? gameModes.values : ["UNKNOWN"],
     perspectives:

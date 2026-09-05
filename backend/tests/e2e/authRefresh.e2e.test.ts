@@ -106,6 +106,28 @@ describe("POST /api/auth/refresh E2E", () => {
     expect(body).toEqual({ message: "No se pudo renovar la sesión" });
   });
 
+  it("logout revoca la sesión: el refresh posterior devuelve 401", async () => {
+    const user = await createUser();
+    const session = await createAuthSession(user.id);
+
+    const logout = await fetch(`${baseUrl}/api/auth/logout`, {
+      method: "POST",
+      headers: { cookie: `refresh_token=${session.refreshToken}` },
+    });
+    expect(logout.status).toBe(204);
+
+    const response = await refreshRequest(session.refreshToken);
+    expect(response.status).toBe(401);
+  });
+
+  it("logout es idempotente: token desconocido → 204", async () => {
+    const logout = await fetch(`${baseUrl}/api/auth/logout`, {
+      method: "POST",
+      headers: { cookie: "refresh_token=token-that-does-not-exist" },
+    });
+    expect(logout.status).toBe(204);
+  });
+
   it("returns a new access token for a valid refresh token", async () => {
     const user = await createUser();
     const session = await createAuthSession(user.id);

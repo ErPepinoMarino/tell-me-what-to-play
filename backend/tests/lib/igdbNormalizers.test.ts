@@ -7,6 +7,7 @@ import {
   normalizeKeywords,
   normalizePerspectives,
   normalizePlatforms,
+  normalizeThemes,
 } from "../../src/igdb/normalizers.js";
 
 // 1 ene 2022 00:00:00 UTC
@@ -34,21 +35,16 @@ describe("extractYear", () => {
 });
 
 describe("normalizeGenres", () => {
-  it("maps known IGDB genre names to TMWTP Genre enums", () => {
-    const result = normalizeGenres(["Action", "Role-playing (RPG)", "Platform"]);
-    expect(result.values).toEqual(["ACTION", "RPG", "PLATFORMER"]);
+  it("maps known IGDB genre names to TMWTP Genre enums (1:1 con IGDB)", () => {
+    const result = normalizeGenres(["Shooter", "Role-playing (RPG)", "Platform"]);
+    expect(result.values).toEqual(["SHOOTER", "ROLE_PLAYING_RPG", "PLATFORM"]);
     expect(result.unclassified).toEqual([]);
   });
 
-  it("decomposes a known composite genre into its parts", () => {
-    const result = normalizeGenres(["Action RPG"]);
-    expect(result.values).toEqual(["ACTION", "RPG"]);
-  });
-
   it("returns unclassified names separately instead of inventing enum values", () => {
-    const result = normalizeGenres(["Action", "Card & Board Game"]);
-    expect(result.values).toEqual(["ACTION"]);
-    expect(result.unclassified).toEqual(["Card & Board Game"]);
+    const result = normalizeGenres(["Shooter", "Whatever"]);
+    expect(result.values).toEqual(["SHOOTER"]);
+    expect(result.unclassified).toEqual(["Whatever"]);
   });
 
   it("returns empty results for absent or empty input", () => {
@@ -57,9 +53,34 @@ describe("normalizeGenres", () => {
   });
 
   it("deduplicates genres while preserving order", () => {
-    // "Action RPG" produce ACTION dos veces si también viene "Action" suelto
-    const result = normalizeGenres(["Action", "Action RPG"]);
-    expect(result.values).toEqual(["ACTION", "RPG"]);
+    const result = normalizeGenres(["Shooter", "Shooter"]);
+    expect(result.values).toEqual(["SHOOTER"]);
+    expect(result.unclassified).toEqual([]);
+  });
+
+  it("rejects genre names that IGDB does not have (Action/Casual/MMO)", () => {
+    const result = normalizeGenres(["Action", "Casual", "Massively Multiplayer"]);
+    expect(result.values).toEqual([]);
+    expect(result.unclassified).toEqual(["Action", "Casual", "Massively Multiplayer"]);
+  });
+});
+
+describe("normalizeThemes", () => {
+  it("maps real IGDB theme names to TMWTP Theme enums", () => {
+    const result = normalizeThemes(["Horror", "Action", "Science fiction", "Open world"]);
+    expect(result.values).toEqual([
+      "HORROR",
+      "ACTION",
+      "SCIENCE_FICTION",
+      "OPEN_WORLD",
+    ]);
+    expect(result.unclassified).toEqual([]);
+  });
+
+  it("keeps unknown themes as unclassified", () => {
+    const result = normalizeThemes(["Horror", "Whatever"]);
+    expect(result.values).toEqual(["HORROR"]);
+    expect(result.unclassified).toEqual(["Whatever"]);
   });
 });
 
@@ -93,14 +114,19 @@ describe("normalizePlatforms", () => {
 });
 
 describe("normalizeGameModes", () => {
-  it("maps real IGDB game mode names, collapsing Split screen and MMO into MULTIPLAYER", () => {
+  it("maps real IGDB game mode names, collapsing Split screen into MULTIPLAYER y MMO aparte", () => {
     const result = normalizeGameModes([
       "Single player",
       "Co-operative",
       "Split screen",
       "Massively Multiplayer Online (MMO)",
     ]);
-    expect(result.values).toEqual(["SINGLE_PLAYER", "COOPERATIVE", "MULTIPLAYER"]);
+    expect(result.values).toEqual([
+      "SINGLE_PLAYER",
+      "COOPERATIVE",
+      "MULTIPLAYER",
+      "MASSIVELY_MULTIPLAYER",
+    ]);
     expect(result.unclassified).toEqual([]);
   });
 
@@ -133,11 +159,8 @@ describe("normalizePerspectives", () => {
 });
 
 describe("normalizeKeywords", () => {
-  it("merges keywords and themes into a single open vocabulary, in arrival order", () => {
-    const result = normalizeKeywords(
-      ["zombies", "crafting"],
-      ["Fantasy", "Horror"],
-    );
+  it("merges keywords and unclassified extras into one vocabulary, in arrival order", () => {
+    const result = normalizeKeywords(["zombies", "crafting"], ["Fantasy", "Horror"]);
     expect(result).toEqual(["zombies", "crafting", "Fantasy", "Horror"]);
   });
 
@@ -156,9 +179,9 @@ describe("normalizeKeywords", () => {
     expect(normalizeKeywords([], [])).toEqual([]);
   });
 
-  it("appends extra terms (unclassified from enums) after keywords and themes", () => {
-    const result = normalizeKeywords(["zombies"], ["Horror"], ["Card & Board Game"]);
-    expect(result).toEqual(["zombies", "Horror", "Card & Board Game"]);
+  it("appends extra terms (unclassified from enums) after keywords", () => {
+    const result = normalizeKeywords(["zombies"], ["Card & Board Game"]);
+    expect(result).toEqual(["zombies", "Card & Board Game"]);
   });
 });
 

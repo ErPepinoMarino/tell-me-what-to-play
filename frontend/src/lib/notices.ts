@@ -2,8 +2,10 @@ import type { NoticeCode } from "@/types/Recommendation";
 
 /*
  * Textos ES de los avisos del orquestador. Los notices internos
- * (DISCOVERY_*, CATALOG_FULL, PG_DEGRADED) no se muestran al usuario
- * normal: solo aparecen en el modo demo/técnico.
+ * (PARTIAL_RESULTS, SEARCH_EXHAUSTED, DISCOVERY_*, CATALOG_FULL, PG_DEGRADED)
+ * no se muestran al usuario normal: solo aparecen en el modo demo/técnico.
+ * La información útil para el usuario va en el mensaje de ayuda para
+ * anónimos (ver HINT_FOR_ANONYMOUS en RecommendationSection).
  */
 
 export const NOTICE_MESSAGES: Record<NoticeCode, string> = {
@@ -19,14 +21,21 @@ export const NOTICE_MESSAGES: Record<NoticeCode, string> = {
     "No queda más por ahora con esta búsqueda. Pídeme más si quieres, o afínala o cambia de tema.",
   INTENT_UNCHANGED:
     "No he entendido nada nuevo en tu mensaje: sigo con la búsqueda que teníamos.",
+  REFINE_REQUIRES_LOGIN:
+    "Para refinar la búsqueda tienes que iniciar sesión con tu cuenta de Google. Si lo haces podrás, además, crear una lista personalizada de juegos. Si no puedes seguir usando la búsqueda normal.",
   DISCOVERY_BUDGET_EXHAUSTED: "Presupuesto diario de descubrimiento agotado.",
   DISCOVERY_UNAVAILABLE: "Descubrimiento de juegos nuevos no disponible.",
   CATALOG_FULL: "El catálogo ha alcanzado su límite.",
   PG_DEGRADED: "Catálogo degradado: resultados limitados al cache local.",
 };
 
-// Los que solo interesan en modo demo/técnico.
+// Los que solo interesan en modo demo/técnico. EXPLICIT_GAME_REQUESTED va
+// aquí: la fila de juegos de referencia ya comunica el ancla visualmente, y
+// el mensaje burlón no encaja en búsquedas "similar a X pero que no sea X".
 export const INTERNAL_NOTICES: NoticeCode[] = [
+  "EXPLICIT_GAME_REQUESTED",
+  "PARTIAL_RESULTS",
+  "SEARCH_EXHAUSTED",
   "DISCOVERY_BUDGET_EXHAUSTED",
   "DISCOVERY_UNAVAILABLE",
   "CATALOG_FULL",

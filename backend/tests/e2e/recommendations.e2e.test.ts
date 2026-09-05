@@ -23,7 +23,8 @@ const intentMock = vi.hoisted(() => {
   const DEFAULT_INTENT = {
     gameReferenced: null,
     objective: {
-      genres: ["RPG"],
+      genres: ["ROLE_PLAYING_RPG"],
+      themes: null,
       platforms: null,
       gameModes: null,
       perspectives: null,
@@ -57,6 +58,9 @@ vi.mock("../../src/igdb/index.js", () => ({
   createIgdbClient: () => ({
     fetchGames: async () => [],
     searchGames: async () => [],
+    filteredSearch: async () => [],
+    fetchAllKeywords: async () => [],
+    fetchThemesByGameIds: async () => [],
   }),
 }));
 
@@ -73,7 +77,7 @@ async function seedPiratesGame() {
     data: {
       slug: "pirates-cove",
       title: "Pirates Cove",
-      genres: ["RPG"],
+      genres: ["ROLE_PLAYING_RPG"],
       keywords: ["pirates"],
       difficulty: 0.5,
       violence: 0.4,
@@ -112,6 +116,14 @@ describe("POST /api/recommendations E2E", () => {
 
   beforeAll(async () => {
     vi.stubEnv("BRAVE_SEARCH_API_KEY", "e2e-brave-key");
+    // Diccionario mínimo en la BD de test: el canonicalize del orquestador
+    // (léxico real) necesita entradas o DROP todos los keywords del intent.
+    await prisma.keyword_lexicon.createMany({
+      data: [
+        { canonical: "pirates", aliases: [], embedding: [1], source: "igdb" },
+      ],
+      skipDuplicates: true,
+    });
     app = await buildApp();
   });
 
@@ -226,6 +238,7 @@ describe("POST /api/recommendations E2E", () => {
       gameReferenced: null,
       objective: {
         genres: null,
+        themes: null,
         platforms: null,
         gameModes: null,
         perspectives: null,

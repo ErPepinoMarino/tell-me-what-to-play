@@ -1,4 +1,9 @@
-import type { HttpClient, IgdbClient, IgdbGameRaw } from "./types.js";
+import type {
+  FilteredSearchOptions,
+  HttpClient,
+  IgdbClient,
+  IgdbGameRaw,
+} from "./types.js";
 import { IgdbAuth } from "./auth.js";
 import {
   IgdbAuthError,
@@ -8,6 +13,11 @@ import {
 } from "./errors.js";
 
 const IGDB_API_URL = "https://api.igdb.com/v4/games";
+const IGDB_GENRES_URL = "https://api.igdb.com/v4/genres";
+const IGDB_THEMES_URL = "https://api.igdb.com/v4/themes";
+const IGDB_PLATFORMS_URL = "https://api.igdb.com/v4/platforms";
+const IGDB_KEYWORDS_URL = "https://api.igdb.com/v4/keywords";
+const IGDB_GAME_MODES_URL = "https://api.igdb.com/v4/game_modes";
 const MAX_RETRIES = 4; // 1 initial + 3 retries = 4 total attempts
 const BASE_DELAY_MS = 1000;
 
@@ -82,11 +92,253 @@ export class HttpIgdbClient implements IgdbClient {
       ].join("; ") + ";"
     );
   }
+
+  // Backfill/recovery: metadatos (ratings) de fichas ya descubiertas, por lote de IDs.
+  async fetchGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
+    if (ids.length === 0) return [];
+    const token = await this.auth.getAccessToken();
+    const body =
+      [
+        "fields id, name, total_rating_count, total_rating",
+        `where id = (${ids.join(",")})`,
+        `limit ${Math.min(ids.length, 500)}`,
+      ].join("; ") + ";";
+    return this.withRetry(() => this.request(token, body));
+  }
+
+  /*
+   * Diccionario completo de keywords (seed del léxico): TODA la taxonomía de
+   * keywords de IGDB, paginada. Única fuente del diccionario cerrado.
+   */
+  async fetchAllKeywords(): Promise<{ id: number; name: string; slug: string }[]> {
+    const token = await this.auth.getAccessToken();
+    const rows: { id: number; name: string; slug: string }[] = [];
+    for (let offset = 0; offset < 100_000; offset += 500) {
+      const batch = (await this.withRetry(() =>
+        this.requestRows(
+          token,
+          IGDB_KEYWORDS_URL,
+          `fields id, name, slug; limit 500; offset ${offset};`,
+        ),
+      )) as unknown as { id: number; name: string; slug?: string }[];
+      rows.push(
+        ...batch
+          .filter((row) => typeof row.name === "string")
+          .map((row) => ({
+            id: Number(row.id),
+            name: row.name,
+            slug: row.slug ?? "",
+          })),
+      );
+      if (batch.length < 500) break;
+    }
+    return rows;
+  }
+
+  // Backfill de themes para fichas del catálogo, por lote de IDs de juego.
+  async fetchThemesByGameIds(
+    ids: number[],
+  ): Promise<{ id: number; themes?: { name: string }[] }[]> {
+    if (ids.length === 0) return [];
+    const token = await this.auth.getAccessToken();
+    const body =
+      [
+        "fields id, themes.name",
+        `where id = (${ids.join(",")})`,
+        `limit ${Math.min(ids.length, 500)}`,
+      ].join("; ") + ";";
+    return this.withRetry(() =>
+      this.requestRows(token, IGDB_API_URL, body),
+    ) as Promise<{ id: number; themes?: { name: string }[] }[]>;
+  }
+
+  /*
+   * Descubrimiento por ATRIBUTOS: construye `where genres/keywords/platforms
+   * /release_dates.y` resolviendo los nombres/slugs a IDs de IGDB (taxonomía
+   * cacheada por proceso). Sin `search` se ordena por rating de comunidad →
+   * el descubrimiento trae lo mejor valorado que cumple los atributos, no lo
+   * que mejor suena en el título.
+   */
+  async filteredSearch(options: FilteredSearchOptions): Promise<IgdbGameRaw[]> {
+    const token = await this.auth.getAccessToken();
+    const conditions: string[] = ["version_parent = null"];
+
+    if (options.genreIgbNames && options.genreIgbNames.length > 0) {
+      const ids = await this.resolveTaxonomyIds(
+        IGDB_GENRES_URL,
+        "name",
+        options.genreIgbNames,
+      );
+      if (ids.length > 0) conditions.push(`genres = (${ids.join(",")})`);
+      else this.reportDropped(options, "genres", options.genreIgbNames);
+    }
+    if (options.themeSlugs && options.themeSlugs.length > 0) {
+      const resolved = await this.resolveSlugIds(
+        IGDB_THEMES_URL,
+        options.themeSlugs,
+      );
+      const ids = [...resolved.values()].filter(
+        (id): id is number => id !== null,
+      );
+      if (ids.length > 0) conditions.push(`themes = (${ids.join(",")})`);
+      const dropped = options.themeSlugs.filter(
+        (slug) => resolved.get(slug) === null,
+      );
+      if (dropped.length > 0) this.reportDropped(options, "themes", dropped);
+    }
+    if (options.platformIgbNames && options.platformIgbNames.length > 0) {
+      const ids = await this.resolveTaxonomyIds(
+        IGDB_PLATFORMS_URL,
+        "name",
+        options.platformIgbNames,
+      );
+      if (ids.length > 0) conditions.push(`platforms = (${ids.join(",")})`);
+      else this.reportDropped(options, "platforms", options.platformIgbNames);
+    }
+    if (options.gameModeIgbNames && options.gameModeIgbNames.length > 0) {
+      const ids = await this.resolveTaxonomyIds(
+        IGDB_GAME_MODES_URL,
+        "name",
+        options.gameModeIgbNames,
+      );
+      if (ids.length > 0) conditions.push(`game_modes = (${ids.join(",")})`);
+      else this.reportDropped(options, "gameModes", options.gameModeIgbNames);
+    }
+    /*
+     * Keywords con semántica AND: cada término es una condición separada
+     * (`keywords = (a) & keywords = (b)`), que IGDB interpreta como "debe
+     * tener ambas". Un único `keywords = (a,b)` es OR (cualquiera) y con
+     * términos débiles ("3d") diluía todo el filtro. Verificado contra la
+     * API real: `keywords = (103) & keywords = (250)` solo devuelve juegos
+     * con cyberpunk Y 3d.
+     */
+    if (options.keywordSlugs && options.keywordSlugs.length > 0) {
+      const resolved = await this.resolveSlugIds(
+        IGDB_KEYWORDS_URL,
+        options.keywordSlugs,
+      );
+      for (const slug of options.keywordSlugs) {
+        const id = resolved.get(slug);
+        if (id !== null && id !== undefined) {
+          conditions.push(`keywords = (${id})`);
+        }
+      }
+      const dropped = options.keywordSlugs.filter(
+        (slug) => resolved.get(slug) === null,
+      );
+      if (dropped.length > 0) this.reportDropped(options, "keywords", dropped);
+    }
+    if (options.releaseYear !== undefined) {
+      conditions.push(`release_dates.y = ${options.releaseYear}`);
+    }
+
+    // Sin texto no hay orden por relevancia: manda la comunidad.
+    const statements: string[] = [`fields ${FIELDS}`];
+    if (options.text) {
+      statements.push(`search "${this.sanitizeQuery(options.text)}"`);
+    } else {
+      statements.push("sort total_rating_count desc");
+    }
+    statements.push(`where ${conditions.join(" & ")}`);
+    statements.push(`limit ${options.limit ?? 30}`);
+
+    const body = statements.join("; ") + ";";
+    return this.withRetry(() => this.request(token, body));
+  }
+
+  private reportDropped(
+    options: FilteredSearchOptions,
+    field: "genres" | "themes" | "keywords" | "gameModes" | "platforms",
+    terms: string[],
+  ): void {
+    if (terms.length === 0) return;
+    options.onFilterDropped?.({ field, terms });
+  }
+
+  private sanitizeQuery(text: string): string {
+    return text
+      .replace(/[";\n]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // Resolución de nombres IGDB a IDs (cache por proceso; una llamada por tabla).
+  private taxonomyCache = new Map<string, Map<string, number>>();
+
+  private async resolveTaxonomyIds(
+    url: string,
+    field: "name",
+    names: string[],
+  ): Promise<number[]> {
+    let cache = this.taxonomyCache.get(url);
+    if (!cache) {
+      const token = await this.auth.getAccessToken();
+      const rows = (await this.requestRows(
+        token,
+        url,
+        `fields ${field}; limit 500;`,
+      )) as { id: number; [key: string]: unknown }[];
+      cache = new Map(
+        rows
+          .filter((row) => typeof row[field] === "string")
+          .map((row) => [
+            String(row[field]).toLowerCase(),
+            Number(row.id),
+          ]),
+      );
+      this.taxonomyCache.set(url, cache);
+    }
+
+    const ids: number[] = [];
+    for (const name of names) {
+      const id = cache.get(name.toLowerCase());
+      if (id !== undefined && !ids.includes(id)) ids.push(id);
+    }
+    return ids;
+  }
+
+  // Resolución por SLUG (keywords, themes): cache por proceso y por tabla.
+  // Devuelve Map slug → id (null si no existe), para reportar drops por
+  // término sin dejar de resolver el resto.
+  private slugIdCache = new Map<string, Map<string, number | null>>();
+
+  private async resolveSlugIds(
+    url: string,
+    slugs: string[],
+  ): Promise<Map<string, number | null>> {
+    let cache = this.slugIdCache.get(url);
+    if (!cache) {
+      const token = await this.auth.getAccessToken();
+      const rows = (await this.requestRows(
+        token,
+        url,
+        `fields id, slug; limit 500;`,
+      )) as unknown as { id: number; slug?: string }[];
+      cache = new Map(
+        rows
+          .filter((row) => typeof row.slug === "string")
+          .map((row) => [row.slug as string, Number(row.id)]),
+      );
+      this.slugIdCache.set(url, cache);
+    }
+
+    const result = new Map<string, number | null>();
+    for (const slug of slugs) {
+      result.set(slug, cache.get(slug) ?? null);
+    }
+    return result;
+  }
   // Usa el httpclient para hacer la petición a la API
   // Esta es la clave, ya que el httpclient del test le devolvera lo que queramos y el que sale del index.ts hace la petición real a la API de IGDB.
   // Importante para entender la relación entre los tests y el código de producción.
-  private async request(token: string, body: string): Promise<IgdbGameRaw[]> {
-    const response = await this.httpClient.post(IGDB_API_URL, body, {
+  // Peticion genérica contra cualquier endpoint de IGDB (games, genres,
+  // keywords, platforms...): misma autenticación y mismo manejo de errores.
+  private async requestRows(
+    token: string,
+    url: string,
+    body: string,
+  ): Promise<Record<string, unknown>[]> {
+    const response = await this.httpClient.post(url, body, {
       "Client-ID": this.auth["clientId"],
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
@@ -105,7 +357,15 @@ export class HttpIgdbClient implements IgdbClient {
       throw new IgdbError(`Unexpected IGDB response: ${response.status}`);
     }
 
-    return (await response.json()) as IgdbGameRaw[];
+    return (await response.json()) as Record<string, unknown>[];
+  }
+
+  private async request(token: string, body: string): Promise<IgdbGameRaw[]> {
+    return (await this.requestRows(
+      token,
+      IGDB_API_URL,
+      body,
+    )) as unknown as IgdbGameRaw[];
   }
   // Mecanismo de reintentos si el error lo permite. Es decir IgdbRateLimitError o IgdbServerError.
   private async withRetry<T>(fn: () => Promise<T>): Promise<T> {

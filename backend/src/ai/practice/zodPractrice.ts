@@ -23,6 +23,7 @@ const nullSemantics = {
 
 const nullObjective = {
   genres: null,
+  themes: null,
   platforms: null,
   gameModes: null,
   perspectives: null,
@@ -37,6 +38,7 @@ const emptyIntent = {
   yearFrom: null,
   yearTo: null,
   excluded: null,
+  relation: null,
   semantic: null,
 } satisfies GameSearchIntent;
 
@@ -44,7 +46,7 @@ const intent: GameSearchIntent = {
   ...emptyIntent,
   objective: {
     ...nullObjective,
-    genres: ["RPG"],
+    genres: ["ROLE_PLAYING_RPG"],
     platforms: ["SWITCH"],
   },
   semantic: {
@@ -69,7 +71,7 @@ const testCases: { label: string; intent: GameSearchIntent }[] = [
       ...emptyIntent,
       objective: {
         ...nullObjective,
-        genres: ["RPG"],
+        genres: ["ROLE_PLAYING_RPG"],
         platforms: ["SWITCH"],
       },
     },

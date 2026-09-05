@@ -210,9 +210,5 @@ export function fallbackExplanation(input: ExplanationInput): string {
     );
   }
 
-  if (input.meta.exhaustedPool) {
-    parts.push("Por ahora no queda más con esta búsqueda.");
-  }
-
   return parts.join(" ");
 }

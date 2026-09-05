@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "backend",
   "version": "1.0.0",
   "description": "",
@@ -17,7 +17,10 @@
     "lexicon:mine": "tsx scripts/mineLexicon.ts",
     "lexicon:accept": "tsx scripts/acceptLexicon.ts",
     "lexicon:calibrate": "tsx scripts/calibrateLexicon.ts",
-    "lexicon:migrate": "tsx scripts/migrateKeywords.ts",
+    "lexicon:apply": "tsx scripts/applyLexiconKeywords.ts",
+    "lexicon:seed": "tsx scripts/seedKeywordDictionary.ts",
+    "backfill:themes": "tsx scripts/backfillThemes.ts",
+    "ratings:backfill": "tsx scripts/backfillRatings.ts",
     "import:games": "tsx scripts/importGames.ts"
   },
   "keywords": [],

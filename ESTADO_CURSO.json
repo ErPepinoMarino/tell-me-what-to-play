@@ -150,17 +150,17 @@
       "title": "Inteligencia Artificial",
       "completed": false,
       "competencies": [
-        { "title": "OpenAI API", "completed": false },
-        { "title": "Prompts", "completed": false },
+        { "title": "OpenAI API", "completed": true },
+        { "title": "Prompts", "completed": true },
         { "title": "Function Calling", "completed": false },
         { "title": "Structured Output", "completed": true },
-        { "title": "Embeddings", "completed": false },
+        { "title": "Embeddings", "completed": true },
         { "title": "RAG", "completed": false },
-        { "title": "LangChain", "completed": false },
+        { "title": "LangChain", "completed": true },
         { "title": "LangGraph", "completed": false },
         { "title": "MCP", "completed": false }
       ],
-      "projects": [{ "title": "Aplicación con IA", "completed": false }]
+      "projects": [{ "title": "Aplicación con IA", "completed": true }]
     },
 
     {

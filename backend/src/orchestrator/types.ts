@@ -5,6 +5,7 @@ import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 // Semántica conjuntiva: TODO lo pedido debe estar (contrato de filtros duros).
 export interface CandidateFilter {
   genres: string[];
+  themes: string[];
   keywords: string[];
   platforms: string[];
   releaseYear: number | null;
@@ -49,4 +50,11 @@ export interface RecommendationRequest {
   action: "search" | "more";
   message: string;
   actor: Actor;
+  /*
+   * Última intención que el cliente conoce (la que muestra en los chips).
+   * Para ANON (sin sesión) es la ÚNICA forma de clasificar si el mensaje es
+   * un refinamiento o un tema nuevo. Para usuarios logueados se ignora
+   * (la sesión ya tiene el contexto).
+   */
+  contextIntent?: GameSearchIntent | null;
 }

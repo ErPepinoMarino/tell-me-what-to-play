@@ -17,7 +17,7 @@ export default function Login() {
     return (
       <section className="login">
         <p>Sesión iniciada: puedes afinar, pedir más y cambiar de tema.</p>
-        <button type="button" onClick={logout} className="button-secondary">
+        <button type="button" onClick={() => void logout()} className="button-secondary">
           Cerrar sesión
         </button>
       </section>

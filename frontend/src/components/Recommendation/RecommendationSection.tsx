@@ -12,10 +12,16 @@ import type {
   GameSearchIntent,
   NoticeCode,
 } from "@/types/Recommendation";
-import AIChat, { type ChatStatus, type TranscriptMessage } from "@/components/AIChat/AIChat";
+import AIChat, {
+  type ChatStatus,
+  type TranscriptMessage,
+} from "@/components/AIChat/AIChat";
 import SearchBar from "@/components/SearchBar/SearchBar";
 import RecommendationResults from "@/components/SearchResults/RecommendationResults";
-import { DemoMetaPanel, RequestedGamesRow } from "@/components/SearchResults/RecommendationExtras";
+import {
+  DemoMetaPanel,
+  RequestedGamesRow,
+} from "@/components/SearchResults/RecommendationExtras";
 import Login from "@/components/Login/Login";
 
 /*
@@ -47,23 +53,18 @@ function RecommendationFlow() {
     }
   }, []);
 
-  function applyResponse(
-    response: RecommendationResponse,
-    userMessage: string,
-    action: RecommendationAction,
-  ) {
-    if (action === "more") {
-      setResults((previous) => [...previous, ...response.results]);
-    } else {
-      setResults(response.results);
-    }
+  function applyResponse(response: RecommendationResponse) {
+    // "more" entrega una TANDA NUEVA de hasta 8 (contrato del backend):
+    // reemplaza, no acumula.
+    setResults(response.results);
     setRequestedGames(response.requestedGames);
     setIntent(response.intent);
     setMeta(response.meta);
     setNotices(response.notices);
+    // El mensaje del usuario ya se publicó optimistamente en send(): solo
+    // falta la respuesta del asistente.
     setTranscript((previous) => [
       ...previous,
-      { role: "user", text: userMessage },
       { role: "assistant", text: response.explanation },
     ]);
   }
@@ -108,15 +109,24 @@ function RecommendationFlow() {
   async function send(message: string, action: RecommendationAction) {
     setStatus("searching");
     setError(null);
+    // Mensaje del usuario OPTIMISTA: visible en el chat desde el envío,
+    // no cuando llega la respuesta.
+    setTranscript((previous) => [...previous, { role: "user", text: message }]);
 
     const result = await postJson<RecommendationResponse>(
       "/api/recommendations",
-      { message, action },
-      token,
+      {
+        message,
+        action,
+        // Última intención conocida (la que muestran los chips): el backend
+        // la usa para clasificar refine-vs-new cuando no hay sesión.
+        contextIntent: intent,
+      },
+      token
     );
 
     if (result.ok) {
-      applyResponse(result.data, message, action);
+      applyResponse(result.data);
       setStatus("ready");
     } else {
       applyFailure(result);

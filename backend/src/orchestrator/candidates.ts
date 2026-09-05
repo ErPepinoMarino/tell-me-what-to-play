@@ -11,6 +11,7 @@ import type { CacheLayer, CatalogLayer } from "./types.js";
 // BDD; UNKNOWN no filtra.
 export interface PoolFilter {
   genres: string[];
+  themes: string[];
   keywords: string[];
   platforms: string[];
   releaseYear: number | null;
@@ -21,6 +22,7 @@ export interface PoolFilter {
 export function buildPoolFilter(intent: GameSearchIntent): PoolFilter {
   return {
     genres: (intent.objective?.genres ?? []).filter((g) => g !== "UNKNOWN"),
+    themes: (intent.objective?.themes ?? []).filter((t) => t !== "UNKNOWN"),
     platforms: (intent.objective?.platforms ?? []).filter(
       (p) => p !== "UNKNOWN",
     ),
@@ -72,6 +74,13 @@ export function buildQueryVariants(intent: GameSearchIntent): string[] {
   } else if (genreTerms.length > 0) {
     variants.push(genreTerms.slice(0, 2).join(" "));
   }
+  /*
+   * CONTRATO ACTUAL: intents solo-plataforma/año (sin keywords ni géneros)
+   * generan [] → no-query inmediato sin gastar IGDB. El text-search de IGDB
+   * busca por título y no puede servir estos intents; el fix estructural es
+   * la consulta filtrada de IGDB (where genres/keywords/year/platforms con
+   * IDs) — ronda aprobada, pendiente de implementar.
+   */
 
   return [
     ...new Set(variants.map((v) => v.trim()).filter((v) => v.length > 0)),

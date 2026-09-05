@@ -117,6 +117,7 @@ describe("escenario S3: 'similar a X pero que no sea X'", () => {
       excluded: {
         keywords: ["gta", "grand theft auto"],
         genres: null,
+        themes: ["UNKNOWN"],
         platforms: null,
         gameModes: null,
         perspectives: null,

@@ -43,6 +43,7 @@ import {
   type ExplanationComposer,
   type ExplanationInput,
 } from "../services/explanationService.js";
+import { applyThemeGuard, applyYearGuard } from "../services/intentService.js";
 import { createTrace, newTraceId, type Trace } from "../lib/logger.js";
 import type { KeywordLexiconService } from "../services/keywordLexiconService.js";
 
@@ -100,6 +101,13 @@ export class RecommendationOrchestrator {
     const base = await this.resolveIntent(request, notices);
     const action = request.action;
 
+    // Guardia determinista de años: el código decide lo verificable
+    // ("posteriores al año 2000" → yearFrom 2001) si la LLM no lo capturó.
+    base.intent = applyYearGuard(request.message, base.intent);
+    // Guardia anti-sueño de themes: una palabra-theme en keywords se mueve
+    // a objective.themes (los themes son MUST, no keywords).
+    base.intent = applyThemeGuard(base.intent);
+
     /*
      * Canonicalización contra el léxico (punto 1 de integración): las
      * keywords del usuario ("infectados") se mapean al vocabulario canónico
@@ -108,16 +116,54 @@ export class RecommendationOrchestrator {
      */
     if (this.deps.lexicon) {
       base.intent = await this.deps.lexicon.canonicalizeIntent(base.intent);
+      this.traceLexiconDrops(trace);
     }
 
     trace("intent", {
       keywords: base.intent.keywords,
       genres: base.intent.objective?.genres,
+      themes: base.intent.objective?.themes,
       platforms: base.intent.objective?.platforms,
       gameModes: base.intent.objective?.gameModes,
+      perspectives: base.intent.objective?.perspectives,
       gameReferenced: base.intent.gameReferenced,
+      releaseYear: base.intent.releaseYear,
+      yearFrom: base.intent.yearFrom,
+      yearTo: base.intent.yearTo,
+      excluded: base.intent.excluded,
+      relation: base.intent.relation ?? null,
       semantic: base.intent.semantic,
     });
+
+    /*
+     * ANON intenta REFINAR (relation "refine", detectado con el contexto del
+     * cliente): el refinamiento es feature de sesión → CTA de login, sin
+     * gastar descubrimiento ni explicación.
+     */
+    if (request.actor.kind === "anon" && base.intent.relation === "refine") {
+      notices.add("REFINE_REQUIRES_LOGIN");
+      const response = {
+        results: [],
+        requestedGames: [],
+        intent: base.intent,
+        explanation: "",
+        notices: [...notices],
+        meta: {
+          action,
+          evaluatedCandidates: 0,
+          partial: true,
+          exhaustedPool: true,
+          tierCounts: { excellent: 0, valid: 0, weak: 0, invalid: 0 },
+          discoveryUnitsUsed: 0,
+        },
+      };
+      trace("response", {
+        stopReason: "refine-requires-login",
+        results: 0,
+        durationMs: Date.now() - startedAt,
+      });
+      return { response };
+    }
 
     if (isEmptyIntent(base.intent)) {
       notices.add("EMPTY_INTENT");
@@ -183,6 +229,47 @@ export class RecommendationOrchestrator {
     }
     if (anchors.length > 0) notices.add("EXPLICIT_GAME_REQUESTED");
 
+    /*
+     * Herencia de perfil del ancla ("algo similar a X" sin más señal): la
+     * ficha del ancla define la búsqueda — sus géneros como must y su
+     * perfil semántico como ranking, CAPADO a 0.8 para no disparar el gate
+     * de presencia (las semánticas heredadas son referencia, no exigencia).
+     * Las keywords del ancla NO se heredan como must (el problema "kratos"):
+     * el parecido por keywords lo resuelve el gate de overlap del matcher.
+     */
+    if (
+      anchors.length > 0 &&
+      (base.intent.keywords ?? []).length === 0 &&
+      base.intent.semantic === null &&
+      base.intent.objective === null
+    ) {
+      const anchor = anchors[0];
+      const profile = Object.fromEntries(
+        SEMANTIC_FIELDS.map((field) => [
+          field,
+          anchor[field] === null
+            ? null
+            : Math.min(anchor[field] as number, 0.8),
+        ]),
+      ) as GameSearchIntent["semantic"];
+      base.intent = {
+        ...base.intent,
+        objective: {
+          genres: [...anchor.genres],
+          themes: [...anchor.themes],
+          platforms: null,
+          gameModes: null,
+          perspectives: null,
+        },
+        semantic: profile,
+      };
+      trace("anchor-profile-inherited", {
+        anchor: anchor.slug,
+        genres: anchor.genres,
+        themes: anchor.themes,
+      });
+    }
+
     // GATHER pool local (pre-filtro PG + cache canonicalizada)
     let pool: Game[];
     try {
@@ -218,6 +305,7 @@ export class RecommendationOrchestrator {
     let variantIndex = 0;
     let newGamesCreated = 0;
     let stopReason: StopReason | undefined;
+    let fillEnrichmentErrors = 0;
     const fillDeadline = Date.now() + this.config.fillDeadlineMs;
 
     if (countValid(ranked, this.config) < slots) {
@@ -258,6 +346,7 @@ export class RecommendationOrchestrator {
           Math.min(this.config.maxNewGamesPerDiscoveryUnit, remainingGameCap),
           traceId,
           base.intent,
+          anchors,
         );
         if (attempt.outcome === "budget-exhausted") {
           // Un intento bloqueado por presupuesto no consume nada: no cuenta
@@ -271,6 +360,7 @@ export class RecommendationOrchestrator {
           stopReason = "error";
           break;
         }
+        fillEnrichmentErrors += attempt.enrichmentErrors;
 
         /*
          * La MISMA variante se repite mientras su lista siga dando juegos
@@ -320,7 +410,17 @@ export class RecommendationOrchestrator {
       units: discoveryUnitsUsed,
       pool: pool.length,
       valid: countValid(ranked, this.config),
+      enrichmentErrors: fillEnrichmentErrors,
     });
+
+    // Drops del diccionario durante el relleno (siembra/enrichment).
+    if (this.deps.lexicon) this.traceLexiconDrops(trace);
+
+    // Enrichments fallidos (p. ej. Brave 402) sin crear nada: el
+    // descubrimiento está degradado y el usuario debe saberlo.
+    if (fillEnrichmentErrors > 0 && newGamesCreated === 0) {
+      notices.add("DISCOVERY_UNAVAILABLE");
+    }
 
     // SELECT: solo tier >= minTier, hasta llenar los slots de esta pregunta.
     const selected = ranked
@@ -359,6 +459,7 @@ export class RecommendationOrchestrator {
         variants.slice(variantIndex),
         traceId,
         base.intent,
+        anchors,
       );
     }
 
@@ -405,40 +506,53 @@ export class RecommendationOrchestrator {
     }
 
     /*
-     * search: intent nuevo. Si hay sesión con intención previa, el extractor
-     * la recibe como contexto y decide si el mensaje la EXTIENDE (merge) o
-     * la REEMPLAZA (tema nuevo): afinar o cambiar de tema es decisión del
-     * intérprete, no del cliente.
+     * search con sesión: el extractor recibe el intent previo y decide si el
+     * mensaje lo EXTIENDE (refine) o lo REEMPLAZA (tema nuevo). Salvaguarda
+     * INTENT_UNCHANGED para mensajes sin contenido ("sí, quiero").
      */
-    let session: SessionState | undefined;
-    let userId: number | undefined;
-    let previousIntent: GameSearchIntent | undefined;
-
     if (request.actor.kind === "user") {
-      userId = request.actor.userId;
-      session = this.deps.sessions.ensure(userId);
-      previousIntent = session.currentIntent ?? undefined;
-    }
+      const session = this.deps.sessions.ensure(request.actor.userId);
+      const previousIntent = session.currentIntent ?? undefined;
 
-    const extracted = await this.extractWithRetry(request.message, previousIntent);
+      const extracted = await this.extractWithRetry(
+        request.message,
+        previousIntent,
+      );
+
+      let intent = extracted;
+      if (isEmptyIntent(extracted) && previousIntent) {
+        intent = previousIntent;
+        notices.add("INTENT_UNCHANGED");
+      }
+
+      return {
+        intent,
+        session,
+        userId: request.actor.userId,
+        shownGameIds: session.shownGameIds,
+      };
+    }
 
     /*
-     * Salvaguarda determinista: si el mensaje no aporta intención nueva
-     * ("sí", "¿y eso?") pero la sesión tenía una, se reutiliza la previa.
-     * El LLM interpreta; el código decide con una regla verificable.
+     * ANON: sin sesión → las búsquedas son siempre frescas. Pero si el
+     * cliente envió su última intención (contextIntent), la usamos SOLO para
+     * clasificar: si la LLM dice que el mensaje es un REFINAMIENTO, devolvemos
+     * la intención clasificada con relation "refine" y el handle() responde el
+     * CTA de login (el refinamiento es una feature de sesión). Si es tema
+     * nuevo, se re-extrae SIN contexto para garantizar una intención fresca.
      */
-    let intent = extracted;
-    if (isEmptyIntent(extracted) && previousIntent) {
-      intent = previousIntent;
-      notices.add("INTENT_UNCHANGED");
+    if (request.contextIntent) {
+      const classified = await this.extractWithRetry(
+        request.message,
+        request.contextIntent,
+      );
+      if (classified.relation === "refine") {
+        return { intent: classified, shownGameIds: [] };
+      }
     }
 
-    return {
-      intent,
-      session,
-      userId,
-      shownGameIds: session?.shownGameIds ?? [],
-    };
+    const intent = await this.extractWithRetry(request.message, undefined);
+    return { intent, shownGameIds: [] };
   }
 
   private async extractWithRetry(
@@ -453,6 +567,21 @@ export class RecommendationOrchestrator {
       } catch {
         throw new InterpretationError();
       }
+    }
+  }
+
+  /*
+   * Trace de la política conservadora del diccionario: cada keyword de
+   * usuario que no matcheó ningún canónico de IGDB se ignora (no se guarda).
+   * Nunca en silencio.
+   */
+  private traceLexiconDrops(trace: Trace): void {
+    for (const drop of this.deps.lexicon?.drainDropped() ?? []) {
+      trace("keyword-ignored", {
+        term: drop.term,
+        topMatch: drop.topMatch ?? null,
+        similarity: drop.similarity ?? 0,
+      });
     }
   }
 
@@ -480,6 +609,7 @@ export class RecommendationOrchestrator {
     remainingVariants: string[],
     traceId: string,
     intent: GameSearchIntent,
+    anchors: Game[],
   ): Promise<void> {
     return (async () => {
       let units = 0;
@@ -508,6 +638,7 @@ export class RecommendationOrchestrator {
           this.config.maxNewGamesPerDiscoveryUnit,
           traceId,
           intent,
+          anchors,
         );
         units++;
       }
@@ -563,7 +694,15 @@ export class RecommendationOrchestrator {
         })),
       })),
       requestedGames: params.requestedGames.map((game) => game.title),
-      notices: [...params.notices],
+      /*
+       * El explicador habla de los RESULTADOS, no del estado del pipeline:
+       * PARTIAL/EXHAUSTED son notices internos (la guía del usuario es el
+       * mensaje de anónimos del frontend), y si llegan al LLM los redacta.
+       */
+      notices: [...params.notices].filter(
+        (notice) =>
+          notice !== "PARTIAL_RESULTS" && notice !== "SEARCH_EXHAUSTED",
+      ),
       meta: {
         evaluatedCandidates: params.poolSize,
         partial: meta.partial,
@@ -616,6 +755,7 @@ function isEmptyIntent(intent: GameSearchIntent): boolean {
     intent.objective !== null &&
     [
       intent.objective.genres,
+      intent.objective.themes,
       intent.objective.platforms,
       intent.objective.gameModes,
       intent.objective.perspectives,
@@ -682,6 +822,7 @@ function toGameDTO(game: Game): RecommendedGameDTO {
     coverUrl: game.coverUrl,
     releaseYear: game.releaseYear,
     genres: [...game.genres],
+    themes: [...game.themes],
     platforms: [...game.platforms],
     gameModes: [...game.gameModes],
     perspectives: [...game.perspectives],

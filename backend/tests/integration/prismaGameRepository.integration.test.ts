@@ -27,7 +27,8 @@ describe("prismaGameRepository", () => {
         ...defaults,
         slug: "elden-ring-2022",
         title: "Elden Ring",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -47,14 +48,16 @@ describe("prismaGameRepository", () => {
           ...defaults,
           slug: "elden-ring-2022",
           title: "Elden Ring",
-          genres: ["ACTION"],
+          genres: ["SHOOTER"],
+          themes: ["UNKNOWN"],
           platforms: ["PC"],
         },
         {
           ...defaults,
           slug: "hades-2020",
           title: "Hades",
-          genres: ["ACTION"],
+          genres: ["SHOOTER"],
+          themes: ["UNKNOWN"],
           platforms: ["PC"],
         },
       ],
@@ -80,7 +83,8 @@ describe("prismaGameRepository", () => {
         ...defaults,
         slug: "elden-ring-2022",
         title: "Elden Ring",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -101,7 +105,9 @@ describe("prismaGameRepository", () => {
       description_en: "A rogue-like dungeon crawler.",
       coverUrl: "https://example.com/hades.jpg",
       releaseYear: 2020,
-      genres: ["ACTION"],
+      genres: ["SHOOTER"],
+
+      themes: ["UNKNOWN"],
 
       platforms: ["PC"],
       gameModes: ["UNKNOWN"],
@@ -133,7 +139,8 @@ describe("prismaGameRepository", () => {
     expect(result).toEqual({ ...game, id: expect.any(Number) });
     expect(persistedGame).toMatchObject({
       slug: game.slug,
-      genres: ["ACTION"],
+      genres: ["SHOOTER"],
+      themes: ["UNKNOWN"],
       platforms: ["PC"],
       game_modes: ["UNKNOWN"],
       perspectives: ["UNKNOWN"],
@@ -154,7 +161,8 @@ describe("prismaGameRepository", () => {
       coverUrl:
         "https://images.igdb.com/igdb/image/upload/t_cover_big/coXXYY.jpg",
       releaseYear: 2022,
-      genres: ["ACTION", "RPG"],
+      genres: ["SHOOTER", "ROLE_PLAYING_RPG"],
+      themes: ["UNKNOWN"],
       platforms: ["PC", "PS5"],
       gameModes: ["SINGLE_PLAYER"],
       perspectives: ["THIRD_PERSON"],
@@ -185,7 +193,7 @@ describe("prismaGameRepository", () => {
       slug: game.slug,
       title: game.title,
       releaseYear: 2022,
-      genres: ["ACTION", "RPG"],
+      genres: ["SHOOTER", "ROLE_PLAYING_RPG"],
       keywords: ["open world", "souls-like"],
     });
 
@@ -206,7 +214,8 @@ describe("prismaGameRepository", () => {
         ...defaults,
         slug: "hades-2020",
         title: "Hades",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -219,7 +228,9 @@ describe("prismaGameRepository", () => {
       description_en: "A sequel.",
       coverUrl: "https://example.com/hades-ii.jpg",
       releaseYear: 2024,
-      genres: ["ACTION"],
+      genres: ["SHOOTER"],
+
+      themes: ["UNKNOWN"],
 
       platforms: ["PC", "SWITCH"],
       gameModes: ["UNKNOWN"],
@@ -256,6 +267,7 @@ describe("prismaGameRepository", () => {
         title: "Example",
         release_year: 1998,
         genres: ["UNKNOWN"],
+        themes: ["UNKNOWN"],
         platforms: ["UNKNOWN"],
       },
     });
@@ -266,6 +278,7 @@ describe("prismaGameRepository", () => {
         title: "Example",
         release_year: 2024,
         genres: ["UNKNOWN"],
+        themes: ["UNKNOWN"],
         platforms: ["UNKNOWN"],
       },
     });
@@ -282,7 +295,8 @@ describe("prismaGameRepository", () => {
         ...defaults,
         slug: "hades-2020",
         title: "Hades",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -301,7 +315,8 @@ describe("prismaGameRepository", () => {
         ...defaults,
         slug: "hades-2020",
         title: "Hades",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -314,7 +329,9 @@ describe("prismaGameRepository", () => {
       description_en: "A duplicate slug.",
       coverUrl: "https://example.com/another-hades.jpg",
       releaseYear: 2020,
-      genres: ["ACTION"],
+      genres: ["SHOOTER"],
+
+      themes: ["UNKNOWN"],
 
       platforms: ["PC"],
       gameModes: ["UNKNOWN"],
@@ -354,7 +371,8 @@ describe("prismaGameRepository", () => {
           ...defaults,
           slug: "elden-ring-2022",
           title: "Elden Ring",
-          genres: ["ACTION"],
+          genres: ["SHOOTER"],
+          themes: ["UNKNOWN"],
           platforms: ["PC"],
         },
       });
@@ -385,7 +403,9 @@ describe("prismaGameRepository", () => {
         description_en: "Action roguelite.",
         coverUrl: "https://example.com/hades.jpg",
         releaseYear: 2020,
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+
+        themes: ["UNKNOWN"],
 
         platforms: ["PC"],
         gameModes: ["UNKNOWN"],
@@ -441,6 +461,8 @@ describe("prismaGameRepository", () => {
         releaseYear: 2011,
         genres: ["PUZZLE"],
 
+        themes: ["UNKNOWN"],
+
         platforms: ["PC"],
         gameModes: ["UNKNOWN"],
         perspectives: ["UNKNOWN"],
@@ -476,7 +498,8 @@ describe("prismaGameRepository", () => {
           ...defaults,
           slug: "celeste-2018",
           title: "Celeste",
-          genres: ["PLATFORMER"],
+          genres: ["PLATFORM"],
+          themes: ["UNKNOWN"],
           platforms: ["PC"],
         },
       });
@@ -490,7 +513,9 @@ describe("prismaGameRepository", () => {
         description_en: "",
         coverUrl: "",
         releaseYear: 2018,
-        genres: ["PLATFORMER"],
+        genres: ["PLATFORM"],
+
+        themes: ["UNKNOWN"],
 
         platforms: ["PC"],
         gameModes: ["UNKNOWN"],

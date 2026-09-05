@@ -313,7 +313,17 @@ export interface LexiconRow {
 export interface CanonicalizedTerm {
   term: string;
   canonical: string;
-  method: "literal" | "stem" | "embedding" | "unmapped";
+  method: "literal" | "stem" | "embedding" | "unmapped" | "dropped";
+  similarity?: number;
+  // Mejor candidato del diccionario cuando NO se alcanza el umbral (trace).
+  topMatch?: string;
+  // Interno: vector del término cuando se calculó (ya no se usa para crecer).
+  embedding?: number[];
+}
+
+export interface DroppedTerm {
+  term: string;
+  topMatch?: string;
   similarity?: number;
 }
 
@@ -338,8 +348,24 @@ export class KeywordLexiconService {
   private stemIndex = new Map<string, string>();
   // Cache de vectores de términos desconocidos (evita re-embedder).
   private unknownVectors = new Map<string, number[]>();
+  // Drops recientes (política conservadora): para que el orquestador los
+  // trace como "keyword-ignored" — nunca en silencio.
+  private dropped: DroppedTerm[] = [];
 
   constructor(private deps: KeywordLexiconServiceDeps) {}
+
+  /*
+   * Drain de drops recientes (idempotente por término): el orquestador lo
+   * llama tras canonicalizar para trazar qué keywords de usuario se ignoraron.
+   */
+  drainDropped(): DroppedTerm[] {
+    const unique = new Map<string, DroppedTerm>();
+    for (const item of this.dropped) {
+      if (!unique.has(item.term)) unique.set(item.term, item);
+    }
+    this.dropped = [];
+    return [...unique.values()];
+  }
 
   async canonicalize(terms: string[]): Promise<CanonicalizedTerm[]> {
     await this.ensureLoaded();
@@ -410,7 +436,7 @@ export class KeywordLexiconService {
    * matching. Idempotente: los canónicos ya canonicalizados quedan igual
    * (literal), por lo que "more" no gasta nada.
    */
-  async canonicalizeIntent(
+async canonicalizeIntent(
     intent: GameSearchIntent,
   ): Promise<GameSearchIntent> {
     const keywords = intent.keywords
@@ -419,23 +445,32 @@ export class KeywordLexiconService {
 
     let excluded = intent.excluded;
     if (excluded?.keywords) {
-      const canonicalExcluded = await this.canonicalize(excluded.keywords);
+      const canonicalExcluded = await this.canonicalizeTerms(excluded.keywords);
       excluded = {
         ...excluded,
-        keywords: canonicalExcluded.map((item) => item.canonical),
+        keywords: canonicalExcluded,
       };
     }
 
     return { ...intent, keywords, excluded };
   }
 
-  // Conveniencia: lista de términos → lista canónica (unmapped conserva).
+  // Conveniencia: lista de términos → lista canónica. Política conservadora:
+  // lo que NO matchea el diccionario (ni literal/stem ni por embedding) se
+  // DROP (no participa del filtro; nunca se añade al diccionario).
   async canonicalizeTerms(terms: string[]): Promise<string[]> {
     const result = await this.canonicalize(terms);
-    return result.map((item) => item.canonical);
+    return result
+      .filter(
+        (item) =>
+          item.method === "literal" ||
+          item.method === "stem" ||
+          item.method === "embedding",
+      )
+      .map((item) => item.canonical);
   }
 
-  private resolveByEmbedding(term: string, vector: number[]): CanonicalizedTerm {
+private resolveByEmbedding(term: string, vector: number[]): CanonicalizedTerm {
     let best: { canonical: string; similarity: number } | null = null;
     for (const entry of this.entries) {
       const similarity = cosineSimilarity(vector, entry.embedding);
@@ -449,9 +484,27 @@ export class KeywordLexiconService {
         canonical: best.canonical,
         method: "embedding",
         similarity: Number(best.similarity.toFixed(4)),
+        topMatch: best.canonical,
       };
     }
-    return { term, canonical: term, method: "unmapped" };
+    /*
+     * Política CONSERVADORA (decisión de producto): el diccionario es el
+     * conjunto completo de keywords de IGDB. Una palabra que no coincide ni
+     * se parece a ninguna es "inventada hecha pasar por keyword" → se ignora.
+     * No se guarda, no se amplía el diccionario.
+     */
+    this.dropped.push({
+      term,
+      topMatch: best?.canonical,
+      similarity: best ? Number(best.similarity.toFixed(4)) : 0,
+    });
+    return {
+      term,
+      canonical: term,
+      method: "dropped",
+      similarity: best ? Number(best.similarity.toFixed(4)) : 0,
+      topMatch: best?.canonical,
+    };
   }
 
   private embedderDisabled = false;

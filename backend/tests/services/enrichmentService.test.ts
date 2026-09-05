@@ -19,6 +19,7 @@ function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
     title: "Halo 3",
     releaseYear: 2007,
     genres: ["SHOOTER"],
+    themes: ["UNKNOWN"],
     platforms: ["XBOX_360"],
     gameModes: ["SINGLE_PLAYER", "MULTIPLAYER"],
     perspectives: ["FIRST_PERSON"],

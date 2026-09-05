@@ -111,7 +111,8 @@ describe("fallbackExplanation", () => {
         intent: makeIntent({
           keywords: ["pirates"],
           objective: {
-            genres: ["RPG"],
+            genres: ["ROLE_PLAYING_RPG"],
+            themes: null,
             platforms: null,
             gameModes: null,
             perspectives: null,
@@ -133,10 +134,9 @@ describe("fallbackExplanation", () => {
     );
 
     expect(text).toContain("He entendido que buscas");
-    expect(text).toContain("rpg");
+    expect(text).toContain("role playing rpg");
     expect(text).toContain("pirates");
     expect(text).toContain("GTA V");
-    expect(text).toContain("no queda más");
     // Sin jerga interna para el usuario
     expect(text).not.toContain("pool");
     expect(text).not.toContain("parcial");

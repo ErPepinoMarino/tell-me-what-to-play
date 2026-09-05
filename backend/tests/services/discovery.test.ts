@@ -22,12 +22,14 @@ function makeSetup(
     limits?: { igdb?: number; brave?: number; llm?: number };
     igdbResults?: Record<string, IgdbGameRaw[]>;
     igdbError?: Error;
+    filteredResults?: IgdbGameRaw[];
     enrichment?: FakeEnrichment;
     catalog?: FakeCatalogLayer;
   } = {},
 ) {
   const catalog = opts.catalog ?? new FakeCatalogLayer();
   const igdb = new FakeIgdbClient(opts.igdbResults ?? {}, opts.igdbError);
+  igdb.filteredResults = opts.filteredResults ?? [];
   const enrichment = opts.enrichment ?? new FakeEnrichment();
   const budget = new InMemoryBudgetLedger({
     igdb: opts.limits?.igdb ?? 100,
@@ -84,6 +86,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
       newGames: [],
       budgetExhausted: true,
       variantExhausted: false,
+      enrichmentErrors: 0,
     });
     expect(igdb.calls).toHaveLength(0);
   });
@@ -153,6 +156,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
       newGames: [],
       budgetExhausted: false,
       variantExhausted: true,
+      enrichmentErrors: 0,
     });
   });
 
@@ -174,17 +178,15 @@ describe("DiscoveryManager.discoverByQuery", () => {
 
   it("pre-filtro must: los candidatos condenados se saltan sin gastar Brave/LLM", async () => {
     const { discovery, catalog, enrichment } = makeSetup({
-      igdbResults: {
-        horror: [
-          makeRaw(10, "Random Horror", {
-            genres: [{ id: 1, name: "Horror" }],
-          }),
-          makeRaw(11, "Cozy Horror", {
-            genres: [{ id: 1, name: "Horror" }],
-            keywords: [{ id: 11, name: "cozy" }],
-          }),
-        ],
-      },
+      filteredResults: [
+        makeRaw(10, "Random Horror", {
+          genres: [{ id: 1, name: "Horror" }],
+        }),
+        makeRaw(11, "Cozy Horror", {
+          genres: [{ id: 1, name: "Horror" }],
+          keywords: [{ id: 11, name: "cozy" }],
+        }),
+      ],
     });
 
     // El intent exige la keyword "cozy" (must): "Random Horror" no la tendrá
@@ -360,7 +362,7 @@ describe("DiscoveryManager.reEnrich", () => {
       sourceId: "55",
       title: "Pirates!",
       keywords: ["pirates"],
-      genres: ["RPG"],
+      genres: ["ROLE_PLAYING_RPG"],
       difficulty: 0.9,
     });
     const catalog = new FakeCatalogLayer();
@@ -386,7 +388,7 @@ describe("DiscoveryManager.reEnrich", () => {
     expect(updated.horror).toBe(0.8); // evidencia nueva = actualizar
     expect(updated.keywords).toEqual(["pirates", "treasure"]);
     expect(updated.description_es).toBe("Descripción nueva");
-    expect(updated.genres).toEqual(["RPG"]); // objetivos estables
+    expect(updated.genres).toEqual(["ROLE_PLAYING_RPG"]); // objetivos estables
     expect(updated.title).toBe("Pirates!");
   });
 
@@ -431,7 +433,7 @@ describe("DiscoveryManager.reEnrich", () => {
     const updated = catalog.get(5)!;
     // Identidad y objetivo adoptados de IGDB (la ficha no tenía source_id)
     expect(updated.sourceId).toBe("77");
-    expect(updated.genres).toContain("RPG");
+    expect(updated.genres).toContain("ROLE_PLAYING_RPG");
     // Compañías rellenadas desde involved_companies
     expect(updated.developers).toContain("FromSoftware");
     expect(updated.publishers).toContain("Bandai Namco");

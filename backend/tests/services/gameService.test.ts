@@ -31,8 +31,8 @@ describe("gameService.search", () => {
         description_en: "An action RPG.",
         coverUrl: "https://example.com/elden-ring.jpg",
         releaseYear: 2022,
-        genres: ["ACTION"],
-
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
         gameModes: ["UNKNOWN"],
         perspectives: ["UNKNOWN"],
@@ -96,7 +96,7 @@ describe("gameService semantic attribute validation", () => {
     coverUrl: "",
     releaseYear: 2020,
     genres: ["UNKNOWN"],
-
+    themes: ["UNKNOWN"],
     platforms: ["PC"],
     gameModes: ["UNKNOWN"],
     perspectives: ["UNKNOWN"],

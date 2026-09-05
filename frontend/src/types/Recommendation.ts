@@ -16,6 +16,7 @@ export type NoticeCode =
   | "ANCHOR_NOT_FOUND"
   | "EMPTY_INTENT"
   | "INTENT_UNCHANGED"
+  | "REFINE_REQUIRES_LOGIN"
   | "PARTIAL_RESULTS"
   | "SEARCH_EXHAUSTED"
   | "DISCOVERY_BUDGET_EXHAUSTED"
@@ -28,23 +29,55 @@ export type MatchBlock = "semantic" | "objective" | "keywords" | "reference";
 export type MatchReasonKind = "bonus" | "penalty" | "gate" | "skipped";
 
 export type Genre =
-  | "ACTION"
   | "ADVENTURE"
   | "ARCADE"
-  | "CASUAL"
+  | "CARD_AND_BOARD_GAME"
   | "FIGHTING"
-  | "HORROR"
+  | "HACK_AND_SLASH_BEAT_EM_UP"
   | "INDIE"
-  | "MMO"
-  | "PLATFORMER"
+  | "MOBA"
+  | "MUSIC"
+  | "PINBALL"
+  | "PLATFORM"
+  | "POINT_AND_CLICK"
   | "PUZZLE"
+  | "QUIZ_TRIVIA"
   | "RACING"
-  | "RPG"
+  | "REAL_TIME_STRATEGY"
+  | "ROLE_PLAYING_RPG"
   | "SHOOTER"
-  | "SIMULATION"
-  | "SPORTS"
+  | "SIMULATOR"
+  | "SPORT"
   | "STRATEGY"
+  | "TACTICAL"
+  | "TURN_BASED_STRATEGY"
   | "VISUAL_NOVEL"
+  | "UNKNOWN";
+
+// Themes de IGDB (/v4/themes): mundo/tono/ambientación. Capa MUST.
+export type Theme =
+  | "ACTION"
+  | "BUSINESS"
+  | "COMEDY"
+  | "DRAMA"
+  | "EDUCATIONAL"
+  | "EROTIC"
+  | "FANTASY"
+  | "FOUR_X"
+  | "HISTORICAL"
+  | "HORROR"
+  | "KIDS"
+  | "MYSTERY"
+  | "NON_FICTION"
+  | "OPEN_WORLD"
+  | "PARTY"
+  | "ROMANCE"
+  | "SANDBOX"
+  | "SCIENCE_FICTION"
+  | "STEALTH"
+  | "SURVIVAL"
+  | "THRILLER"
+  | "WARFARE"
   | "UNKNOWN";
 
 export type Platform =
@@ -82,6 +115,7 @@ export type GameMode =
   | "MULTIPLAYER"
   | "COOPERATIVE"
   | "COMPETITIVE"
+  | "MASSIVELY_MULTIPLAYER"
   | "UNKNOWN";
 
 export type Perspective =
@@ -100,6 +134,7 @@ export interface RecommendedGame {
   coverUrl: string | null;
   releaseYear: number | null;
   genres: Genre[];
+  themes: Theme[];
   platforms: Platform[];
   gameModes: GameMode[];
   perspectives: Perspective[];
@@ -142,6 +177,7 @@ export interface GameSearchIntent {
   gameReferenced: string[] | null;
   objective: {
     genres: Genre[] | null;
+    themes: Theme[] | null;
     platforms: Platform[] | null;
     gameModes: GameMode[] | null;
     perspectives: Perspective[] | null;
@@ -155,6 +191,7 @@ export interface GameSearchIntent {
   excluded: {
     keywords: string[] | null;
     genres: Genre[] | null;
+    themes: Theme[] | null;
     platforms: Platform[] | null;
     gameModes: GameMode[] | null;
     perspectives: Perspective[] | null;
@@ -162,6 +199,8 @@ export interface GameSearchIntent {
     yearFrom: number | null;
     yearTo: number | null;
   } | null;
+  // Relación con la intención previa (solo con contexto): refine | new | null
+  relation: "new" | "refine" | null;
   semantic: Partial<Record<string, number | null>> | null;
 }
 

@@ -97,6 +97,20 @@ export function createAuthService(
         refreshToken: newRefreshToken.token,
       };
     },
+    /*
+     * Logout real: revoca la sesión completa (invalida TODOS sus refresh
+     * tokens — rotateRefreshToken ya devuelve null para sesiones revocadas)
+     * y, como cinturón y tirantes, también el token concreto que se envió.
+     * Idempotente: token inexistente → no hace nada.
+     */
+    async logoutSession(token: string): Promise<void> {
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const refreshToken = await sessionRepository.findRefreshToken(tokenHash);
+      if (!refreshToken) return;
+
+      await sessionRepository.revokeSession(refreshToken.sessions.id);
+      await sessionRepository.revokeRefreshToken(refreshToken.id);
+    },
     isRefreshTokenExpired(createdAt: Date) {
       return Date.now() >= createdAt.getTime() + 60 * 60 * 1000;
     },

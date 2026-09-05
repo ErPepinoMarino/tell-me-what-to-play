@@ -39,6 +39,7 @@ export function makeGame(
     title: `Game ${overrides.id}`,
     releaseYear: 2020,
     genres: ["UNKNOWN"],
+    themes: ["UNKNOWN"],
     platforms: ["UNKNOWN"],
     gameModes: ["UNKNOWN"],
     perspectives: ["UNKNOWN"],
@@ -52,6 +53,7 @@ export function makeGame(
 export function makeObjective(overrides: Partial<Objective> = {}): Objective {
   return {
     genres: null,
+    themes: null,
     platforms: null,
     gameModes: null,
     perspectives: null,
@@ -66,6 +68,7 @@ export function makeExcluded(
   return {
     keywords: null,
     genres: null,
+    themes: null,
     platforms: null,
     gameModes: null,
     perspectives: null,
@@ -161,7 +164,7 @@ export const FIXTURES: MatchFixture[] = [
       id: 3,
       slug: "arkham",
       title: "Batman: Arkham City",
-      keywords: ["action"],
+      keywords: ["SHOOTER"],
     }),
     expect: {
       tier: "valid",
@@ -184,7 +187,7 @@ export const FIXTURES: MatchFixture[] = [
   // ---- Must: enums (superset OK, UNKNOWN falla) ----
   {
     name: "F5 género pedido con juego UNKNOWN → invalid (no verificable)",
-    intent: makeIntent({ objective: makeObjective({ genres: ["RPG"] }) }),
+    intent: makeIntent({ objective: makeObjective({ genres: ["ROLE_PLAYING_RPG"] }) }),
     game: makeGame({ id: 5, slug: "unknown-genre", genres: ["UNKNOWN"] }),
     expect: {
       tier: "invalid",
@@ -196,8 +199,8 @@ export const FIXTURES: MatchFixture[] = [
   },
   {
     name: "F6 género pedido presente con superset → valid",
-    intent: makeIntent({ objective: makeObjective({ genres: ["RPG"] }) }),
-    game: makeGame({ id: 6, slug: "rpg-action", genres: ["RPG", "ACTION"] }),
+    intent: makeIntent({ objective: makeObjective({ genres: ["ROLE_PLAYING_RPG"] }) }),
+    game: makeGame({ id: 6, slug: "rpg-action", genres: ["ROLE_PLAYING_RPG", "SHOOTER"] }),
     expect: {
       tier: "valid",
       gatesViolated: [],
@@ -206,7 +209,7 @@ export const FIXTURES: MatchFixture[] = [
   },
   {
     name: "F7 género pedido ausente → invalid",
-    intent: makeIntent({ objective: makeObjective({ genres: ["RPG"] }) }),
+    intent: makeIntent({ objective: makeObjective({ genres: ["ROLE_PLAYING_RPG"] }) }),
     game: makeGame({ id: 7, slug: "pure-puzzle", genres: ["PUZZLE"] }),
     expect: {
       tier: "invalid",
@@ -383,14 +386,19 @@ export const FIXTURES: MatchFixture[] = [
     },
   },
   {
-    name: "S2 contradicción amplificada → score negativo (peor que desconocido)",
+    name: "S2 contradicción amplificada → invalid (demanda 0.9 activa presence gate)",
     intent: makeIntent({ semantic: makeSemantic({ horror: 0.9 }) }),
     game: makeGame({ id: 31, slug: "not-horror", horror: 0.1 }),
     expect: {
-      tier: "valid",
-      scoreRange: [-0.05, -0.03],
+      // La demanda 0.9 es MAXIMAL (≥ 0.9): el juego suspende (0.1) → gate de
+      // presencia, además del score negativo por contradicción amplificada.
+      tier: "invalid",
+      gatesViolated: ["presence-violated"],
+      // (acuerdo 0.04) − 1 = −0.96: estrictamente por debajo de lo desconocido
+      scoreRange: [-0.97, -0.95],
       mustHaveReasons: [
         { block: "semantic", field: "horror", kind: "penalty", note: "amplified-contradiction" },
+        { block: "semantic", field: "horror", kind: "gate", note: "presence-violated" },
       ],
     },
   },
@@ -479,7 +487,8 @@ export const FIXTURES: MatchFixture[] = [
     expect: {
       tier: "invalid",
       gatesViolated: ["absence-violated"],
-      scoreRange: [-0.02, 0],
+      // (acuerdo 0.01) − 1 = −0.99: estrictamente por debajo de lo desconocido
+      scoreRange: [-1, -0.98],
       mustHaveReasons: [
         { block: "semantic", field: "horror", kind: "gate", note: "absence-violated" },
         { block: "semantic", field: "horror", kind: "penalty", note: "amplified-contradiction" },

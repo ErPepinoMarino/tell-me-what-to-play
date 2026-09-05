@@ -32,12 +32,20 @@ model games {
   pace           Float?
   perspectives   Perspective[]  @default([UNKNOWN])
   publishers     String[]       @default([])
-  search_count   Int            @default(0)
+  search_count Int      @default(0)
+  /*
+   * Señal de calidad de IGDB, copiada al descubrir/backfill (ver FIELDS en
+   * igdb/client.ts). Criterio de purga de catálogo: rating_count < 3 = la
+   * misma barra que el gate de descubrimiento (minIgdbRatingCount).
+   */
+  total_rating_count Int?
+  total_rating       Float?
   strategy       Float?
   tension        Float?
   violence       Float?
   genres         Genre[]        @default([UNKNOWN])
   platforms      Platform[]     @default([UNKNOWN])
+  themes         Theme[]        @default([UNKNOWN])
   user_games     user_games[]
 }
 
@@ -122,6 +130,8 @@ model keyword_lexicon {
   source     String   @default("mined")
   frequency  Int      @default(0)
   created_at DateTime @default(now())
+  igdb_slug  String?
+  igdb_id    Int?
 }
 
 enum Role {
@@ -142,24 +152,65 @@ enum recommendation {
   NOT_RECOMMENDED
 }
 
+/*
+ * Géneros alineados 1:1 con la taxonomía pública de IGDB (/v4/genres).
+ * No añadir nada que IGDB no tenga: si no existe ahí, no es un género
+ * (es keyword, theme o game_mode).
+ */
 enum Genre {
-  ACTION
   ADVENTURE
   ARCADE
-  CASUAL
+  CARD_AND_BOARD_GAME
   FIGHTING
-  HORROR
+  HACK_AND_SLASH_BEAT_EM_UP
   INDIE
-  MMO
-  PLATFORMER
+  MOBA
+  MUSIC
+  PINBALL
+  PLATFORM
+  POINT_AND_CLICK
   PUZZLE
+  QUIZ_TRIVIA
   RACING
-  RPG
+  REAL_TIME_STRATEGY
+  ROLE_PLAYING_RPG
   SHOOTER
-  SIMULATION
-  SPORTS
+  SIMULATOR
+  SPORT
   STRATEGY
+  TACTICAL
+  TURN_BASED_STRATEGY
   VISUAL_NOVEL
+  UNKNOWN
+}
+
+/*
+ * Themes de IGDB (/v4/themes): mundo/tono/ambientación (terror, fantasía,
+ * acción...). Capa MUST junto a géneros y plataformas.
+ */
+enum Theme {
+  ACTION
+  BUSINESS
+  COMEDY
+  DRAMA
+  EDUCATIONAL
+  EROTIC
+  FANTASY
+  FOUR_X
+  HISTORICAL
+  HORROR
+  KIDS
+  MYSTERY
+  NON_FICTION
+  OPEN_WORLD
+  PARTY
+  ROMANCE
+  SANDBOX
+  SCIENCE_FICTION
+  STEALTH
+  SURVIVAL
+  THRILLER
+  WARFARE
   UNKNOWN
 }
 
@@ -199,6 +250,7 @@ enum GameMode {
   MULTIPLAYER
   COOPERATIVE
   COMPETITIVE
+  MASSIVELY_MULTIPLAYER
   UNKNOWN
 }
 

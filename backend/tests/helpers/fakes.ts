@@ -1,4 +1,8 @@
-import type { IgdbClient, IgdbGameRaw } from "../../src/igdb/types.js";
+import type {
+  FilteredSearchOptions,
+  IgdbClient,
+  IgdbGameRaw,
+} from "../../src/igdb/types.js";
 import type { Candidate, Game, GameToPersist } from "../../src/types/Game.js";
 import type {
   GameEnrichment,
@@ -53,6 +57,7 @@ export function makeGame(overrides: Partial<Game> & Pick<Game, "id">): Game {
     coverUrl: null,
     releaseYear: 2020,
     genres: ["UNKNOWN"],
+    themes: ["UNKNOWN"],
     platforms: ["PC"],
     gameModes: ["UNKNOWN"],
     perspectives: ["UNKNOWN"],
@@ -77,6 +82,7 @@ export function makeIntent(
     yearFrom: null,
     yearTo: null,
     excluded: null,
+    relation: null,
     semantic: null,
     ...overrides,
   };
@@ -141,6 +147,7 @@ export class FakeCatalogLayer implements CatalogLayer {
 
   async findCandidates(filter: {
     genres: string[];
+    themes: string[];
     keywords: string[];
     platforms: string[];
     limit: number;
@@ -149,6 +156,7 @@ export class FakeCatalogLayer implements CatalogLayer {
     const all = this.all();
     const hasSignals =
       filter.genres.length > 0 ||
+      filter.themes.length > 0 ||
       filter.keywords.length > 0 ||
       filter.platforms.length > 0;
     if (!hasSignals) return all.slice(0, filter.limit);
@@ -156,6 +164,7 @@ export class FakeCatalogLayer implements CatalogLayer {
     const matching = all.filter(
       (game) =>
         overlap(game.genres, filter.genres) ||
+        overlap(game.themes, filter.themes) ||
         overlap(game.platforms, filter.platforms) ||
         overlapKeywords(game.keywords, filter.keywords),
     );
@@ -229,10 +238,13 @@ export class FakeCacheLayer implements CacheLayer {
 
 export class FakeIgdbClient implements IgdbClient {
   calls: { query: string; limit: number }[] = [];
+  filteredCalls: FilteredSearchOptions[] = [];
+  filteredResults: IgdbGameRaw[] = [];
 
   constructor(
     private results: Record<string, IgdbGameRaw[]> = {},
     private error?: Error,
+    private allById: IgdbGameRaw[] = [],
   ) {}
 
   async fetchGames(): Promise<IgdbGameRaw[]> {
@@ -243,6 +255,24 @@ export class FakeIgdbClient implements IgdbClient {
     this.calls.push({ query, limit });
     if (this.error) throw this.error;
     return (this.results[query] ?? []).slice(0, limit);
+  }
+
+  async fetchGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
+    return this.allById.filter((raw) => ids.includes(raw.id));
+  }
+
+  async filteredSearch(options: FilteredSearchOptions): Promise<IgdbGameRaw[]> {
+    this.filteredCalls.push(options);
+    if (this.error) throw this.error;
+    return this.filteredResults.slice(0, options.limit ?? this.filteredResults.length);
+  }
+
+  async fetchAllKeywords(): Promise<{ id: number; name: string; slug: string }[]> {
+    return [];
+  }
+
+  async fetchThemesByGameIds(): Promise<{ id: number; themes?: { name: string }[] }[]> {
+    return [];
   }
 }
 
@@ -265,6 +295,7 @@ export class FakeEnrichment implements EnrichmentService, EnrichmentUpdater {
       coverUrl: candidate.coverUrl,
       releaseYear: candidate.releaseYear,
       genres: candidate.genres,
+      themes: candidate.themes,
       platforms: candidate.platforms,
       gameModes: candidate.gameModes,
       perspectives: candidate.perspectives,

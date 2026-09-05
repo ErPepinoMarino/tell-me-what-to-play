@@ -106,6 +106,7 @@ describe("user library authorization E2E", () => {
         slug: "game-b",
         title: "Game B",
         genres: ["ADVENTURE"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -152,7 +153,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-a",
         title: "Game A",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -252,7 +254,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-post",
         title: "Game POST",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -303,7 +306,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-foreign",
         title: "Game Foreign",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -350,7 +354,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-duplicate",
         title: "Game Duplicate",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -434,7 +439,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-update-missing-entry",
         title: "Game Update Missing Entry",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -484,7 +490,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-delete",
         title: "Game Delete",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -532,7 +539,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-delete-foreign",
         title: "Game Delete Foreign",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -562,7 +570,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-delete-missing",
         title: "Game Delete Missing",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -588,7 +597,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-get",
         title: "Game Get",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -678,7 +688,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-admin-post",
         title: "Game Admin POST",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -718,7 +729,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-admin-put",
         title: "Game Admin PUT",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -760,7 +772,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-admin-delete",
         title: "Game Admin DELETE",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -795,7 +808,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-post-coerced",
         title: "Game POST Coerced",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -828,7 +842,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-post-extra",
         title: "Game POST Extra",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -905,7 +920,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-put-extra",
         title: "Game PUT Extra",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -962,7 +978,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-concurrent-post",
         title: "Game Concurrent POST",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
@@ -1031,7 +1048,8 @@ describe("user library authorization E2E", () => {
       data: {
         slug: "game-recommendation",
         title: "Game Recommendation",
-        genres: ["ACTION"],
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });

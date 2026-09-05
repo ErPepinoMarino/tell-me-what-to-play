@@ -155,6 +155,39 @@ button:disabled {
   color: #a5b4fc;
 }
 
+/* Transcripción del chat: alto máximo con scroll (no crece al infinito). */
+.chat-transcript {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  scroll-behavior: smooth;
+}
+
+/* Chips del "He entendido": verde (++ demanda fuerte), rojo (-- ausencia o
+   exclusión), neutro (temas, géneros, plataformas, años). */
+.intent-chip {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  margin: 0.15rem 0.2rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid #4b5563;
+  color: #d1d5db;
+  background: rgba(75, 85, 99, 0.25);
+}
+
+.intent-chip-positive {
+  border-color: #34d399;
+  color: #6ee7b7;
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.intent-chip-negative {
+  border-color: #f87171;
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+}
+
 .notice {
   font-size: 0.9rem;
   color: #fbbf24;

@@ -5,9 +5,13 @@ import {
   COV_MIN,
   EPSILON,
   GATE_ABSENCE_VIOLATED,
+  GATE_ANCHOR_OVERLAP_VIOLATED,
   GATE_MUST_VIOLATED,
+  GATE_PRESENCE_VIOLATED,
   GATE_RED_FLAG_VIOLATED,
   MATCH_THRESHOLDS,
+  SEMANTIC_DEMAND_GATE_MIN,
+  SEMANTIC_PASS_MIN,
   SEMANTIC_FIELDS,
   type SemanticField,
 } from "./constants.js";
@@ -156,6 +160,7 @@ function checkRedFlags(
     values: string[];
   }[] = [
     { field: "genres", excluded: excluded.genres, values: game.genres },
+    { field: "themes", excluded: excluded.themes, values: game.themes },
     { field: "platforms", excluded: excluded.platforms, values: game.platforms },
     { field: "gameModes", excluded: excluded.gameModes, values: game.gameModes },
     {
@@ -263,6 +268,7 @@ function checkMust(
     values: string[];
   }[] = [
     { field: "genres", requested: intent.objective?.genres ?? [], values: game.genres },
+    { field: "themes", requested: intent.objective?.themes ?? [], values: game.themes },
     {
       field: "platforms",
       requested: intent.objective?.platforms ?? [],
@@ -346,6 +352,74 @@ function checkMust(
 }
 
 /*
+ * Gate de PRESENCIA (decisión de producto): una demanda semántica fuerte
+ * (intent ≥ SEMANTIC_DEMAND_GATE_MIN) exige que el juego APRUEBE (≥ 0.5);
+ * suspenso o sin dato → fuera. Simétrico al gate de ausencia.
+ */
+function checkPresenceGate(
+  intent: GameSearchIntent,
+  game: MatchableGame,
+  gatesViolated: string[],
+  reasons: MatchReason[],
+): void {
+  const semantic = intent.semantic;
+  if (!semantic) return;
+
+  for (const field of SEMANTIC_FIELDS) {
+    const intentValue = semantic[field];
+    if (intentValue === null || intentValue < SEMANTIC_DEMAND_GATE_MIN) continue;
+    const gameValue = game[field];
+    if (gameValue !== null && gameValue >= SEMANTIC_PASS_MIN) continue;
+
+    pushGate(
+      gatesViolated,
+      reasons,
+      GATE_PRESENCE_VIOLATED,
+      "semantic",
+      field,
+      intentValue,
+      gameValue,
+    );
+  }
+}
+
+/*
+ * Gate de OVERLAP con el ancla ("similar a X"): el candidato debe compartir
+ * AL MENOS UNA keyword (talo) con algún ancla — nunca se exigen TODAS las
+ * keywords del ancla ("kratos" solo existe en God of War). Sin keywords en
+ * el ancla el gate se omite (nada que comparar).
+ */
+function checkAnchorOverlapGate(
+  game: MatchableGame,
+  anchors: MatchableGame[],
+  gatesViolated: string[],
+  reasons: MatchReason[],
+): void {
+  if (anchors.length === 0) return;
+
+  const anchorStems = new Set(
+    anchors.flatMap((anchor) => anchor.keywords.map((k) => keywordStem(k))),
+  );
+  if (anchorStems.size === 0) return;
+
+  const gameStems = new Set(
+    game.keywords.map((k) => keywordStem(k)),
+  );
+  const overlaps = [...gameStems].some((stem) => anchorStems.has(stem));
+  if (overlaps) return;
+
+  pushGate(
+    gatesViolated,
+    reasons,
+    GATE_ANCHOR_OVERLAP_VIOLATED,
+    "keywords",
+    "anchor-overlap",
+    [...anchorStems].slice(0, 5).join(","),
+    game.title,
+  );
+}
+
+/*
  * Ausencia explícita (contrato del intent): 0 significa "sin nada de eso".
  * Si el juego conoce esa dimensión y la incumple, es invalid.
  */
@@ -379,12 +453,14 @@ function checkAbsenceGate(
 
 /*
  * Ranking semántico: única ponderación numérica. Media de acuerdo sobre
- * las dimensiones comparables. Una contradicción grande (distancia ≥
- * AMPLIFICATION_THRESHOLD) aporta NEGATIVO (acuerdo² negado): debe hundir
- * la ficha por debajo incluso de una ficha desconocida (el giro del
- * escenario S2: "pixel art frenético" pierde contra "no sé cómo es").
- * La contribución de cada dimensión se reparte entre las comparables, de
- * modo que score = Σ contributions = media (invariante exacta), en [-1,1].
+ * las dimensiones comparables. Una contradicción amplificada (distancia ≥
+ * AMPLIFICATION_THRESHOLD) aporta NEGATIVO y de magnitud (acuerdo − 1):
+ * debe quedar estrictamente por debajo de una ficha DESCONOCIDA (0), incluso
+ * en la contradicción total (distancia 1 → acuerdo 0 → −1; el caso
+ * cozy/Bloodborne: un juego de terror no puede empatar con "no sé cómo es"
+ * solo por estar bien documentado). La contribución de cada dimensión se
+ * reparte entre las comparables, de modo que score = Σ contributions =
+ * media (invariante exacta), en [-1,1].
  */
 function computeSemanticRanking(
   intent: GameSearchIntent,
@@ -410,7 +486,14 @@ function computeSemanticRanking(
     }
     comparable++;
     const distance = Math.abs(intentValue - gameValue);
-    const amplified = distance >= AMPLIFICATION_THRESHOLD;
+    /*
+     * Estricto (>) para alinear bordes con el gate de presencia: el juego
+     * que el gate APRUEBA (≥ 0.5 frente a demanda 1 → distancia ≤ 0.5) no
+     * puede etiquetarse "contradice" — el caso cozy/2D Brick Breaker (cozy
+     * 0.5) mostraba el chip ✗ siendo válido. Sin el ajuste, distancia 0.5
+     * amplificaba (acuerdo 0.25 → contribución −0.75) contradiciendo al gate.
+     */
+    const amplified = distance > AMPLIFICATION_THRESHOLD;
     const rawAgreement = 1 - distance;
     const agreement = amplified ? rawAgreement * rawAgreement : rawAgreement;
     agreements.push({ field, intentValue, gameValue, agreement, amplified });
@@ -423,8 +506,8 @@ function computeSemanticRanking(
         field: item.field,
         intentValue: item.intentValue,
         gameValue: item.gameValue,
-        contribution: (item.amplified ? -item.agreement : item.agreement) /
-          comparable,
+        contribution:
+          (item.amplified ? item.agreement - 1 : item.agreement) / comparable,
         kind: item.amplified
           ? "penalty"
           : item.agreement >= AGREEMENT_BONUS_THRESHOLD
@@ -464,16 +547,27 @@ function assignTier(gatesViolated: number, score: number, covSem: number): Match
  * no contiene NADA de lo excluido (red flags)? Sin ranking. La usan el
  * pre-filtro de descubrimiento y la canonicalización de la cache para no
  * gastar presupuesto en candidatos condenados a invalid.
+ *
+ * Opción semanticGates (default true): los gates semánticos de extremo
+ * (ausencia/presencia) exigen valores CONOCIDOS del juego. En el pre-filtro
+ * de discovery los candidatos aún NO tienen semánticas (las escribirá el
+ * enrichment) → semanticGates: false; el candidato se re-evalúa con las
+ * semánticas reales tras el enriquecimiento.
  */
 export function passesHardFilters(
   intent: GameSearchIntent,
   game: MatchableGame,
+  options: { semanticGates?: boolean; anchors?: MatchableGame[] } = {},
 ): boolean {
   const gatesViolated: string[] = [];
   const reasons: MatchReason[] = [];
   checkRedFlags(intent, game, gatesViolated, reasons);
   checkMust(intent, game, gatesViolated, reasons);
-  checkAbsenceGate(intent, game, gatesViolated, reasons);
+  checkAnchorOverlapGate(game, options.anchors ?? [], gatesViolated, reasons);
+  if (options.semanticGates !== false) {
+    checkAbsenceGate(intent, game, gatesViolated, reasons);
+    checkPresenceGate(intent, game, gatesViolated, reasons);
+  }
   return gatesViolated.length === 0;
 }
 
@@ -484,10 +578,12 @@ export function matchGame(input: MatchInput): MatchResult {
   const reasons: MatchReason[] = [];
   const gatesViolated: string[] = [];
 
-  // 1. Filtros duros (must + red flags) y ausencia semántica explícita.
+  // 1. Filtros duros (must + red flags) y gates semánticos de extremos.
   checkRedFlags(intent, game, gatesViolated, reasons);
   checkMust(intent, game, gatesViolated, reasons);
+  checkAnchorOverlapGate(game, anchors, gatesViolated, reasons);
   checkAbsenceGate(intent, game, gatesViolated, reasons);
+  checkPresenceGate(intent, game, gatesViolated, reasons);
 
   // 2. Ranking semántico.
   const { comparable } = computeSemanticRanking(intent, game, reasons);
@@ -516,6 +612,7 @@ export function matchGame(input: MatchInput): MatchResult {
     semanticDims: comparable,
     objectiveFields: [
       game.genres,
+      game.themes,
       game.platforms,
       game.gameModes,
       game.perspectives,

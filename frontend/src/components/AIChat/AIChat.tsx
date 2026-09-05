@@ -1,7 +1,7 @@
 "use client";
 
 import type { GameSearchIntent, NoticeCode } from "@/types/Recommendation";
-import { intentSummary } from "@/lib/reasons";
+import { intentSummaryChips } from "@/lib/reasons";
 import { NOTICE_MESSAGES, visibleNotices } from "@/lib/notices";
 
 export type ChatStatus = "idle" | "searching" | "ready" | "error";
@@ -35,7 +35,14 @@ export default function AIChat({
   const shownNotices = visibleNotices(notices, demoMode).filter(
     (notice) => notice !== "EMPTY_INTENT",
   );
-  const summary = intent ? intentSummary(intent) : [];
+  /*
+   * Con INTENT_UNCHANGED el intent mostrado es el de sesión reutilizado
+   * (no algo "entendido" de este mensaje): los chips no aplican.
+   */
+  const summary =
+    intent && !notices.includes("INTENT_UNCHANGED")
+      ? intentSummaryChips(intent)
+      : [];
 
   return (
     <section className="chat" aria-live="polite">
@@ -48,6 +55,8 @@ export default function AIChat({
         </p>
       ) : null}
 
+      <div className="chat-transcript">
+
       {transcript.map((message, index) => (
         <div
           key={index}
@@ -56,23 +65,32 @@ export default function AIChat({
           {message.text}
           {message.role === "assistant" && index === transcript.length - 1 && summary.length > 0 ? (
             <p className="intent-summary">
-              He entendido: {summary.join(" · ")}
+              He entendido:{" "}
+              {summary.map((chip, chipIndex) => (
+                <span
+                  key={chipIndex}
+                  className={`intent-chip intent-chip-${chip.tone}`}
+                >
+                  {chip.label}
+                </span>
+              ))}
             </p>
           ) : null}
         </div>
       ))}
 
-      {status === "searching" ? (
-        <div className="bubble-assistant bubble-searching">
-          Buscando resultados...
-        </div>
-      ) : null}
+          {status === "searching" ? (
+            <div className="bubble-assistant bubble-searching">
+              Buscando resultados...
+            </div>
+          ) : null}
 
-      {shownNotices.map((notice) => (
-        <p key={notice} className="notice">
-          {NOTICE_MESSAGES[notice]}
-        </p>
-      ))}
-    </section>
+          {shownNotices.map((notice) => (
+            <p key={notice} className="notice">
+              {NOTICE_MESSAGES[notice]}
+            </p>
+          ))}
+        </div>
+      </section>
   );
 }

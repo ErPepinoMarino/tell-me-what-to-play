@@ -34,7 +34,8 @@ const ANON = { kind: "anon" } as const;
 const PIRATES_INTENT: GameSearchIntent = makeIntent({
   keywords: ["pirates"],
   objective: {
-    genres: ["RPG"],
+    genres: ["ROLE_PLAYING_RPG"],
+    themes: null,
     platforms: null,
     gameModes: null,
     perspectives: null,
@@ -45,7 +46,7 @@ const PIRATES_GAME = makeGame({
   id: 1,
   slug: "pirates-cove",
   title: "Pirates Cove",
-  genres: ["RPG"],
+  genres: ["ROLE_PLAYING_RPG"],
   keywords: ["pirates"],
   ...FULL_SEMANTIC,
 });
@@ -147,30 +148,28 @@ describe("RecommendationOrchestrator", () => {
   });
 
   it("rellena por descubrimiento cuando el catálogo local no alcanza", async () => {
-    const { orchestrator, catalog, budget } = setup({
+    const { orchestrator, catalog, budget, igdb } = setup({
       catalogGames: [
         makeGame({
           id: 2,
           slug: "football",
           title: "Football",
-          genres: ["SPORTS"],
+          genres: ["SPORT"],
           keywords: ["football"],
         }),
       ],
       intent: PIRATES_INTENT,
-      igdbResults: {
-        pirates: [
-          makeRaw(101, "Pirate Gold", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(102, "Pirate Sea", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(103, "Some DLC", { game_type: 1 }),
-        ],
-      },
       limits: { igdb: 100, brave: 100, llm: 100 },
     });
+    igdb.filteredResults = [
+      makeRaw(101, "Pirate Gold", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(102, "Pirate Sea", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(103, "Some DLC", { game_type: 1 }),
+    ];
 
     const { response } = await orchestrator.handle({
       action: "search",
@@ -276,7 +275,8 @@ describe("RecommendationOrchestrator", () => {
     const extendedIntent = makeIntent({
       keywords: ["pirates", "pixel art"],
       objective: {
-        genres: ["RPG"],
+        genres: ["ROLE_PLAYING_RPG"],
+        themes: null,
         platforms: null,
         gameModes: null,
         perspectives: null,
@@ -366,6 +366,7 @@ describe("RecommendationOrchestrator", () => {
       makeIntent({
         objective: {
           genres: null,
+          themes: null,
           platforms: null,
           gameModes: null,
           perspectives: null,
@@ -392,6 +393,7 @@ describe("RecommendationOrchestrator", () => {
       intent: makeIntent({
         objective: {
           genres: null,
+          themes: null,
           platforms: null,
           gameModes: null,
           perspectives: null,
@@ -416,7 +418,7 @@ describe("RecommendationOrchestrator", () => {
         id: index + 1,
         slug: `pirates-cove-${index + 1}`,
         title: `Pirates Cove ${index + 1}`,
-        genres: ["RPG"],
+        genres: ["ROLE_PLAYING_RPG"],
         keywords: ["pirates"],
       }),
     );
@@ -426,18 +428,16 @@ describe("RecommendationOrchestrator", () => {
       // Aislamos el comportamiento de "more": sin trabajo orgánico en
       // background (re-enrich/descubrimiento) tras la primera búsqueda.
       config: { organicUnitsPerRequest: 0 },
-      igdbResults: {
-        pirates: [
-          makeRaw(101, "Pirate Gold", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(102, "Pirate Sea", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-        ],
-      },
       limits: { igdb: 100, brave: 100, llm: 100 },
     });
+    igdb.filteredResults = [
+      makeRaw(101, "Pirate Gold", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(102, "Pirate Sea", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+    ];
 
     const first = await orchestrator.handle({
       action: "search",
@@ -460,13 +460,9 @@ describe("RecommendationOrchestrator", () => {
       "pirate-sea",
     ]);
     expect(catalog.createCalls).toBe(2);
-    // 2 búsquedas IGDB en el orden nuevo: "pirates rpg" (keyword+género,
-    // sin resultados) y "pirates" (productiva) — el FILL agota variantes
-    // antes de rendirse
-    expect(igdb.calls.map((call) => call.query)).toEqual([
-      "pirates rpg",
-      "pirates",
-    ]);
+    // 2 descubrimientos IGDB (filtrados): cada variante ("pirates rpg",
+    // "pirates") dispara una consulta por atributos antes de rendirse.
+    expect(igdb.filteredCalls).toHaveLength(2);
     expect(response.meta.exhaustedPool).toBe(true);
   });
 
@@ -515,6 +511,53 @@ describe("RecommendationOrchestrator", () => {
     expect(catalog.createCalls).toBe(1);
   });
 
+  it("anon que intenta REFINAR (relation refine con contextIntent) → CTA de login sin descubrir", async () => {
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+    });
+    // El "modelo" clasifica el mensaje como continuación de la anterior
+    extract.mockImplementation(async () =>
+      makeIntent({ relation: "refine" }),
+    );
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "uno similar pero de jardineria?",
+      actor: ANON,
+      contextIntent: PIRATES_INTENT,
+    });
+
+    expect(response.notices).toContain("REFINE_REQUIRES_LOGIN");
+    expect(response.results).toHaveLength(0);
+    // Solo la llamada de clasificación: ni descubrimiento ni explicación
+    expect(extract).toHaveBeenCalledTimes(1);
+  });
+
+  it("anon con contextIntent que clasifica 'new' → búsqueda fresca (re-extrae sin contexto)", async () => {
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+    });
+    extract.mockImplementation(async () =>
+      makeIntent({ relation: "new", keywords: ["pirates"] }),
+    );
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "quiero zombies",
+      actor: ANON,
+      contextIntent: PIRATES_INTENT,
+    });
+
+    // 1 clasificación + 1 re-extracción fresca (sin contexto)
+    expect(extract).toHaveBeenCalledTimes(2);
+    expect(extract).toHaveBeenLastCalledWith("quiero zombies", undefined);
+    expect(response.results.map((item) => item.game.slug)).toEqual([
+      "pirates-cove",
+    ]);
+  });
+
   it("bajo weak nunca se muestra: los no conformes ni entran al pool", async () => {
     const { orchestrator } = setup({
       catalogGames: [PIRATES_GAME],
@@ -539,7 +582,7 @@ describe("RecommendationOrchestrator", () => {
       id: 1,
       slug: "pirates-cove",
       title: "Pirates!",
-      genres: ["RPG"],
+      genres: ["ROLE_PLAYING_RPG"],
       keywords: ["pirates"],
       sourceId: "55",
       difficulty: 0.7,
@@ -584,7 +627,7 @@ describe("RecommendationOrchestrator", () => {
           id: 50,
           slug: "cached-pirates",
           title: "Cached Pirates",
-          genres: ["RPG"],
+          genres: ["ROLE_PLAYING_RPG"],
           keywords: ["pirates"],
           ...FULL_SEMANTIC,
         }),
@@ -611,13 +654,11 @@ describe("RecommendationOrchestrator", () => {
     // Caso real que falló en producción: la ficha descubierta no tenía la
     // keyword del término buscado → todos inválidos. Con la siembra, el
     // circuito descubre → enriquece → guarda → matchea.
-    const { orchestrator } = setup({
+    const { orchestrator, igdb } = setup({
       intent: makeIntent({ keywords: ["batman"] }),
-      igdbResults: {
-        batman: [makeRaw(201, "Dark Knight Game", { keywords: [] })],
-      },
       limits: { igdb: 100, brave: 100, llm: 100 },
     });
+    igdb.filteredResults = [makeRaw(201, "Dark Knight Game", { keywords: [] })];
 
     const { response } = await orchestrator.handle({
       action: "search",
@@ -653,33 +694,31 @@ describe("RecommendationOrchestrator", () => {
   });
 
   it("el cap de juegos nuevos por petición limita el relleno aunque falten resultados", async () => {
-    const { orchestrator, catalog } = setup({
+    const { orchestrator, catalog, igdb } = setup({
       intent: PIRATES_INTENT,
-      igdbResults: {
-        pirates: [
-          makeRaw(101, "Pirate Gold", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(102, "Pirate Sea", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(103, "Pirate Land", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(104, "Pirate Sky", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(105, "Pirate Fire", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-          makeRaw(106, "Pirate Ice", {
-            genres: [{ id: 1, name: "Role-playing (RPG)" }],
-          }),
-        ],
-      },
       config: { maxNewGamesPerRequest: 4 },
       limits: { igdb: 100, brave: 100, llm: 100 },
     });
+    igdb.filteredResults = [
+      makeRaw(101, "Pirate Gold", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(102, "Pirate Sea", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(103, "Pirate Land", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(104, "Pirate Sky", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(105, "Pirate Fire", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(106, "Pirate Ice", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+    ];
 
     const { response } = await orchestrator.handle({
       action: "search",

@@ -1,5 +1,11 @@
 import { mapToCandidate } from "../igdb/mappers.js";
 import { shouldSkipNonIndependentGame } from "../igdb/gameType.js";
+import {
+  genreIgbNames,
+  keywordIgbSlug,
+  platformIgbNames,
+  themeIgbSlug,
+} from "../igdb/normalizers.js";
 import type { IgdbClient, IgdbGameRaw } from "../igdb/types.js";
 import type { Candidate, Game, GameToPersist } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
@@ -18,10 +24,21 @@ import {
 } from "../recommendation/constants.js";
 import { SEMANTIC_FIELDS } from "../matching/constants.js";
 import { withTimeout } from "../lib/withTimeout.js";
-import { createTrace } from "../lib/logger.js";
+import { createTrace, type Trace } from "../lib/logger.js";
 import type { CatalogLayer } from "./types.js";
 
 export type DiscoveryAttemptOutcome = "ok" | "budget-exhausted" | "error";
+
+// Enum TMWTP -> nombre IGDB de game_mode (resolución por nombre en el
+// cliente). COMPETITIVE no existe en IGDB -> null (cae con trace).
+const GAME_MODE_IGB_NAMES: Record<string, string | null> = {
+  SINGLE_PLAYER: "Single player",
+  MULTIPLAYER: "Multiplayer",
+  COOPERATIVE: "Co-operative",
+  COMPETITIVE: null,
+  MASSIVELY_MULTIPLAYER: "Massively Multiplayer Online (MMO)",
+  UNKNOWN: null,
+};
 
 export interface DiscoveryAttempt {
   outcome: DiscoveryAttemptOutcome;
@@ -31,6 +48,9 @@ export interface DiscoveryAttempt {
   // La query no tiene más candidatos sin procesar: el orquestador puede
   // avanzar a la siguiente variante sin contar unidad ni gastar.
   variantExhausted: boolean;
+  // Enrichments que fallaron (p. ej. Brave 402): para que el orquestador
+  // pueda avisar al usuario de que el descubrimiento está degradado.
+  enrichmentErrors: number;
 }
 
 export type AnchorDiscoveryResult =
@@ -74,6 +94,48 @@ export class DiscoveryManager {
   }
 
   /*
+   * Descubrimiento FILTRADO (FASE: IGDB filtrado): con el intent en la mano
+   * la consulta a IGDB deja de ser text-search por título (que no puede
+   * servir intents multi-atributo) y pasa a `where` por atributos — keywords
+   * y géneros pedidos, plataformas, año — ordenada por valoración de la
+   * comunidad. Los filtros se resuelven a IDs de IGDB con los mismos mapas
+   * de los mappers (cache por proceso). Sin intent, text-search como antes.
+   */
+  private filteredSearch(
+    intent: GameSearchIntent,
+    trace?: Trace | null,
+  ): Promise<IgdbGameRaw[]> {
+    return this.igdb.filteredSearch({
+      keywordSlugs: (intent.keywords ?? []).map((keyword) =>
+        keywordIgbSlug(keyword),
+      ),
+      genreIgbNames: (intent.objective?.genres ?? [])
+        .filter((genre) => genre !== "UNKNOWN")
+        .flatMap((genre) => genreIgbNames(genre)),
+      themeSlugs: (intent.objective?.themes ?? [])
+        .map((theme) => themeIgbSlug(theme))
+        .filter((slug): slug is string => slug !== null),
+      gameModeIgbNames: (intent.objective?.gameModes ?? [])
+        .filter((mode) => mode !== "UNKNOWN")
+        .map((mode) => GAME_MODE_IGB_NAMES[mode])
+        .filter((name): name is string => name !== null),
+      platformIgbNames: (intent.objective?.platforms ?? [])
+        .filter((platform) => platform !== "UNKNOWN")
+        .flatMap((platform) => platformIgbNames(platform)),
+      releaseYear: intent.releaseYear ?? undefined,
+      limit: this.config.igdbSearchLimit,
+      /*
+       * Visibilidad de los drops de taxonomía: un término que no resuelve a
+       * ID de IGDB se deja fuera del where — nunca en silencio (decisión
+       * tras el bug del género ACTION, que caía sin traza).
+       */
+      onFilterDropped: (details) => {
+        trace?.("taxonomy-unresolved", details);
+      },
+    });
+  }
+
+  /*
    * Unidad de descubrimiento: 1 búsqueda IGDB → filtrar existentes →
    * enriquecer (2 Brave + 1 LLM por ficha) → persistir. La reserva de
    * Brave/LLM es por intento de enrich, así el presupuesto parcial
@@ -84,6 +146,7 @@ export class DiscoveryManager {
     maxNew: number,
     traceId?: string,
     intent?: GameSearchIntent,
+    anchors?: Game[],
   ): Promise<DiscoveryAttempt> {
     const trace = traceId ? createTrace(traceId) : null;
 
@@ -111,6 +174,7 @@ export class DiscoveryManager {
         newGames: [],
         budgetExhausted: false,
         variantExhausted: true,
+        enrichmentErrors: 0,
       };
     }
 
@@ -121,13 +185,17 @@ export class DiscoveryManager {
           newGames: [],
           budgetExhausted: true,
           variantExhausted: false,
+          enrichmentErrors: 0,
         };
       }
 
       let raws: IgdbGameRaw[];
       try {
         raws = await withTimeout(
-          this.igdb.searchGames(query, this.config.igdbSearchLimit),
+          intent ? this.filteredSearch(intent, trace) : this.igdb.searchGames(
+            query,
+            this.config.igdbSearchLimit,
+          ),
           this.config.unitTimeoutMs,
           "IGDB search",
         );
@@ -138,6 +206,7 @@ export class DiscoveryManager {
           newGames: [],
           budgetExhausted: false,
           variantExhausted: false,
+          enrichmentErrors: 0,
         };
       }
       this.budget.commit("igdb", 1);
@@ -150,6 +219,21 @@ export class DiscoveryManager {
       this.lastQuery = raws.length > 0 ? query : null;
       this.lastRaws = raws;
       this.lastCursor = 0;
+      if (intent) {
+        // Traza de la consulta filtrada: qué atributos fueron al `where`.
+        trace?.("igdb-filtered", {
+          query,
+          keywordSlugs: (intent.keywords ?? []).map((keyword) =>
+            keywordIgbSlug(keyword),
+          ),
+          genres: intent.objective?.genres ?? null,
+          themes: intent.objective?.themes ?? null,
+          gameModes: intent.objective?.gameModes ?? null,
+          platforms: intent.objective?.platforms ?? null,
+          releaseYear: intent.releaseYear,
+          results: raws.length,
+        });
+      }
       trace?.("igdb-search", { query, results: raws.length });
     } else {
       trace?.("igdb-list-reuse", {
@@ -160,6 +244,7 @@ export class DiscoveryManager {
 
     const newGames: Game[] = [];
     let budgetExhausted = false;
+    let enrichmentErrors = 0;
 
     while (this.lastCursor < this.lastRaws.length && newGames.length < maxNew) {
       const raw = this.lastRaws[this.lastCursor];
@@ -175,8 +260,17 @@ export class DiscoveryManager {
        * invalid — no merece existsInCatalog ni Brave/LLM. Trade-off
        * asumido: no se almacena; si encaja en búsquedas futuras cuyo intent
        * lo admita, se redescubrirá entonces con las keywords correctas.
+       * Los GATES SEMÁNTICOS se omiten aquí: el candidato aún no tiene
+       * semánticas (las escribirá el enrichment) — se re-evalúa después.
        */
-      if (intent && !passesHardFilters(intent, candidateAsMatchable(candidate))) {
+      if (
+        intent &&
+        !passesHardFilters(
+          intent,
+          candidateAsMatchable(candidate),
+          { semanticGates: false, anchors },
+        )
+      ) {
         trace?.("discovery-skip-must", { slug: candidate.slug, query });
         continue;
       }
@@ -206,8 +300,17 @@ export class DiscoveryManager {
           if (this.lexicon) {
             enriched.keywords = await this.lexicon.canonicalizeTerms(
               enriched.keywords,
-            );
+          );
           }
+          /*
+           * NOTA de diseño: la ficha enriquecida se ALMACENA SIEMPRE que
+           * aporta valor (enrichmentAddsValue) aunque falle los gates
+           * semánticos de ESTE intent — el coste del enrichment ya está
+           * hundido y la ficha con semánticas reales es un activo para
+           * búsquedas futuras. Los gates deciden qué se MUESTRA (el re-rank
+           * con el pool actualizado la excluye de esta respuesta), no qué
+           * se guarda.
+           */
         /*
          * Garantía de calidad del catálogo: si el enrichment no aporta
          * NINGUNA semántica conocida NI keywords nuevas, la ficha es
@@ -220,9 +323,16 @@ export class DiscoveryManager {
           continue;
         }
         newGames.push(await this.catalog.create(enriched));
-      } catch {
+      } catch (error) {
         // El intento pudo haber consumido llamadas de Brave a mitad: se
         // contabilizan igual (pesimista) y se sigue con el siguiente raw.
+        // Trazable: sin esto, un 402 de Brave fallaba en silencio.
+        trace?.("enrichment-error", {
+          slug: candidate.slug,
+          query,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        enrichmentErrors++;
         this.commitEnrichmentBudget();
       }
     }
@@ -238,6 +348,7 @@ export class DiscoveryManager {
       newGames,
       budgetExhausted,
       variantExhausted: this.lastCursor >= this.lastRaws.length,
+      enrichmentErrors,
     };
   }
 
@@ -319,8 +430,13 @@ export class DiscoveryManager {
       const created = await this.catalog.create(enriched);
       trace?.("anchor-created", { slug: created.slug });
       return { status: "found", game: created };
-    } catch {
+    } catch (error) {
       this.commitEnrichmentBudget();
+      trace?.("enrichment-error", {
+        slug: candidate.slug,
+        step: "anchor-enrichment",
+        error: error instanceof Error ? error.message : String(error),
+      });
       return { status: "error" };
     }
   }
@@ -425,6 +541,7 @@ export class DiscoveryManager {
           ? (candidate.releaseYear ?? game.releaseYear)
           : game.releaseYear,
         genres: adoptObjective ? candidate.genres : game.genres,
+        themes: adoptObjective ? candidate.themes : game.themes,
         platforms: adoptObjective ? candidate.platforms : game.platforms,
         gameModes: adoptObjective ? candidate.gameModes : game.gameModes,
         perspectives: adoptObjective
@@ -463,8 +580,13 @@ export class DiscoveryManager {
         knownSemantics: knownSemanticsCount(updatedGame),
       });
       return { status: "updated", game: updatedGame };
-    } catch {
+    } catch (error) {
       this.commitEnrichmentBudget();
+      trace?.("enrichment-error", {
+        slug: game.slug,
+        step: "re-enrichment",
+        error: error instanceof Error ? error.message : String(error),
+      });
       return { status: "error" };
     }
   }
@@ -524,6 +646,7 @@ function candidateAsMatchable(candidate: Candidate): MatchableGame {
     title: candidate.title,
     releaseYear: candidate.releaseYear,
     genres: candidate.genres,
+    themes: candidate.themes,
     platforms: candidate.platforms,
     gameModes: candidate.gameModes,
     perspectives: candidate.perspectives,

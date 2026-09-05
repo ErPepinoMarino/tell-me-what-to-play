@@ -92,12 +92,13 @@ describe("KeywordLexiconService.canonicalize", () => {
         canonical: "zombies",
         method: "embedding",
         similarity: expect.any(Number),
+        topMatch: "zombies",
       },
     ]);
     expect(result[0].similarity).toBeGreaterThan(0.58);
   });
 
-  it("unmapped: concepto distinto (180°) se conserva tal cual", async () => {
+  it("dropped: concepto sin similitud suficiente (180°) se ignora (conservador)", async () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({ painting: Math.PI }),
@@ -107,7 +108,16 @@ describe("KeywordLexiconService.canonicalize", () => {
     const result = await service.canonicalize(["painting"]);
 
     expect(result).toEqual([
-      { term: "painting", canonical: "painting", method: "unmapped" },
+      {
+        term: "painting",
+        canonical: "painting",
+        method: "dropped",
+        similarity: expect.any(Number),
+        topMatch: "cars",
+      },
+    ]);
+    expect(service.drainDropped()).toEqual([
+      { term: "painting", topMatch: "cars", similarity: expect.any(Number) },
     ]);
   });
 
@@ -152,9 +162,11 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
       releaseYear: null,
       yearFrom: null,
       yearTo: null,
+      relation: null,
       excluded: {
         keywords: ["undead"],
         genres: null,
+        themes: null,
         platforms: null,
         gameModes: null,
         perspectives: null,
@@ -173,6 +185,59 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
     expect(result).toEqual({ ...intent, keywords: ["zombies"], excluded: { ...intent.excluded, keywords: ["zombies"] } });
   });
 
+  it("canonicalizeIntent DROP los conceptos desconocidos (política conservadora)", async () => {
+    const service = createKeywordLexiconService({
+      loader,
+      embedder: fakeEmbedder({ gardening: Math.PI }),
+      budget: makeBudget(10),
+    });
+
+    const intent: GameSearchIntent = {
+      gameReferenced: null,
+      objective: null,
+      keywords: ["gardening"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    };
+
+    const result = await service.canonicalizeIntent(intent);
+
+    // "gardening" no se parece a nada del diccionario → se ignora: no
+    // participa del filtro y NO se persiste (el diccionario es cerrado).
+    expect(result.keywords).toEqual([]);
+    expect(service.drainDropped().map((d) => d.term)).toEqual(["gardening"]);
+  });
+
+  it("canonicalizeIntent asimila los similares y DROP los irrelevantes", async () => {
+    const service = createKeywordLexiconService({
+      loader,
+      embedder: fakeEmbedder({ zombies: 0, undead: 0.3, and: Math.PI }),
+      budget: makeBudget(10),
+    });
+
+    // "undead" es alias del léxico (embedding) y "and" es irrelevante.
+    const intent: GameSearchIntent = {
+      gameReferenced: null,
+      objective: null,
+      keywords: ["undead", "and"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    };
+
+    const result = await service.canonicalizeIntent(intent);
+
+    expect(result.keywords).toEqual(["zombies"]);
+    expect(service.drainDropped().map((d) => d.term)).toEqual(["and"]);
+  });
+
   it("es idempotente: canonicalizar dos veces no cambia nada", async () => {
     const service = createKeywordLexiconService({
       loader,
@@ -188,6 +253,7 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
+      relation: null,
       semantic: null,
     };
 

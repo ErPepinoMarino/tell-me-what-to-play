@@ -23,33 +23,66 @@ export function extractYear(epochSeconds: number | undefined): number | null {
   return date.getUTCFullYear();
 }
 
-import type { GameMode, Genre, Perspective, Platform } from "../generated/prisma/enums.js";
+import type {
+  GameMode,
+  Genre,
+  Perspective,
+  Platform,
+  Theme,
+} from "../generated/prisma/enums.js";
 
-// Mapa explícito: nombre IGDB -> Genre de TMWTP.
-// Nombres tomados de la API real de IGDB; lo que no esté aquí queda "unclassified".
+// Mapa explícito: nombre IGDB -> Genre de TMWTP (1:1 con la taxonomía real
+// de IGDB; nombres tomados de la API, por eso no hay "Action" ni "Casual").
 const GENRE_MAP: Record<string, Genre> = {
-  "Action": "ACTION",
   "Adventure": "ADVENTURE",
   "Arcade": "ARCADE",
-  "Casual": "CASUAL",
+  "Card & Board Game": "CARD_AND_BOARD_GAME",
   "Fighting": "FIGHTING",
-  "Horror": "HORROR",
+  "Hack and slash/Beat 'em up": "HACK_AND_SLASH_BEAT_EM_UP",
   "Indie": "INDIE",
-  "Massively Multiplayer": "MMO",
-  "Platform": "PLATFORMER",
+  "MOBA": "MOBA",
+  "Music": "MUSIC",
+  "Pinball": "PINBALL",
+  "Platform": "PLATFORM",
+  "Point-and-click": "POINT_AND_CLICK",
   "Puzzle": "PUZZLE",
+  "Quiz/Trivia": "QUIZ_TRIVIA",
   "Racing": "RACING",
-  "Role-playing (RPG)": "RPG",
+  "Real Time Strategy (RTS)": "REAL_TIME_STRATEGY",
+  "Role-playing (RPG)": "ROLE_PLAYING_RPG",
   "Shooter": "SHOOTER",
-  "Simulation": "SIMULATION",
-  "Sport": "SPORTS",
+  "Simulator": "SIMULATOR",
+  "Sport": "SPORT",
   "Strategy": "STRATEGY",
+  "Tactical": "TACTICAL",
+  "Turn-based strategy (TBS)": "TURN_BASED_STRATEGY",
   "Visual Novel": "VISUAL_NOVEL",
 };
 
-// Nombres compuestos conocidos de IGDB que corresponden a más de un género TMWTP.
-const COMPOSITE_GENRES: Record<string, Genre[]> = {
-  "Action RPG": ["ACTION", "RPG"],
+// Mapa explícito: nombre IGDB -> Theme de TMWTP (taxonomía /v4/themes).
+const THEME_MAP: Record<string, Theme> = {
+  "Action": "ACTION",
+  "Business": "BUSINESS",
+  "Comedy": "COMEDY",
+  "Drama": "DRAMA",
+  "Educational": "EDUCATIONAL",
+  "Erotic": "EROTIC",
+  "Fantasy": "FANTASY",
+  "4X (explore, expand, exploit, and exterminate)": "FOUR_X",
+  "Historical": "HISTORICAL",
+  "Horror": "HORROR",
+  "Kids": "KIDS",
+  "Mystery": "MYSTERY",
+  "Non-fiction": "NON_FICTION",
+  "Open world": "OPEN_WORLD",
+  "Party": "PARTY",
+  "Romance": "ROMANCE",
+  "Sandbox": "SANDBOX",
+  "Science fiction": "SCIENCE_FICTION",
+  "Stealth": "STEALTH",
+  "Survival": "SURVIVAL",
+  "Thriller": "THRILLER",
+  "Warfare": "WARFARE",
 };
 
 export interface EnumNormalization<T> {
@@ -85,31 +118,18 @@ function mapToEnum<T extends string>(
 }
 
 /*
- * Mapea nombres de género de IGDB al enum Genre de TMWTP.
- * Primero intenta con los compuestos conocidos ("Action RPG" -> ACTION + RPG)
- * y después con el mapa simple. Lo no mapeable va a "unclassified".
+ * Mapea nombres de género de IGDB al enum Genre de TMWTP (1:1).
+ * Lo no mapeable va a "unclassified" (→ keywords, nunca se descarta).
  */
 export function normalizeGenres(names: string[] | undefined): EnumNormalization<Genre> {
-  if (!names || names.length === 0) {
-    return { values: [], unclassified: [] };
-  }
+  return mapToEnum(names, GENRE_MAP);
+}
 
-  const values: Genre[] = [];
-  const unclassified: string[] = [];
-
-  for (const name of names) {
-    const composite = COMPOSITE_GENRES[name];
-    const simple = GENRE_MAP[name];
-    if (composite) {
-      values.push(...composite);
-    } else if (simple) {
-      values.push(simple);
-    } else {
-      unclassified.push(name);
-    }
-  }
-
-  return { values: [...new Set(values)], unclassified };
+/*
+ * Mapea nombres de theme de IGDB al enum Theme de TMWTP (1:1).
+ */
+export function normalizeThemes(names: string[] | undefined): EnumNormalization<Theme> {
+  return mapToEnum(names, THEME_MAP);
 }
 
 // Mapa explícito: nombre IGDB -> Platform de TMWTP.
@@ -155,14 +175,15 @@ export function normalizePlatforms(names: string[] | undefined): EnumNormalizati
 }
 
 // Mapa explícito: nombre IGDB -> GameMode de TMWTP.
-// IGDB solo tiene 5 game_modes; todos tienen equivalencia directa o colapsan
-// en MULTIPLAYER (Split screen y MMO son formas de multiplayer).
+// Los game_modes de IGDB (id 1-6): Single player, Multiplayer, Co-operative,
+// Split screen, Massively Multiplayer Online, Battle Royale. Split screen
+// colapsa en MULTIPLAYER; Battle Royale queda "unclassified" -> keyword.
 const GAME_MODE_MAP: Record<string, GameMode> = {
   "Single player": "SINGLE_PLAYER",
   "Multiplayer": "MULTIPLAYER",
   "Co-operative": "COOPERATIVE",
   "Split screen": "MULTIPLAYER",
-  "Massively Multiplayer Online (MMO)": "MULTIPLAYER",
+  "Massively Multiplayer Online (MMO)": "MASSIVELY_MULTIPLAYER",
 };
 
 export function normalizeGameModes(names: string[] | undefined): EnumNormalization<GameMode> {
@@ -186,20 +207,18 @@ export function normalizePerspectives(names: string[] | undefined): EnumNormaliz
 }
 
 /*
- * Fusiona keywords y themes de IGDB (y futuros "unclassified") en un único
- * vocabulario abierto: keywords de IGDB primero, luego themes, luego extra.
- * Trim a cada término, se descartan los vacíos y se deduplica ignorando
- * mayúsculas/minúsculas (se conserva la primera forma que llega).
+ * Keywords de IGDB + "unclassified" de los enums (los THEMES ya no se
+ * fusionan aquí: tienen su propia columna). Trim, sin vacíos y deduplicando
+ * case-insensitive (se conserva la primera forma que llega).
  */
 export function normalizeKeywords(
   keywords: string[] | undefined,
-  themes: string[] | undefined,
   extra: string[] | undefined = [],
 ): string[] {
   const seen = new Set<string>(); // forma lowercase ya vista
   const result: string[] = [];
 
-  for (const term of [...(keywords ?? []), ...(themes ?? []), ...(extra ?? [])]) {
+  for (const term of [...(keywords ?? []), ...(extra ?? [])]) {
     const trimmed = term?.trim();
     if (!trimmed) continue; // vacío o solo espacios
     const key = trimmed.toLowerCase();
@@ -228,4 +247,82 @@ export function generateSlug(title: string, year: number | null): string {
     .replace(/^-+|-+$/g, ""); // guiones en extremos fuera
 
   return year === null ? normalized : `${normalized}-${year}`;
+}
+
+/*
+ * Resolución inversa enum → nombres IGDB, para las consultas filtradas de
+ * discovery (where genres = (id) exige los IDs reales de IGDB, que resolvemos
+ * por nombre con los mismos mapas que usan los mappers).
+ */
+const GENRE_REVERSE: Map<Genre, string[]> = (() => {
+  const map = new Map<Genre, string[]>();
+  for (const [igdbName, genre] of Object.entries(GENRE_MAP) as [string, Genre][]) {
+    const names = map.get(genre) ?? [];
+    names.push(igdbName);
+    map.set(genre, names);
+  }
+  return map;
+})();
+
+// Slug IGDB de un theme (resolución directa por slug en filteredSearch).
+const THEME_SLUGS: Record<Exclude<Theme, "UNKNOWN">, string> = {
+  ACTION: "action",
+  BUSINESS: "business",
+  COMEDY: "comedy",
+  DRAMA: "drama",
+  EDUCATIONAL: "educational",
+  EROTIC: "erotic",
+  FANTASY: "fantasy",
+  FOUR_X: "4x-explore-expand-exploit-and-exterminate",
+  HISTORICAL: "historical",
+  HORROR: "horror",
+  KIDS: "kids",
+  MYSTERY: "mystery",
+  NON_FICTION: "non-fiction",
+  OPEN_WORLD: "open-world",
+  PARTY: "party",
+  ROMANCE: "romance",
+  SANDBOX: "sandbox",
+  SCIENCE_FICTION: "science-fiction",
+  STEALTH: "stealth",
+  SURVIVAL: "survival",
+  THRILLER: "thriller",
+  WARFARE: "warfare",
+};
+
+// Nombres IGDB posibles para un enum de género (vacío si UNKNOWN).
+export function genreIgbNames(genre: Genre): string[] {
+  return GENRE_REVERSE.get(genre) ?? [];
+}
+
+// Slug IGDB de un theme.
+export function themeIgbSlug(theme: Theme): string | null {
+  return theme === "UNKNOWN" ? null : THEME_SLUGS[theme];
+}
+
+// Reverse: slug IGDB de theme -> enum (para el guard anti-sueño del intent:
+// si la LLM metió "horror" en keywords, se redirige a themes).
+export const THEME_BY_SLUG: Record<string, Exclude<Theme, "UNKNOWN">> =
+  Object.fromEntries(
+    Object.entries(THEME_SLUGS).map(([theme, slug]) => [slug, theme]),
+  ) as Record<string, Exclude<Theme, "UNKNOWN">>;
+
+const PLATFORM_REVERSE: Map<Platform, string[]> = (() => {
+  const map = new Map<Platform, string[]>();
+  for (const [igdbName, platform] of Object.entries(PLATFORM_MAP) as [string, Platform][]) {
+    const names = map.get(platform) ?? [];
+    names.push(igdbName);
+    map.set(platform, names);
+  }
+  return map;
+})();
+
+// Nombres IGDB posibles para un enum de plataforma.
+export function platformIgbNames(platform: Platform): string[] {
+  return PLATFORM_REVERSE.get(platform) ?? [];
+}
+
+// Slug IGDB de una keyword canónica ("pixel art" → "pixel-art").
+export function keywordIgbSlug(keyword: string): string {
+  return keyword.trim().toLowerCase().replace(/\s+/g, "-");
 }

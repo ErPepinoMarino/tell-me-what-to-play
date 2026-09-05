@@ -4,13 +4,16 @@
     "sourceId": "119133",
     "slug": "elden-ring-2022",
     "title": "Elden Ring",
-    "description_es": "Elden Ring es un RPG de acción que ofrece un vasto mundo abierto lleno de exploración, combates desafiantes y una rica narrativa. Los jugadores asumen el papel de un personaje personalizable que debe enfrentarse a poderosos enemigos y descubrir secretos en las Tierras Intermedias.",
-    "description_en": "Elden Ring is an action RPG that features a vast open world filled with exploration, challenging combat, and rich storytelling. Players take on the role of a customizable character who must face powerful enemies and uncover secrets in the Lands Between.",
+    "description_es": "Elden Ring: Nightreign es una aventura cooperativa que reinventa la fórmula Soulslike, ofreciendo un enfoque rápido y roguelike en un mundo lleno de desafíos. Los jugadores deben trabajar juntos para sobrevivir a un entorno cambiante y enfrentarse a poderosos jefes en intensas sesiones de juego.",
+    "description_en": "Elden Ring: Nightreign is a cooperative adventure that reinvents the Soulslike formula, offering a fast-paced roguelike approach in a world filled with challenges. Players must work together to survive a changing environment and face powerful bosses in intense gameplay sessions.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co4jni.jpg",
     "releaseYear": 2022,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -126,21 +129,32 @@
       "day/night cycle",
       "environmental storytelling",
       "horseback combat",
-      "pvp"
+      "pvp",
+      "roguelike",
+      "prequel",
+      "procedurally generated",
+      "online coop",
+      "survival",
+      "hack and slash/beat 'em up",
+      "boss rush",
+      "time pressure",
+      "character classes",
+      "nightmare",
+      "co-op"
     ],
     "searchCount": 0,
     "difficulty": 0.9,
-    "pace": 0.6,
-    "narrative": 0.8,
+    "pace": 0.9,
+    "narrative": 0.5,
     "complexity": 0.8,
-    "strategy": 0.7,
-    "exploration": 1,
-    "violence": 1,
-    "horror": 0.5,
-    "darkness": 0.6,
+    "strategy": 0.8,
+    "exploration": 0.4,
+    "violence": 0.8,
+    "horror": null,
+    "darkness": 0.7,
     "tension": 0.9,
     "humor": null,
-    "isolation": 0.7,
+    "isolation": 0.6,
     "coziness": null
   },
   {
@@ -153,8 +167,11 @@
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/cob9ed.jpg",
     "releaseYear": 2016,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS4",
@@ -240,8 +257,11 @@
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/cob99l.jpg",
     "releaseYear": 2015,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS4"
@@ -338,6 +358,9 @@
     "genres": [
       "ADVENTURE"
     ],
+    "themes": [
+      "UNKNOWN"
+    ],
     "platforms": [
       "PS4",
       "PC",
@@ -396,13 +419,16 @@
     "sourceId": "148241",
     "slug": "lies-of-p-2023",
     "title": "Lies of P",
-    "description_es": "Lies of P es un juego de rol de acción ambientado en una oscura ciudad inspirada en la Belle Époque, donde los jugadores controlan a P, un guerrero mecánico que navega por un mundo en decadencia. Con un sistema de combate desafiante y decisiones que afectan la narrativa, el juego ofrece una experiencia rica y atmosférica.",
-    "description_en": "Lies of P is an action role-playing game set in a dark, Belle Époque-inspired city where players control P, a mechanical warrior navigating a decaying world. Featuring challenging combat and choices that impact the narrative, the game provides a rich and atmospheric experience.",
+    "description_es": "Lies of P es un juego de rol de acción ambientado en una oscura ciudad inspirada en la Belle �?poque, donde los jugadores controlan a P, un guerrero mecánico que navega por un mundo en decadencia. Con un sistema de combate desafiante y decisiones que afectan la narrativa, el juego ofrece una experiencia rica y atmosférica.",
+    "description_en": "Lies of P is an action role-playing game set in a dark, Belle �?poque-inspired city where players control P, a mechanical warrior navigating a decaying world. Featuring challenging combat and choices that impact the narrative, the game provides a rich and atmospheric experience.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co6lxr.jpg",
     "releaseYear": 2023,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -470,8 +496,11 @@
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/coaarl.jpg",
     "releaseYear": 2015,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -583,19 +612,28 @@
       "crafting",
       "moral choices",
       "exploration",
-      "gwent"
+      "gwent",
+      "underwater",
+      "horse racing",
+      "based on - book",
+      "the game awards - best art direction - nominee",
+      "the game awards - best narrative - nominee",
+      "the game awards - best performance - nominee",
+      "the game awards - game of the year - winner",
+      "monster",
+      "sword sorcery"
     ],
     "searchCount": 0,
-    "difficulty": 0.5,
-    "pace": 0.6,
+    "difficulty": 0.6,
+    "pace": 0.5,
     "narrative": 1,
-    "complexity": 0.7,
-    "strategy": 0.6,
+    "complexity": 0.8,
+    "strategy": 0.7,
     "exploration": 0.9,
     "violence": 0.6,
     "horror": null,
-    "darkness": 0.8,
-    "tension": 0.7,
+    "darkness": 0.9,
+    "tension": 0.8,
     "humor": null,
     "isolation": null,
     "coziness": null
@@ -610,8 +648,11 @@
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co670h.jpg",
     "releaseYear": 2023,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "STRATEGY"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -688,20 +729,35 @@
       "role-playing",
       "party management",
       "narrative choices",
-      "tactical combat"
+      "tactical combat",
+      "turn-based",
+      "tactical turn-based combat",
+      "character creation",
+      "moral decisions",
+      "the game awards - best score or music - nominee",
+      "meaningful choices",
+      "turn-based rpg",
+      "the game awards - best game direction - nominee",
+      "the game awards - best narrative - nominee",
+      "the game awards - game of the year - winner",
+      "bird view / isometric",
+      "dungeons and dragons",
+      "party dynamics",
+      "character relationships",
+      "fantasy world"
     ],
     "searchCount": 0,
-    "difficulty": 0.6,
-    "pace": 0.7,
+    "difficulty": 0.7,
+    "pace": 0.6,
     "narrative": 1,
     "complexity": 0.9,
-    "strategy": 1,
+    "strategy": 0.9,
     "exploration": 0.9,
     "violence": 0.8,
-    "horror": 0.5,
-    "darkness": 0.7,
+    "horror": 0.6,
+    "darkness": 0.8,
     "tension": 0.8,
-    "humor": 0.4,
+    "humor": 0.5,
     "isolation": null,
     "coziness": null
   },
@@ -710,14 +766,17 @@
     "sourceId": "1877",
     "slug": "cyberpunk-2077-2020",
     "title": "Cyberpunk 2077",
-    "description_es": "Cyberpunk 2077 es un juego de rol y acción en un mundo abierto ambientado en Night City, una metrópoli futurista llena de tecnología avanzada y conflictos entre bandas. Los jugadores asumen el papel de V, un mercenario que busca un implante único que promete la inmortalidad, mientras exploran un entorno rico en narrativa y personalización.",
-    "description_en": "Cyberpunk 2077 is an open-world action RPG set in Night City, a futuristic metropolis filled with advanced technology and gang conflicts. Players take on the role of V, a mercenary in pursuit of a unique implant that promises immortality, while exploring a rich narrative and extensive customization options.",
+    "description_es": "Cyberpunk 2077 es un juego de rol y acción en un mundo abierto ambientado en Night City, una metrópoli futurista llena de tecnología y conflictos. Los jugadores asumen el papel de V, un mercenario que busca un implante único que promete la inmortalidad, mientras exploran un entorno rico en narrativa y personalización.",
+    "description_en": "Cyberpunk 2077 is an open-world action RPG set in Night City, a futuristic metropolis filled with technology and conflict. Players take on the role of V, a mercenary seeking a unique implant that promises immortality, while exploring a rich narrative and extensive customization options.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/coaih8.jpg",
     "releaseYear": 2020,
     "genres": [
       "SHOOTER",
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -767,21 +826,23 @@
       "dystopia",
       "cyber warfare",
       "street gangs",
-      "character customization"
+      "character customization",
+      "immersive sim",
+      "braindance"
     ],
     "searchCount": 0,
-    "difficulty": 0.5,
+    "difficulty": 0.6,
     "pace": 0.6,
-    "narrative": 0.9,
-    "complexity": 0.7,
+    "narrative": 0.8,
+    "complexity": 0.8,
     "strategy": 0.7,
     "exploration": 0.9,
-    "violence": 0.9,
+    "violence": 0.8,
     "horror": null,
-    "darkness": 0.8,
-    "tension": 0.8,
+    "darkness": 0.7,
+    "tension": 0.7,
     "humor": null,
-    "isolation": 0.6,
+    "isolation": null,
     "coziness": null
   },
   {
@@ -789,14 +850,17 @@
     "sourceId": "14593",
     "slug": "hollow-knight-2017",
     "title": "Hollow Knight",
-    "description_es": "Hollow Knight es un juego de plataformas 2D que invita a los jugadores a explorar el vasto y desolado reino de Hallownest, lleno de insectos y secretos. Con un enfoque en el combate desafiante y la personalización del estilo de juego, los jugadores descubrirán una rica narrativa a través de la exploración y el enfrentamiento de jefes.",
-    "description_en": "Hollow Knight is a 2D platformer that invites players to explore the vast and desolate kingdom of Hallownest, filled with insects and secrets. With a focus on challenging combat and playstyle customization, players will uncover a rich narrative through exploration and boss encounters.",
+    "description_es": "Hollow Knight es un juego de plataformas 2D que invita a los jugadores a explorar un vasto y oscuro reino de insectos. Con un enfoque en el combate desafiante y la exploración, los jugadores descubrirán la rica historia de Hallownest mientras enfrentan enemigos y jefes en un mundo interconectado.",
+    "description_en": "Hollow Knight is a 2D platformer that invites players to explore a vast and dark insect kingdom. With a focus on challenging combat and exploration, players will uncover the rich lore of Hallownest while facing enemies and bosses in an interconnected world.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/cobfzp.jpg",
     "releaseYear": 2017,
     "genres": [
-      "PLATFORMER",
+      "PLATFORM",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -871,21 +935,26 @@
       "boss battles",
       "lore",
       "hand-drawn art",
-      "collectibles"
+      "collectibles",
+      "skill-based",
+      "2d platformer",
+      "the game awards - nominee",
+      "bug-themed",
+      "gothic"
     ],
     "searchCount": 0,
     "difficulty": 0.8,
-    "pace": 0.6,
-    "narrative": 0.9,
+    "pace": null,
+    "narrative": 0.7,
     "complexity": 0.8,
-    "strategy": 0.7,
+    "strategy": 0.6,
     "exploration": 1,
-    "violence": 0.5,
+    "violence": 0.6,
     "horror": null,
-    "darkness": 0.7,
+    "darkness": 0.9,
     "tension": 0.8,
     "humor": null,
-    "isolation": 0.7,
+    "isolation": null,
     "coziness": null
   },
   {
@@ -893,14 +962,17 @@
     "sourceId": "7344",
     "slug": "ori-and-the-blind-forest-2015",
     "title": "Ori and the Blind Forest",
-    "description_es": "Ori and the Blind Forest es un juego de plataformas y aventuras que narra la historia de Ori, un espíritu guardián que debe restaurar la vida en el bosque de Nibel. Con su impresionante arte pintado a mano y una emotiva narrativa sobre amor y sacrificio, el juego ofrece una experiencia de exploración y plataformas fluida y desafiante.",
-    "description_en": "Ori and the Blind Forest is a platformer and adventure game that tells the story of Ori, a guardian spirit who must restore life to the Nibel forest. With its stunning hand-painted art and an emotional narrative about love and sacrifice, the game provides a fluid and challenging exploration and platforming experience.",
+    "description_es": "Ori and the Blind Forest: Definitive Edition es un hermoso juego de plataformas que combina una narrativa emotiva con un diseño de niveles impresionante. Los jugadores deben explorar un vasto mundo interconectado, enfrentándose a desafiantes secciones de plataformas mientras descubren secretos y habilidades nuevas.",
+    "description_en": "Ori and the Blind Forest: Definitive Edition is a stunning platformer that blends an emotional narrative with impressive level design. Players must explore a vast interconnected world, facing challenging platforming sections while uncovering secrets and new abilities.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co1y41.jpg",
     "releaseYear": 2015,
     "genres": [
-      "PLATFORMER",
+      "PLATFORM",
       "PUZZLE",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PC",
@@ -957,22 +1029,27 @@
       "platforming",
       "artistic",
       "soul links",
-      "escape sequences"
+      "escape sequences",
+      "definitive edition",
+      "open world",
+      "puzzle",
+      "exploration-driven",
+      "platforming challenges"
     ],
     "searchCount": 0,
-    "difficulty": 0.7,
+    "difficulty": 0.6,
     "pace": 0.7,
     "narrative": 0.9,
     "complexity": 0.8,
-    "strategy": 0.5,
+    "strategy": null,
     "exploration": 0.9,
-    "violence": 0.4,
+    "violence": null,
     "horror": null,
-    "darkness": 0.6,
-    "tension": 0.8,
+    "darkness": 0.3,
+    "tension": 0.6,
     "humor": null,
-    "isolation": 0.5,
-    "coziness": 0.6
+    "isolation": null,
+    "coziness": null
   },
   {
     "id": 11,
@@ -984,9 +1061,12 @@
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/cob9dh.jpg",
     "releaseYear": 2018,
     "genres": [
-      "PLATFORMER",
+      "PLATFORM",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS4",
@@ -1068,14 +1148,17 @@
     "sourceId": "26855",
     "slug": "dead-cells-2018",
     "title": "Dead Cells",
-    "description_es": "Dead Cells es un juego de plataformas de acción roguelike que combina elementos de Metroidvania. Los jugadores controlan a un prisionero inmortal que lucha a través de niveles generados aleatoriamente, enfrentándose a enemigos mutantes y descubriendo secretos en un mundo vibrante y desafiante.",
-    "description_en": "Dead Cells is a roguelike action platformer that blends Metroidvania elements. Players control an immortal prisoner battling through procedurally generated levels, facing mutated enemies and uncovering secrets in a vibrant and challenging world.",
+    "description_es": "Dead Cells+ es un juego de plataformas y aventura que combina elementos de roguelike y metroidvania, ofreciendo un combate rápido y visceral. Los jugadores deben explorar biomas generados aleatoriamente, enfrentándose a enemigos desafiantes y descubriendo secretos en cada intento.",
+    "description_en": "Dead Cells+ is a platformer and adventure game that blends roguelike and metroidvania elements, featuring fast-paced and visceral combat. Players explore randomly generated biomes, facing challenging enemies and uncovering secrets with each attempt.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co7jfv.jpg",
     "releaseYear": 2018,
     "genres": [
-      "PLATFORMER",
+      "PLATFORM",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS4",
@@ -1131,21 +1214,26 @@
       "speedrunning",
       "exploration",
       "dungeon crawler",
-      "rpg elements"
+      "rpg elements",
+      "apple arcade",
+      "available on - apple arcade",
+      "perma-death",
+      "fast-paced",
+      "combat"
     ],
     "searchCount": 0,
-    "difficulty": 0.7,
+    "difficulty": 0.9,
     "pace": 0.8,
-    "narrative": 0.4,
+    "narrative": 0.5,
     "complexity": 0.8,
     "strategy": 0.7,
-    "exploration": 0.9,
-    "violence": 0.6,
+    "exploration": 0.8,
+    "violence": 0.9,
     "horror": null,
-    "darkness": 0.3,
-    "tension": 0.8,
-    "humor": 0.2,
-    "isolation": 0.5,
+    "darkness": 0.6,
+    "tension": 0.9,
+    "humor": 0.4,
+    "isolation": null,
     "coziness": null
   },
   {
@@ -1153,14 +1241,17 @@
     "sourceId": "113112",
     "slug": "hades-2020",
     "title": "Hades",
-    "description_es": "*Hades* es un roguelike de acción donde juegas como Zagreus, el príncipe del inframundo, intentando escapar de su padre Hades. Con un estilo visual impresionante y una narrativa rica, cada intento de escape revela más sobre su historia y relaciones con otros personajes mitológicos.",
-    "description_en": "*Hades* is an action roguelike where you play as Zagreus, the prince of the underworld, trying to escape from his father Hades. With stunning visuals and rich narrative, each escape attempt reveals more about his story and relationships with other mythological characters.",
+    "description_es": "*Hades* es un roguelike de acción donde juegas como Zagreus, el hijo de Hades, intentando escapar del inframundo. Con una narrativa rica y personajes memorables, cada intento de escape revela más sobre la historia y las relaciones familiares en un entorno mitológico vibrante.",
+    "description_en": "*Hades* is an action roguelike where you play as Zagreus, the son of Hades, trying to escape the underworld. With a rich narrative and memorable characters, each escape attempt reveals more about the story and family relationships in a vibrant mythological setting.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/cob9kr.jpg",
     "releaseYear": 2020,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -1212,20 +1303,30 @@
       "dysfunctional family",
       "character-driven",
       "narrative depth",
-      "replayability"
+      "replayability",
+      "the game awards - best score or music - nominee",
+      "the game awards - best art direction - nominee",
+      "the game awards - best game direction - nominee",
+      "the game awards - best narrative - nominee",
+      "the game awards - best performance - nominee",
+      "the game awards - game of the year - nominee",
+      "hack and slash/beat 'em up",
+      "bird view / isometric",
+      "greek gods",
+      "dungeon exploration"
     ],
     "searchCount": 0,
-    "difficulty": 0.7,
+    "difficulty": 0.8,
     "pace": 0.8,
     "narrative": 1,
-    "complexity": 0.8,
+    "complexity": 0.9,
     "strategy": 0.9,
-    "exploration": 0.9,
+    "exploration": 0.8,
     "violence": 0.6,
     "horror": null,
-    "darkness": 0.6,
+    "darkness": 0.7,
     "tension": 0.8,
-    "humor": 0.5,
+    "humor": 0.6,
     "isolation": 0.7,
     "coziness": null
   },
@@ -1234,15 +1335,18 @@
     "sourceId": "40477",
     "slug": "slay-the-spire-2019",
     "title": "Slay the Spire",
-    "description_es": "Slay the Spire es un juego de construcción de mazos roguelike en el que los jugadores eligen entre varios personajes y deben escalar una torre generada proceduralmente. Cada partida ofrece una experiencia única, combinando estrategia y decisiones tácticas en un entorno desafiante.",
-    "description_en": "Slay the Spire is a roguelike deck-building game where players select from various characters and attempt to ascend a procedurally generated tower. Each run provides a unique experience, blending strategy and tactical decision-making in a challenging environment.",
+    "description_es": "Slay the Spire II es un juego de estrategia roguelike donde los jugadores construyen mazos únicos mientras escalan una torre llena de enemigos y eventos. Con nuevos personajes y un modo cooperativo, ofrece una experiencia fresca y emocionante para los fanáticos del género.",
+    "description_en": "Slay the Spire II is a roguelike strategy game where players build unique decks while climbing a tower filled with enemies and events. Featuring new characters and a cooperative mode, it provides a fresh and exciting experience for genre fans.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co1iyf.jpg",
     "releaseYear": 2019,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "STRATEGY",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS4",
@@ -1280,19 +1384,23 @@
       "replayability",
       "strategy",
       "rng",
-      "roguelike"
+      "roguelike",
+      "multiplayer",
+      "co-op",
+      "lore",
+      "deck customization"
     ],
     "searchCount": 0,
     "difficulty": 0.7,
-    "pace": 0.6,
+    "pace": null,
     "narrative": 0.5,
     "complexity": 0.8,
-    "strategy": 1,
-    "exploration": 0.9,
-    "violence": 0.3,
+    "strategy": 0.9,
+    "exploration": 0.6,
+    "violence": null,
     "horror": null,
     "darkness": null,
-    "tension": 0.8,
+    "tension": 0.6,
     "humor": null,
     "isolation": null,
     "coziness": null
@@ -1302,13 +1410,16 @@
     "sourceId": "135400",
     "slug": "minecraft-2011",
     "title": "Minecraft",
-    "description_es": "Minecraft es un juego de aventuras en un mundo abierto donde los jugadores pueden explorar, construir y crear a su antojo. Con un enfoque en la recolección de recursos y la supervivencia, ofrece una experiencia única y creativa que se puede disfrutar solo o en modo multijugador.",
-    "description_en": "Minecraft is an adventure game set in an open world where players can explore, build, and create at their leisure. With a focus on resource gathering and survival, it offers a unique and creative experience that can be enjoyed solo or in multiplayer.",
+    "description_es": "Minecraft es un juego de aventura y construcción en un mundo abierto donde los jugadores pueden explorar, recolectar recursos y crear estructuras. Su estilo de juego permite una gran libertad creativa, lo que lo convierte en un favorito entre jugadores de todas las edades.",
+    "description_en": "Minecraft is an adventure and building game set in an open world where players can explore, gather resources, and create structures. Its gameplay allows for great creative freedom, making it a favorite among players of all ages.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co8fu7.jpg",
     "releaseYear": 2016,
     "genres": [
       "ADVENTURE",
       "ARCADE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -1380,38 +1491,43 @@
       "exploration",
       "multiplayer",
       "endgame",
-      "mods"
+      "mods",
+      "dungeon crawling",
+      "pixel art"
     ],
     "searchCount": 0,
     "difficulty": 0.6,
-    "pace": 0.7,
-    "narrative": 0.6,
-    "complexity": 0.8,
+    "pace": 0.5,
+    "narrative": 0.4,
+    "complexity": 0.7,
     "strategy": 0.6,
     "exploration": 0.9,
     "violence": 0.5,
-    "horror": 0.4,
-    "darkness": 0.5,
+    "horror": 0.5,
+    "darkness": null,
     "tension": 0.7,
     "humor": null,
-    "isolation": 0.5,
-    "coziness": 0.7
+    "isolation": null,
+    "coziness": null
   },
   {
     "id": 16,
     "sourceId": "1879",
     "slug": "terraria-2011",
     "title": "Terraria",
-    "description_es": "Terraria es un juego de aventuras en 2D que combina elementos de sandbox y rol, donde los jugadores exploran un mundo generado proceduralmente, recolectan recursos, construyen estructuras y luchan contra enemigos. Con un enfoque en la acción y la exploración, ofrece una experiencia rica y variada con múltiples biomas y jefes desafiantes.",
-    "description_en": "Terraria is a 2D adventure game that blends sandbox and RPG elements, where players explore a procedurally generated world, gather resources, build structures, and fight enemies. With a focus on action and exploration, it provides a rich and varied experience featuring multiple biomes and challenging bosses.",
+    "description_es": "Terraria es un juego de aventuras en 2D que combina elementos de sandbox y RPG, donde los jugadores exploran un mundo generado proceduralmente, recolectan recursos, construyen estructuras y luchan contra enemigos. Con una jugabilidad centrada en la exploración y el combate, ofrece una experiencia rica y variada.",
+    "description_en": "Terraria is a 2D adventure game that blends sandbox and RPG elements, allowing players to explore a procedurally generated world, gather resources, build structures, and fight enemies. With gameplay focused on exploration and combat, it provides a rich and varied experience.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/coaamg.jpg",
     "releaseYear": 2011,
     "genres": [
-      "PLATFORMER",
-      "RPG",
+      "PLATFORM",
+      "ROLE_PLAYING_RPG",
       "STRATEGY",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS3",
@@ -1540,18 +1656,23 @@
       "playstation vita",
       "roguelike",
       "metroidvania",
-      "dungeon crawler"
+      "dungeon crawler",
+      "split-screen multiplayer",
+      "two screen multiplayer",
+      "gamescom 2015",
+      "dungeon crawling",
+      "boss battles"
     ],
     "searchCount": 0,
     "difficulty": 0.7,
     "pace": 0.6,
-    "narrative": 0.3,
+    "narrative": 0.4,
     "complexity": 0.8,
     "strategy": 0.7,
-    "exploration": 1,
+    "exploration": 0.9,
     "violence": 0.5,
-    "horror": 0.4,
-    "darkness": 0.5,
+    "horror": 0.5,
+    "darkness": 0.6,
     "tension": 0.6,
     "humor": null,
     "isolation": null,
@@ -1562,15 +1683,18 @@
     "sourceId": "17000",
     "slug": "stardew-valley-2016",
     "title": "Stardew Valley",
-    "description_es": "Stardew Valley es un juego de rol y simulación de vida donde heredas una granja y debes transformarla en un próspero hogar. A medida que exploras el valle, interactúas con los aldeanos, cultivas, crías animales y enfrentas desafíos en las minas, todo mientras disfrutas de un ambiente relajante y acogedor.",
-    "description_en": "Stardew Valley is a life simulation RPG where you inherit a farm and must turn it into a thriving home. As you explore the valley, you interact with villagers, grow crops, raise animals, and face challenges in the mines, all while enjoying a relaxing and cozy atmosphere.",
+    "description_es": "Stardew Valley es un juego de rol y simulación de vida donde heredas una granja y debes transformarla en un próspero negocio agrícola. A través de la agricultura, la pesca y la interacción con los habitantes del pueblo, puedes crear tu propia historia en un mundo pixelado encantador.",
+    "description_en": "Stardew Valley is a life simulation RPG where you inherit a farm and must turn it into a thriving agricultural business. Through farming, fishing, and interacting with the townsfolk, you can craft your own story in a charming pixelated world.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/coa93h.jpg",
     "releaseYear": 2016,
     "genres": [
-      "RPG",
+      "ROLE_PLAYING_RPG",
       "STRATEGY",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS4",
@@ -1683,21 +1807,32 @@
       "community",
       "dungeon crawler",
       "retro",
-      "farming simulator"
+      "farming simulator",
+      "minigames",
+      "upgrade",
+      "arcade cabinet",
+      "the game awards - nominee",
+      "adult protagonist",
+      "pixel art game",
+      "monster",
+      "bird view / isometric",
+      "farming sim",
+      "relationship building",
+      "dungeon crawling"
     ],
     "searchCount": 0,
     "difficulty": 0.4,
     "pace": 0.5,
-    "narrative": 0.7,
-    "complexity": 0.7,
+    "narrative": 0.8,
+    "complexity": 0.8,
     "strategy": 0.6,
-    "exploration": 0.8,
+    "exploration": 0.7,
     "violence": 0.3,
     "horror": null,
     "darkness": null,
-    "tension": 0.4,
-    "humor": 0.5,
-    "isolation": 0.6,
+    "tension": null,
+    "humor": 0.6,
+    "isolation": null,
     "coziness": 0.9
   },
   {
@@ -1705,13 +1840,16 @@
     "sourceId": "7046",
     "slug": "factorio-2020",
     "title": "Factorio",
-    "description_es": "Factorio es un juego donde construyes y gestionas fábricas en un planeta alienígena. Comienzas con recursos básicos y, a medida que avanzas, automatizas procesos complejos para crear una vasta industria, mientras defiendes tu creación de criaturas hostiles.",
-    "description_en": "Factorio is a game where you build and manage factories on an alien planet. Starting with basic resources, you automate complex processes to create a vast industry while defending your creation from hostile creatures.",
+    "description_es": "Factorio es un juego donde construyes y gestionas fábricas en un planeta alienígena. Comienzas con recursos básicos y, a medida que avanzas, automatizas la producción y enfrentas a criaturas nativas que defienden su hogar.",
+    "description_en": "Factorio is a game where you build and manage factories on an alien planet. Starting with basic resources, you automate production and face native creatures defending their home as you expand your industrial empire.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co1tfy.jpg",
     "releaseYear": 2020,
     "genres": [
       "STRATEGY",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "LINUX",
@@ -1755,19 +1893,22 @@
       "factory building",
       "resource management",
       "logistics",
-      "tower defense"
+      "tower defense",
+      "bird view / isometric",
+      "modding",
+      "alien combat"
     ],
     "searchCount": 0,
-    "difficulty": 0.8,
-    "pace": 0.5,
-    "narrative": 0.6,
-    "complexity": 0.9,
+    "difficulty": 1,
+    "pace": null,
+    "narrative": 1,
+    "complexity": 1,
     "strategy": 1,
-    "exploration": 0.7,
-    "violence": 0.5,
+    "exploration": 1,
+    "violence": 1,
     "horror": null,
     "darkness": null,
-    "tension": 0.7,
+    "tension": 1,
     "humor": null,
     "isolation": null,
     "coziness": null
@@ -1777,14 +1918,17 @@
     "sourceId": "72",
     "slug": "portal-2-2011",
     "title": "Portal 2",
-    "description_es": "Portal 2 es un juego de plataformas y rompecabezas en primera persona que sigue a Chell mientras navega por las ruinas de Aperture Science, resolviendo desafiantes acertijos con la ayuda de su compañero robótico Wheatley. Con un enfoque en la narrativa y el humor oscuro, el juego ofrece una experiencia inmersiva y creativa.",
-    "description_en": "Portal 2 is a first-person platformer and puzzle game that follows Chell as she navigates the ruins of Aperture Science, solving challenging puzzles with the help of her robotic companion Wheatley. With a focus on narrative and dark humor, the game provides an immersive and creative experience.",
+    "description_es": "Portal 2: In Motion es un juego de aventuras y rompecabezas en primera persona que desafía a los jugadores a resolver complejos acertijos utilizando portales. Con un enfoque en la cooperación y un humor ingenioso, los jugadores deben trabajar juntos para superar los desafíos en un entorno de ciencia ficción.",
+    "description_en": "Portal 2: In Motion is a first-person adventure and puzzle game that challenges players to solve complex puzzles using portals. With a focus on cooperation and clever humor, players must work together to overcome challenges in a sci-fi environment.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co1rs4.jpg",
     "releaseYear": 2011,
     "genres": [
-      "PLATFORMER",
+      "PLATFORM",
       "PUZZLE",
       "ADVENTURE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "PS3",
@@ -1846,21 +1990,23 @@
       "portal gun",
       "dark horror",
       "environmental storytelling",
-      "portal mechanics"
+      "portal mechanics",
+      "sci-fi",
+      "puzzle-solving"
     ],
     "searchCount": 0,
-    "difficulty": 0.7,
+    "difficulty": 0.8,
     "pace": 0.7,
-    "narrative": 0.8,
-    "complexity": 0.8,
-    "strategy": 0.8,
+    "narrative": 1,
+    "complexity": 1,
+    "strategy": 1,
     "exploration": 0.6,
-    "violence": null,
-    "horror": null,
-    "darkness": 0.5,
-    "tension": 0.6,
-    "humor": 0.9,
-    "isolation": 0.4,
+    "violence": 0.3,
+    "horror": 0.5,
+    "darkness": 0.7,
+    "tension": 0.8,
+    "humor": 1,
+    "isolation": 0.8,
     "coziness": null
   },
   {
@@ -1868,14 +2014,17 @@
     "sourceId": "11737",
     "slug": "outer-wilds-2019",
     "title": "Outer Wilds",
-    "description_es": "Outer Wilds es un juego de aventura y exploración en un sistema solar atrapado en un bucle temporal. Los jugadores deben descubrir los secretos de este universo mientras navegan entre planetas únicos y resuelven acertijos intrigantes.",
-    "description_en": "Outer Wilds is an adventure and exploration game set in a solar system trapped in a time loop. Players must uncover the secrets of this universe while navigating unique planets and solving intriguing puzzles.",
+    "description_es": "Outer Wilds es un juego de aventura y exploración en un sistema solar atrapado en un bucle temporal. Los jugadores deben descubrir secretos y resolver acertijos mientras navegan por planetas únicos y peligrosos, enfrentándose a la inminente destrucción del sol.",
+    "description_en": "Outer Wilds is an adventure and exploration game set in a solar system trapped in a time loop. Players must uncover secrets and solve puzzles while navigating unique and hazardous planets, facing the impending destruction of the sun.",
     "coverUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/co65ac.jpg",
     "releaseYear": 2019,
     "genres": [
       "PUZZLE",
       "ADVENTURE",
       "INDIE"
+    ],
+    "themes": [
+      "UNKNOWN"
     ],
     "platforms": [
       "XBOX_SERIES",
@@ -1910,20 +2059,21 @@
       "simulator",
       "puzzles",
       "survival",
-      "time loop"
+      "time loop",
+      "space exploration"
     ],
     "searchCount": 0,
-    "difficulty": 0.6,
+    "difficulty": 0.7,
     "pace": 0.5,
-    "narrative": 0.9,
+    "narrative": 0.8,
     "complexity": 0.8,
-    "strategy": 0.7,
+    "strategy": 0.6,
     "exploration": 1,
     "violence": 0,
-    "horror": 0.3,
-    "darkness": 0.4,
-    "tension": 0.8,
-    "humor": 0.2,
+    "horror": 0.5,
+    "darkness": 0.6,
+    "tension": 0.7,
+    "humor": null,
     "isolation": 0.5,
     "coziness": null
   }

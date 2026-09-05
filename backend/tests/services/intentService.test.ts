@@ -7,11 +7,14 @@ vi.mock("../../src/lib/ai.js", async () => ({
 //Ahora sí importamos el código real que queremos testear.
 import {
   intentService,
+  applyYearGuard,
+  applyThemeGuard,
   createBudgetedIntentExtractor,
 } from "../../src/services/intentService.js";
 import { gameIntentAIModel } from "../../src/lib/ai.js";
 import type { GameSearchIntent } from "../../src/types/GameSearchIntent.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
+import { makeIntent } from "../helpers/fakes.js";
 
 const fakeIntent: GameSearchIntent = {
   gameReferenced: null,
@@ -21,6 +24,7 @@ const fakeIntent: GameSearchIntent = {
   yearFrom: null,
   yearTo: null,
   excluded: null,
+  relation: null,
   semantic: null,
 };
 //Puesto que basicamente devuelve lo que le pasamos ha poco que testear:
@@ -101,6 +105,7 @@ describe("intentService session context", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
+      relation: null,
       semantic: null,
     };
 
@@ -135,5 +140,62 @@ describe("intentService session context", () => {
     }[];
     const system = messages.find((m) => m.role === "system");
     expect(system?.content).not.toContain("Conversation context");
+  });
+});
+
+describe("applyYearGuard", () => {
+  it("posteriores al año 2000 → yearFrom 2001", () => {
+    const out = applyYearGuard("busco juegos posteriores al año 2000", makeIntent());
+    expect(out.yearFrom).toBe(2001);
+    expect(out.releaseYear).toBeNull();
+  });
+
+  it("anteriores a 2010 → yearTo 2009", () => {
+    const out = applyYearGuard("juegos anteriores a 2010", makeIntent());
+    expect(out.yearTo).toBe(2009);
+  });
+
+  it("del año 2004 → releaseYear 2004", () => {
+    const out = applyYearGuard("un juego del año 2004", makeIntent());
+    expect(out.releaseYear).toBe(2004);
+  });
+
+  it("de los 90 → rango 1990-1999", () => {
+    const out = applyYearGuard("juegos de los 90", makeIntent());
+    expect(out.yearFrom).toBe(1990);
+    expect(out.yearTo).toBe(1999);
+  });
+
+  it("nunca pisa lo que la LLM ya capturó", () => {
+    const base = makeIntent({ yearFrom: 2010, yearTo: 2019 });
+    const out = applyYearGuard("anteriores a 2000", base);
+    expect(out.yearFrom).toBe(2010);
+    expect(out.yearTo).toBe(2019);
+  });
+});
+
+describe("applyThemeGuard", () => {
+  it("mueve una palabra-theme de keywords a objective.themes", () => {
+    const out = applyThemeGuard(makeIntent({ keywords: ["horror"] }));
+    expect(out.objective?.themes).toEqual(["HORROR"]);
+    expect(out.keywords).toBeNull();
+  });
+
+  it("mueve variantes por slug (open world) y conserva keywords reales", () => {
+    const out = applyThemeGuard(
+      makeIntent({ keywords: ["open world", "steampunk"] }),
+    );
+    expect(out.objective?.themes).toEqual(["OPEN_WORLD"]);
+    expect(out.keywords).toEqual(["steampunk"]);
+  });
+
+  it("no duplica themes ya presentes ni toca intents sin keywords", () => {
+    const withTheme = makeIntent({
+      keywords: ["horror"],
+      objective: { genres: null, themes: ["HORROR"], platforms: null, gameModes: null, perspectives: null },
+    });
+    const out = applyThemeGuard(withTheme);
+    expect(out.objective?.themes).toEqual(["HORROR"]);
+    expect(applyThemeGuard(makeIntent())).toEqual(makeIntent());
   });
 });

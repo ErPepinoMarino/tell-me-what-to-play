@@ -23,23 +23,56 @@ export const SEMANTIC_LABELS: Record<string, string> = {
 };
 
 const GENRE_LABELS: Record<string, string> = {
-  ACTION: "Acción",
   ADVENTURE: "Aventura",
   ARCADE: "Arcade",
-  CASUAL: "Casual",
+  CARD_AND_BOARD_GAME: "Cartas y tablero",
   FIGHTING: "Lucha",
-  HORROR: "Horror",
+  HACK_AND_SLASH_BEAT_EM_UP: "Hack & slash",
   INDIE: "Indie",
-  MMO: "MMO",
-  PLATFORMER: "Plataformas",
+  MOBA: "MOBA",
+  MUSIC: "Música",
+  PINBALL: "Pinball",
+  PLATFORM: "Plataformas",
+  POINT_AND_CLICK: "Point & click",
   PUZZLE: "Puzzle",
+  QUIZ_TRIVIA: "Trivial",
   RACING: "Carreras",
-  RPG: "RPG",
+  REAL_TIME_STRATEGY: "Estrategia en tiempo real",
+  ROLE_PLAYING_RPG: "RPG",
   SHOOTER: "Shooter",
-  SIMULATION: "Simulación",
-  SPORTS: "Deportes",
+  SIMULATOR: "Simulación",
+  SPORT: "Deportes",
   STRATEGY: "Estrategia",
+  TACTICAL: "Táctico",
+  TURN_BASED_STRATEGY: "Estrategia por turnos",
   VISUAL_NOVEL: "Novela visual",
+  UNKNOWN: "Sin clasificar",
+};
+
+// Themes de IGDB: mundo/tono/ambientación (capa MUST del intent).
+const THEME_LABELS: Record<string, string> = {
+  ACTION: "Acción",
+  BUSINESS: "Negocios",
+  COMEDY: "Comedia",
+  DRAMA: "Drama",
+  EDUCATIONAL: "Educativo",
+  EROTIC: "Erótico",
+  FANTASY: "Fantasía",
+  FOUR_X: "4X",
+  HISTORICAL: "Histórico",
+  HORROR: "Terror",
+  KIDS: "Infantil",
+  MYSTERY: "Misterio",
+  NON_FICTION: "No ficción",
+  OPEN_WORLD: "Mundo abierto",
+  PARTY: "Fiesta",
+  ROMANCE: "Romance",
+  SANDBOX: "Sandbox",
+  SCIENCE_FICTION: "Ciencia ficción",
+  STEALTH: "Sigilo",
+  SURVIVAL: "Supervivencia",
+  THRILLER: "Thriller",
+  WARFARE: "Guerra",
   UNKNOWN: "Sin clasificar",
 };
 
@@ -48,6 +81,7 @@ const MODE_LABELS: Record<string, string> = {
   MULTIPLAYER: "Multijugador",
   COOPERATIVE: "Cooperativo",
   COMPETITIVE: "Competitivo",
+  MASSIVELY_MULTIPLAYER: "MMO",
   UNKNOWN: "Sin clasificar",
 };
 
@@ -128,72 +162,89 @@ export function reasonsToChips(reasons: MatchReason[]): ReasonChip[] {
 }
 
 /*
- * Resumen ES de la intención interpretada, para el "he entendido: ..." del
- * chat. Espejo ligero del describeIntent del backend.
+ * Resumen ES de la intención interpretada, para el "He entendido: ..." del
+ * chat. Espejo ligero del describeIntent del backend. Devuelve CHIPS
+ * estructurados (etiqueta + tono) para renderizar como tags: verde (++ lo
+ * demandado fuerte), rojo (-- ausencias y exclusiones), neutro (temas,
+ * géneros, plataformas, años).
  */
-export function intentSummary(intent: GameSearchIntent): string[] {
-  const bits: string[] = [];
+export interface IntentChip {
+  label: string;
+  tone: "positive" | "negative" | "neutral";
+}
+
+export function intentSummaryChips(intent: GameSearchIntent): IntentChip[] {
+  const chips: IntentChip[] = [];
 
   const genres = intent.objective?.genres?.filter((g) => g !== "UNKNOWN") ?? [];
-  if (genres.length > 0) {
-    bits.push(genres.map((g) => GENRE_LABELS[g] ?? g).join(" / "));
+  for (const genre of genres) {
+    chips.push({ label: GENRE_LABELS[genre] ?? genre, tone: "neutral" });
+  }
+
+  const themes = intent.objective?.themes?.filter((t) => t !== "UNKNOWN") ?? [];
+  for (const theme of themes) {
+    chips.push({ label: THEME_LABELS[theme] ?? theme, tone: "neutral" });
   }
 
   const modes = intent.objective?.gameModes?.filter((m) => m !== "UNKNOWN") ?? [];
-  if (modes.length > 0) {
-    bits.push(modes.map((m) => MODE_LABELS[m] ?? m).join(" / "));
+  for (const mode of modes) {
+    chips.push({ label: MODE_LABELS[mode] ?? mode, tone: "neutral" });
   }
 
   const perspectives =
     intent.objective?.perspectives?.filter((p) => p !== "UNKNOWN") ?? [];
-  if (perspectives.length > 0) {
-    bits.push(perspectives.map((p) => PERSPECTIVE_LABELS[p] ?? p).join(" / "));
+  for (const perspective of perspectives) {
+    chips.push({
+      label: PERSPECTIVE_LABELS[perspective] ?? perspective,
+      tone: "neutral",
+    });
   }
 
   const platforms = intent.objective?.platforms?.filter((p) => p !== "UNKNOWN") ?? [];
-  if (platforms.length > 0) {
-    bits.push(`en ${platforms.join(" / ")}`);
+  for (const platform of platforms) {
+    chips.push({ label: platform, tone: "neutral" });
   }
 
-  if (intent.keywords && intent.keywords.length > 0) {
-    // Las keywords son vocabulario interno de búsqueda (inglés canónico):
-    // se etiquetan como lo que son en vez de mezclarse con los labels ES.
-    bits.push(`términos de búsqueda: ${intent.keywords.join(", ")}`);
+  for (const keyword of intent.keywords ?? []) {
+    chips.push({ label: keyword, tone: "neutral" });
   }
 
   if (intent.releaseYear !== null) {
-    bits.push(`del año ${intent.releaseYear}`);
+    chips.push({ label: `del año ${intent.releaseYear}`, tone: "neutral" });
   } else if (intent.yearFrom !== null && intent.yearTo !== null) {
-    bits.push(`entre ${intent.yearFrom} y ${intent.yearTo}`);
+    chips.push({ label: `entre ${intent.yearFrom} y ${intent.yearTo}`, tone: "neutral" });
   } else if (intent.yearFrom !== null) {
-    bits.push(`desde ${intent.yearFrom}`);
+    chips.push({ label: `desde ${intent.yearFrom}`, tone: "neutral" });
   } else if (intent.yearTo !== null) {
-    bits.push(`hasta ${intent.yearTo}`);
+    chips.push({ label: `hasta ${intent.yearTo}`, tone: "neutral" });
   }
 
   if (intent.gameReferenced && intent.gameReferenced.length > 0) {
-    bits.push(`referencia: ${intent.gameReferenced.join(", ")}`);
-  }
-
-  const exclusions = [
-    ...(intent.excluded?.keywords ?? []),
-    ...(intent.excluded?.genres ?? []),
-    ...(intent.excluded?.platforms ?? []),
-  ];
-  if (exclusions.length > 0) {
-    bits.push(`sin: ${exclusions.join(", ")}`);
+    chips.push({
+      label: `similar a ${intent.gameReferenced.join(", ")}`,
+      tone: "neutral",
+    });
   }
 
   if (intent.semantic) {
     for (const [field, value] of Object.entries(intent.semantic)) {
       if (value === null || value === undefined) continue;
-      if (value >= 0.6) bits.push(`muy ${SEMANTIC_LABELS[field] ?? field}`);
-      else if (value > 0 && value < 0.4)
-        bits.push(`poco ${SEMANTIC_LABELS[field] ?? field}`);
-      else if (value === 0)
-        bits.push(`sin ${SEMANTIC_LABELS[field] ?? field}`);
+      const label = SEMANTIC_LABELS[field] ?? field;
+      if (value >= 0.7) chips.push({ label: `++ ${label}`, tone: "positive" });
+      else if (value === 0) chips.push({ label: `-- ${label}`, tone: "negative" });
+      else if (value < 0.4) chips.push({ label: `poco ${label}`, tone: "neutral" });
     }
   }
 
-  return bits;
+  const exclusions = [
+    ...(intent.excluded?.keywords ?? []),
+    ...(intent.excluded?.genres ?? []),
+    ...(intent.excluded?.themes ?? []),
+    ...(intent.excluded?.platforms ?? []),
+  ];
+  for (const excluded of exclusions) {
+    chips.push({ label: `-- sin ${excluded}`, tone: "negative" });
+  }
+
+  return chips;
 }

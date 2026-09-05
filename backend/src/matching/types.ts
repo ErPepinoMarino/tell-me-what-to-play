@@ -3,6 +3,7 @@ import type {
   Genre,
   Perspective,
   Platform,
+  Theme,
 } from "../generated/prisma/enums.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
@@ -60,6 +61,7 @@ export interface MatchableGame {
   title: string;
   releaseYear: number | null;
   genres: Genre[];
+  themes: Theme[];
   platforms: Platform[];
   gameModes: GameMode[];
   perspectives: Perspective[];
