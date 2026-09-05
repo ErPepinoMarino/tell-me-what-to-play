@@ -308,6 +308,9 @@ export interface LexiconRow {
   canonical: string;
   aliases: string[];
   embedding: unknown;
+  // ID numérico de IGDB del canónico (keyword_lexicon.igdb_id): el diccionario
+  // es la fuente de verdad canónica → id, sin resolver por red en runtime.
+  igdbId?: number | null;
 }
 
 export interface CanonicalizedTerm {
@@ -339,6 +342,7 @@ interface LoadedEntry {
   canonical: string;
   stem: string;
   embedding: number[];
+  igdbId: number | null;
 }
 
 export class KeywordLexiconService {
@@ -346,6 +350,8 @@ export class KeywordLexiconService {
   private loading: Promise<void> | null = null;
   private entries: LoadedEntry[] = [];
   private stemIndex = new Map<string, string>();
+  // Índice canónico → entrada: resolución canónico → id IGDB sin red.
+  private byCanonical = new Map<string, LoadedEntry>();
   // Cache de vectores de términos desconocidos (evita re-embedder).
   private unknownVectors = new Map<string, number[]>();
   // Drops recientes (política conservadora): para que el orquestador los
@@ -365,6 +371,21 @@ export class KeywordLexiconService {
     }
     this.dropped = [];
     return [...unique.values()];
+  }
+
+  /*
+   * Resolución canónico → ID numérico de IGDB, desde el diccionario local.
+   * El diccionario es la fuente de verdad (canonical → igdb_id): NO se llama
+   * a /v4/keywords en runtime. null = canónico sin referencia IGDB.
+   */
+  async resolveIds(terms: string[]): Promise<Map<string, number | null>> {
+    await this.ensureLoaded();
+    const result = new Map<string, number | null>();
+    for (const term of terms) {
+      const normalized = term.trim().toLowerCase();
+      result.set(normalized, this.byCanonical.get(normalized)?.igdbId ?? null);
+    }
+    return result;
   }
 
   async canonicalize(terms: string[]): Promise<CanonicalizedTerm[]> {
@@ -521,10 +542,12 @@ private resolveByEmbedding(term: string, vector: number[]): CanonicalizedTerm {
             canonical: row.canonical,
             stem: keywordStem(row.canonical),
             embedding: row.embedding as number[],
+            igdbId: row.igdbId ?? null,
           }));
         for (const entry of this.entries) {
           this.canonicalTerms.add(entry.canonical);
           this.stemIndex.set(entry.stem, entry.canonical);
+          this.byCanonical.set(entry.canonical, entry);
         }
         for (const row of rows) {
           for (const alias of row.aliases ?? []) {

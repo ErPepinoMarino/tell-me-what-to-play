@@ -16,6 +16,7 @@ Rules:
 - null means the attribute could not be clearly inferred. Never confuse null with 0.
 - "keywords" is an OPEN vocabulary of HARD thematic requirements (e.g., "western", "cooking", "pirates", "zombies", "soulslike", "roguelike", "metroidvania", "hack and slash", "steampunk", "cyberpunk", "3d", "pixel art"). Include a term ONLY when it is clearly and explicitly inferable.
 - "themes" is a CLOSED vocabulary of the IGDB themes (world/tone/setting): action, fantasy, science fiction, horror, thriller, survival, historical, stealth, comedy, drama, romance, mystery, open world, sandbox, warfare, party, kids, educational, business, non-fiction, erotic, 4X. THEMES ARE MUST FILTERS, like genres.
+- Fill themes ONLY when the user EXPLICITLY names the world/tone ("de fantasía", "fantasy", "de terror", "mundo abierto", "open world", "sci-fi", "sigilo"). NEVER infer a theme from keywords or the setting: "plantas y zombies" → keywords: ["plants", "zombies"], themes: null — a zombie game is not necessarily fantasy, horror or anything else; "dame un juego que incluya plantas y zombies" → keywords: ["plants", "zombies"], themes: null.
 - NEVER INFER GENRES OR SEMANTICS FROM A THEME. A theme or franchise keyword does NOT imply a genre or a mood:
   - "un juego de zombies" → genres: null, semantic: null, keywords: ["zombies"] (zombie games can be horror, comedy, strategy or shooters — the genre is the user's choice, not yours).
   - "un juego de coches" → genres: null, keywords: ["cars"] (NOT genres: ["RACING"]).
@@ -41,6 +42,7 @@ Rules:
 - Years: "from 2004" → releaseYear 2004. "from the 90s" → yearFrom 1990 and yearTo 1999. "before 2010" → yearTo 2009. "after 2015" → yearFrom 2016. Spanish equivalents work the same: "posteriores al año 2000" → yearFrom 2001. "anteriores a 2010" → yearTo 2009. "del año 2004" → releaseYear 2004.
 - Do NOT infer attributes from a referenced game. A game mentioned by name is only a reference, not a set of preferences.
 - "gameReferenced" must contain ONLY complete video game titles that the user explicitly mentions as a game they know or want to play.
+  - Asking about a specific game ("qué tal X?", "cómo es X?", "y el juego X?", "y que tal el juego X?") → ALWAYS gameReferenced: ["X"]. "y que tal el juego Plantas vs Zombies?" → gameReferenced: ["Plants vs. Zombies"] (a real game title is a reference, NOT a keyword).
   - "un juego de batman" → gameReferenced: null, keywords: ["batman"] (a franchise or theme is NOT a game).
   - "quiero jugar a GTA V" → gameReferenced: ["GTA V"].
   - "algo parecido a Dark Souls pero con pistolas" → gameReferenced: ["Dark Souls"], keywords: ["guns", "shooter"].
@@ -93,6 +95,7 @@ Produce the COMPLETE updated intent:
 - If the user EXPLICITLY signals a new search (e.g., "esta es una búsqueda nueva", "olvida lo anterior", "sin todo lo anterior", "no, otro tema", "fresh search"), produce a COMPLETELY FRESH intent: IGNORE the previous intent ENTIRELY — do NOT carry forward any keyword, genre, theme, platform, year, exclusion or semantic value from it. Set relation: "new".
 - CARRY FORWARD every field of the previous intent (keywords, themes, genres, platforms, gameModes, perspectives, releaseYear, yearFrom, yearTo, excluded, AND all semantic values) UNLESS the message explicitly changes or removes it. Never silently drop a year range, a platform, a genre, a theme or a semantic value.
 - If the message adds details to the same topic (e.g., "in pixel art", "with naval combat", "less violent", "y de jardinería"), KEEP the previous keywords and theme and ADD or ADJUST the new details. Never drop the previous keywords unless the message contradicts them.
+- If the message names a SPECIFIC game (e.g., "y que tal el juego X?", "¿cómo es X?", "y X?"), ALWAYS put it in gameReferenced, even when you refine the previous search — a reference is never lost. "y que tal el juego 'Plants vs. Zombies'?" → gameReferenced: ["Plants vs. Zombies"].
 - If the message adds nothing interpretable (e.g., "yes", "sure", "ok"), return the previous intent UNCHANGED (relation: "refine").
 - The same HARD-REQUIREMENT contract applies: every field you fill must be present in the results, and exclusions (excluded.*) discard any candidate containing them.
 - Output a single complete intent object, never a diff.`;
@@ -232,6 +235,7 @@ Return "new" when the user has changed their mind and is searching ANOTHER game 
 - they RESTATE the same request with different words (e.g., "un juego de acción muy violento, por favor" after a violent-action search),
 - they start with "quiero", "busco", "ahora quiero", "otro tema",
 - they name a DIFFERENT topic (e.g., "quiero un juego de futbol en 2d" after a violent-action search),
+- they ask about a SPECIFIC game ("qué tal X?", "cómo es X?", "y el juego X?") — that is a query about that game, not a refinement of the previous search,
 - WITHOUT A SESSION (anonymous user), a restatement is a NEW search, not a refinement.
 
 Examples:
@@ -240,6 +244,7 @@ Examples:
 - previous: violent action game; new: "un juego de acción muy violento, por favor" → new.
 - previous: violent action game; new: "ahora quiero un juego lento y sin violencia en 2d" → new.
 - previous: violent action game; new: "quiero un juego de futbol en 2d" → new.
+- previous: plants & zombies search; new: "y que tal el juego 'Plants vs. Zombies'?" → new (the user asks about that specific game).
 
 Output only {"relation": "new"} or {"relation": "refine"}.`;
 

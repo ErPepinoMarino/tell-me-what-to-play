@@ -2,9 +2,9 @@ import { mapToCandidate } from "../igdb/mappers.js";
 import { shouldSkipNonIndependentGame } from "../igdb/gameType.js";
 import {
   genreIgbNames,
-  keywordIgbSlug,
   platformIgbNames,
-  themeIgbSlug,
+  perspectiveIgbNames,
+  themeIgbId,
 } from "../igdb/normalizers.js";
 import type { IgdbClient, IgdbGameRaw } from "../igdb/types.js";
 import type { Candidate, Game, GameToPersist } from "../types/Game.js";
@@ -85,36 +85,61 @@ export class DiscoveryManager {
     private catalog: CatalogLayer,
     private budget: BudgetLedger,
     private config: RecommendationConfig = RECOMMENDATION_CONFIG,
-    // Opcional (FASE 4): canonicalización de keywords contra el léxico.
-    private lexicon?: { canonicalizeTerms(terms: string[]): Promise<string[]> },
+    // Opcional (FASE 4): canonicalización + resolución canónico → id IGDB
+    // contra el diccionario local (el descubrimiento NO consulta /v4/keywords).
+    private lexicon?: {
+      canonicalizeTerms(terms: string[]): Promise<string[]>;
+      resolveIds(terms: string[]): Promise<Map<string, number | null>>;
+    },
   ) {}
 
   private async canonicalizeKeywords(terms: string[]): Promise<string[]> {
     return this.lexicon ? this.lexicon.canonicalizeTerms(terms) : terms;
   }
 
+  // Canónicos → IDs numéricos de IGDB desde el léxico local (keyword_lexicon.
+  // igdb_id). Sin léxico (tests) no hay IDs locales → sin filtro de keywords
+  // en el where de IGDB.
+  private async resolveKeywordIds(terms: string[]): Promise<number[]> {
+    if (terms.length === 0) return [];
+    if (!this.lexicon) return [];
+    const ids = await this.lexicon.resolveIds(terms);
+    return terms
+      .map((term) => ids.get(term.trim().toLowerCase()))
+      .filter((id): id is number => id !== null && id !== undefined);
+  }
+
   /*
-   * Descubrimiento FILTRADO (FASE: IGDB filtrado): con el intent en la mano
-   * la consulta a IGDB deja de ser text-search por título (que no puede
-   * servir intents multi-atributo) y pasa a `where` por atributos — keywords
-   * y géneros pedidos, plataformas, año — ordenada por valoración de la
-   * comunidad. Los filtros se resuelven a IDs de IGDB con los mismos mapas
-   * de los mappers (cache por proceso). Sin intent, text-search como antes.
+   * Descubrimiento FILTRADO: la consulta a IGDB pasa a `where` por atributos
+   * combinando TODA la información del intent — keywords (IDs del léxico),
+   * themes (mapa fijo), géneros/plataformas/modos/perspectivas (por nombre) y
+   * años (exacto + rangos), y NEGANDO los red flags — ordenada por valoración
+   * de la comunidad. Sin intent, text-search como antes.
    */
-  private filteredSearch(
+  private async filteredSearch(
     intent: GameSearchIntent,
     trace?: Trace | null,
   ): Promise<IgdbGameRaw[]> {
+    const keywordIds = await this.resolveKeywordIds(intent.keywords ?? []);
+    const themeIds = (intent.objective?.themes ?? [])
+      .map((theme) => themeIgbId(theme))
+      .filter((id): id is number => id !== null);
+    const excludeKeywordIds = await this.resolveKeywordIds(
+      intent.excluded?.keywords ?? [],
+    );
+    const excludeThemeIds = (intent.excluded?.themes ?? [])
+      .map((theme) => themeIgbId(theme))
+      .filter((id): id is number => id !== null);
+
     return this.igdb.filteredSearch({
-      keywordSlugs: (intent.keywords ?? []).map((keyword) =>
-        keywordIgbSlug(keyword),
-      ),
+      keywordIds,
       genreIgbNames: (intent.objective?.genres ?? [])
         .filter((genre) => genre !== "UNKNOWN")
         .flatMap((genre) => genreIgbNames(genre)),
-      themeSlugs: (intent.objective?.themes ?? [])
-        .map((theme) => themeIgbSlug(theme))
-        .filter((slug): slug is string => slug !== null),
+      themeIds,
+      perspectiveIgbNames: (intent.objective?.perspectives ?? [])
+        .filter((perspective) => perspective !== "UNKNOWN")
+        .flatMap((perspective) => perspectiveIgbNames(perspective)),
       gameModeIgbNames: (intent.objective?.gameModes ?? [])
         .filter((mode) => mode !== "UNKNOWN")
         .map((mode) => GAME_MODE_IGB_NAMES[mode])
@@ -123,6 +148,19 @@ export class DiscoveryManager {
         .filter((platform) => platform !== "UNKNOWN")
         .flatMap((platform) => platformIgbNames(platform)),
       releaseYear: intent.releaseYear ?? undefined,
+      yearFrom: intent.yearFrom ?? undefined,
+      yearTo: intent.yearTo ?? undefined,
+      excludeKeywordIds,
+      excludeThemeIds,
+      excludeGenreIgbNames: (intent.excluded?.genres ?? [])
+        .filter((genre) => genre !== "UNKNOWN")
+        .flatMap((genre) => genreIgbNames(genre)),
+      excludePlatformIgbNames: (intent.excluded?.platforms ?? [])
+        .filter((platform) => platform !== "UNKNOWN")
+        .flatMap((platform) => platformIgbNames(platform)),
+      excludePerspectiveIgbNames: (intent.excluded?.perspectives ?? [])
+        .filter((perspective) => perspective !== "UNKNOWN")
+        .flatMap((perspective) => perspectiveIgbNames(perspective)),
       limit: this.config.igdbSearchLimit,
       /*
        * Visibilidad de los drops de taxonomía: un término que no resuelve a
@@ -223,14 +261,15 @@ export class DiscoveryManager {
         // Traza de la consulta filtrada: qué atributos fueron al `where`.
         trace?.("igdb-filtered", {
           query,
-          keywordSlugs: (intent.keywords ?? []).map((keyword) =>
-            keywordIgbSlug(keyword),
-          ),
+          keywords: intent.keywords ?? null,
           genres: intent.objective?.genres ?? null,
           themes: intent.objective?.themes ?? null,
           gameModes: intent.objective?.gameModes ?? null,
           platforms: intent.objective?.platforms ?? null,
+          perspectives: intent.objective?.perspectives ?? null,
           releaseYear: intent.releaseYear,
+          yearFrom: intent.yearFrom,
+          yearTo: intent.yearTo,
           results: raws.length,
         });
       }

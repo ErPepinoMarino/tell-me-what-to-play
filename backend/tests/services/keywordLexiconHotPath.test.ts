@@ -147,6 +147,37 @@ describe("KeywordLexiconService.canonicalize", () => {
   });
 });
 
+describe("KeywordLexiconService.resolveIds", () => {
+  it("devuelve el id IGDB de cada canónico desde el diccionario local (sin red)", async () => {
+    const rows: LexiconRow[] = [
+      {
+        canonical: "zombies",
+        aliases: [],
+        embedding: [1, 0],
+        igdbId: 5,
+      },
+      {
+        canonical: "plants",
+        aliases: [],
+        embedding: [0, 1],
+        igdbId: 47461,
+      },
+      { canonical: "sin-id", aliases: [], embedding: [0, 0] },
+    ];
+    const service = createKeywordLexiconService({
+      loader: async () => rows,
+      embedder: fakeEmbedder({}),
+    });
+
+    const ids = await service.resolveIds(["zombies", "plants", "sin-id", "zzz"]);
+
+    expect(ids.get("zombies")).toBe(5);
+    expect(ids.get("plants")).toBe(47461);
+    expect(ids.get("sin-id")).toBeNull();
+    expect(ids.get("zzz")).toBeNull();
+  });
+});
+
 describe("KeywordLexiconService.canonicalizeIntent", () => {
   it("canonicaliza keywords y red flags preservando el resto del intent", async () => {
     const service = createKeywordLexiconService({

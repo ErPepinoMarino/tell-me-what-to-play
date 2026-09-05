@@ -120,27 +120,25 @@ describe("HttpIgdbClient.searchGames", () => {
 
 describe("HttpIgdbClient.filteredSearch", () => {
   it("construye condiciones de themes, game_modes y keywords AND-encadenadas", async () => {
+    // IDs de themes/keywords llegan YA resueltos (léxico/mapa fijo): no hay
+    // llamadas a /v4/themes ni /v4/keywords. Solo se resuelven por nombre los
+    // géneros/plataformas/game_modes.
     const { fakeClientHttp, fakeclientIgdb } = makeClient([
       jsonResponse(200, [{ id: 5, name: "Shooter" }]),
-      jsonResponse(200, [{ id: 19, slug: "horror" }]),
       jsonResponse(200, [{ id: 6, name: "PC (Microsoft Windows)" }]),
       jsonResponse(200, [{ id: 5, name: "Massively Multiplayer Online (MMO)" }]),
-      jsonResponse(200, [
-        { id: 906, slug: "steampunk" },
-        { id: 250, slug: "3d" },
-      ]),
       gamesResponse([{ id: 1, name: "Lies of P" }]),
     ]);
 
     await fakeclientIgdb.filteredSearch({
       genreIgbNames: ["Shooter"],
-      themeSlugs: ["horror"],
+      themeIds: [19],
       gameModeIgbNames: ["Massively Multiplayer Online (MMO)"],
-      keywordSlugs: ["steampunk", "3d"],
+      keywordIds: [906, 250],
       platformIgbNames: ["PC (Microsoft Windows)"],
     });
 
-    const call = fakeClientHttp.calls[6];
+    const call = fakeClientHttp.calls[4];
     expect(call.url).toBe("https://api.igdb.com/v4/games");
     expect(call.body).toContain("genres = (5)");
     expect(call.body).toContain("themes = (19)");
@@ -154,33 +152,63 @@ describe("HttpIgdbClient.filteredSearch", () => {
     const dropped: unknown[] = [];
     const { fakeClientHttp, fakeclientIgdb } = makeClient([
       jsonResponse(200, []), // genres: "Action" no existe en IGDB
-      jsonResponse(200, [{ id: 19, slug: "horror" }]),
       jsonResponse(200, []), // platforms
       jsonResponse(200, []), // game_modes
-      jsonResponse(200, [{ id: 906, slug: "steampunk" }]), // keywords: falta "3d"
+      jsonResponse(200, []), // perspectives
       gamesResponse([]),
     ]);
 
     await fakeclientIgdb.filteredSearch({
       genreIgbNames: ["Action"],
-      themeSlugs: ["horror"],
+      themeIds: [19],
+      perspectiveIgbNames: ["First person"],
       platformIgbNames: ["Sega Saturn"],
       gameModeIgbNames: ["Competitive"],
-      keywordSlugs: ["steampunk", "3d"],
       onFilterDropped: (details) => dropped.push(details),
     });
 
     expect(dropped).toEqual([
       { field: "genres", terms: ["Action"] },
+      { field: "perspectives", terms: ["First person"] },
       { field: "platforms", terms: ["Sega Saturn"] },
       { field: "gameModes", terms: ["Competitive"] },
-      { field: "keywords", terms: ["3d"] },
     ]);
-    // El tema resuelto sí va al where; el drop de keywords no lo rompe.
-    const call = fakeClientHttp.calls[6];
+    // El tema (ID directo) sí va al where aunque los nombres fallen.
+    const call = fakeClientHttp.calls[5];
     expect(call.body).toContain("themes = (19)");
-    expect(call.body).toContain("keywords = (906)");
-    expect(call.body).not.toContain("keywords = (3d)");
+  });
+
+  it("niega los red flags en el where (genres !=, keywords !=, themes !=)", async () => {
+    const { fakeClientHttp, fakeclientIgdb } = makeClient([
+      jsonResponse(200, [
+        { id: 5, name: "Shooter" },
+        { id: 8, name: "Platform" },
+      ]),
+      gamesResponse([]),
+    ]);
+
+    await fakeclientIgdb.filteredSearch({
+      genreIgbNames: ["Shooter"],
+      excludeGenreIgbNames: ["Platform"],
+      excludeThemeIds: [19],
+      excludeKeywordIds: [129], // lego
+    });
+
+    const call = fakeClientHttp.calls[2];
+    expect(call.body).toContain("genres = (5)");
+    expect(call.body).toContain("genres != (8)");
+    expect(call.body).toContain("themes != (19)");
+    expect(call.body).toContain("keywords != (129)");
+  });
+
+  it("aplica rangos de año en release_dates.y", async () => {
+    const { fakeClientHttp, fakeclientIgdb } = makeClient([gamesResponse([])]);
+
+    await fakeclientIgdb.filteredSearch({ yearFrom: 1990, yearTo: 1999 });
+
+    const call = fakeClientHttp.calls[1];
+    expect(call.body).toContain("release_dates.y >= 1990");
+    expect(call.body).toContain("release_dates.y <= 1999");
   });
 });
 

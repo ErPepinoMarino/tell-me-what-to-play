@@ -14,10 +14,10 @@ import {
 
 const IGDB_API_URL = "https://api.igdb.com/v4/games";
 const IGDB_GENRES_URL = "https://api.igdb.com/v4/genres";
-const IGDB_THEMES_URL = "https://api.igdb.com/v4/themes";
 const IGDB_PLATFORMS_URL = "https://api.igdb.com/v4/platforms";
 const IGDB_KEYWORDS_URL = "https://api.igdb.com/v4/keywords";
 const IGDB_GAME_MODES_URL = "https://api.igdb.com/v4/game_modes";
+const IGDB_PERSPECTIVES_URL = "https://api.igdb.com/v4/player_perspectives";
 const MAX_RETRIES = 4; // 1 initial + 3 retries = 4 total attempts
 const BASE_DELAY_MS = 1000;
 
@@ -172,19 +172,32 @@ export class HttpIgdbClient implements IgdbClient {
       if (ids.length > 0) conditions.push(`genres = (${ids.join(",")})`);
       else this.reportDropped(options, "genres", options.genreIgbNames);
     }
-    if (options.themeSlugs && options.themeSlugs.length > 0) {
-      const resolved = await this.resolveSlugIds(
-        IGDB_THEMES_URL,
-        options.themeSlugs,
+    // Themes: IDs directos (mapa fijo del intent → id, sin consulta runtime).
+    if (options.themeIds && options.themeIds.length > 0) {
+      conditions.push(`themes = (${options.themeIds.join(",")})`);
+    }
+    /*
+     * Keywords con semántica AND: cada término es una condición separada
+     * (`keywords = (a) & keywords = (b)`), que IGDB interpreta como "debe
+     * tener ambas". Un único `keywords = (a,b)` es OR (cualquiera) y con
+     * términos débiles ("3d") diluía todo el filtro. Los IDs vienen del
+     * léxico local (igdb_id), no de una consulta a /v4/keywords.
+     */
+    if (options.keywordIds && options.keywordIds.length > 0) {
+      for (const id of options.keywordIds) {
+        conditions.push(`keywords = (${id})`);
+      }
+    }
+    if (options.perspectiveIgbNames && options.perspectiveIgbNames.length > 0) {
+      const ids = await this.resolveTaxonomyIds(
+        IGDB_PERSPECTIVES_URL,
+        "name",
+        options.perspectiveIgbNames,
       );
-      const ids = [...resolved.values()].filter(
-        (id): id is number => id !== null,
-      );
-      if (ids.length > 0) conditions.push(`themes = (${ids.join(",")})`);
-      const dropped = options.themeSlugs.filter(
-        (slug) => resolved.get(slug) === null,
-      );
-      if (dropped.length > 0) this.reportDropped(options, "themes", dropped);
+      if (ids.length > 0)
+        conditions.push(`player_perspectives = (${ids.join(",")})`);
+      else
+        this.reportDropped(options, "perspectives", options.perspectiveIgbNames);
     }
     if (options.platformIgbNames && options.platformIgbNames.length > 0) {
       const ids = await this.resolveTaxonomyIds(
@@ -204,32 +217,60 @@ export class HttpIgdbClient implements IgdbClient {
       if (ids.length > 0) conditions.push(`game_modes = (${ids.join(",")})`);
       else this.reportDropped(options, "gameModes", options.gameModeIgbNames);
     }
-    /*
-     * Keywords con semántica AND: cada término es una condición separada
-     * (`keywords = (a) & keywords = (b)`), que IGDB interpreta como "debe
-     * tener ambas". Un único `keywords = (a,b)` es OR (cualquiera) y con
-     * términos débiles ("3d") diluía todo el filtro. Verificado contra la
-     * API real: `keywords = (103) & keywords = (250)` solo devuelve juegos
-     * con cyberpunk Y 3d.
-     */
-    if (options.keywordSlugs && options.keywordSlugs.length > 0) {
-      const resolved = await this.resolveSlugIds(
-        IGDB_KEYWORDS_URL,
-        options.keywordSlugs,
-      );
-      for (const slug of options.keywordSlugs) {
-        const id = resolved.get(slug);
-        if (id !== null && id !== undefined) {
-          conditions.push(`keywords = (${id})`);
-        }
-      }
-      const dropped = options.keywordSlugs.filter(
-        (slug) => resolved.get(slug) === null,
-      );
-      if (dropped.length > 0) this.reportDropped(options, "keywords", dropped);
-    }
     if (options.releaseYear !== undefined) {
       conditions.push(`release_dates.y = ${options.releaseYear}`);
+    }
+    if (options.yearFrom !== undefined) {
+      conditions.push(`release_dates.y >= ${options.yearFrom}`);
+    }
+    if (options.yearTo !== undefined) {
+      conditions.push(`release_dates.y <= ${options.yearTo}`);
+    }
+
+    /*
+     * Red flags: negación en el where — el descubrimiento no trae candidatos
+     * condenados por el matcher (gasta menos enrichment). `!= (a,b)` en IGDB
+     * significa "no contiene ninguno", que es la semántica de exclusión.
+     */
+    if (options.excludeGenreIgbNames?.length) {
+      const ids = await this.resolveTaxonomyIds(
+        IGDB_GENRES_URL,
+        "name",
+        options.excludeGenreIgbNames,
+      );
+      if (ids.length > 0) conditions.push(`genres != (${ids.join(",")})`);
+      else this.reportDropped(options, "genres", options.excludeGenreIgbNames);
+    }
+    if (options.excludeThemeIds?.length) {
+      conditions.push(`themes != (${options.excludeThemeIds.join(",")})`);
+    }
+    if (options.excludeKeywordIds?.length) {
+      conditions.push(`keywords != (${options.excludeKeywordIds.join(",")})`);
+    }
+    if (options.excludePlatformIgbNames?.length) {
+      const ids = await this.resolveTaxonomyIds(
+        IGDB_PLATFORMS_URL,
+        "name",
+        options.excludePlatformIgbNames,
+      );
+      if (ids.length > 0) conditions.push(`platforms != (${ids.join(",")})`);
+      else
+        this.reportDropped(options, "platforms", options.excludePlatformIgbNames);
+    }
+    if (options.excludePerspectiveIgbNames?.length) {
+      const ids = await this.resolveTaxonomyIds(
+        IGDB_PERSPECTIVES_URL,
+        "name",
+        options.excludePerspectiveIgbNames,
+      );
+      if (ids.length > 0)
+        conditions.push(`player_perspectives != (${ids.join(",")})`);
+      else
+        this.reportDropped(
+          options,
+          "perspectives",
+          options.excludePerspectiveIgbNames,
+        );
     }
 
     // Sin texto no hay orden por relevancia: manda la comunidad.
@@ -248,7 +289,7 @@ export class HttpIgdbClient implements IgdbClient {
 
   private reportDropped(
     options: FilteredSearchOptions,
-    field: "genres" | "themes" | "keywords" | "gameModes" | "platforms",
+    field: "genres" | "themes" | "keywords" | "perspectives" | "gameModes" | "platforms",
     terms: string[],
   ): void {
     if (terms.length === 0) return;
@@ -297,37 +338,6 @@ export class HttpIgdbClient implements IgdbClient {
     return ids;
   }
 
-  // Resolución por SLUG (keywords, themes): cache por proceso y por tabla.
-  // Devuelve Map slug → id (null si no existe), para reportar drops por
-  // término sin dejar de resolver el resto.
-  private slugIdCache = new Map<string, Map<string, number | null>>();
-
-  private async resolveSlugIds(
-    url: string,
-    slugs: string[],
-  ): Promise<Map<string, number | null>> {
-    let cache = this.slugIdCache.get(url);
-    if (!cache) {
-      const token = await this.auth.getAccessToken();
-      const rows = (await this.requestRows(
-        token,
-        url,
-        `fields id, slug; limit 500;`,
-      )) as unknown as { id: number; slug?: string }[];
-      cache = new Map(
-        rows
-          .filter((row) => typeof row.slug === "string")
-          .map((row) => [row.slug as string, Number(row.id)]),
-      );
-      this.slugIdCache.set(url, cache);
-    }
-
-    const result = new Map<string, number | null>();
-    for (const slug of slugs) {
-      result.set(slug, cache.get(slug) ?? null);
-    }
-    return result;
-  }
   // Usa el httpclient para hacer la petición a la API
   // Esta es la clave, ya que el httpclient del test le devolvera lo que queramos y el que sale del index.ts hace la petición real a la API de IGDB.
   // Importante para entender la relación entre los tests y el código de producción.

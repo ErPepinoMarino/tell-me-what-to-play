@@ -300,6 +300,37 @@ export function themeIgbSlug(theme: Theme): string | null {
   return theme === "UNKNOWN" ? null : THEME_SLUGS[theme];
 }
 
+// ID numérico de IGDB de cada theme (taxonomía estable /v4/themes).
+// Mapa FIJO: no se consulta IGDB en runtime (los IDs no cambian).
+const THEME_IGB_IDS: Record<Exclude<Theme, "UNKNOWN">, number> = {
+  ACTION: 1,
+  BUSINESS: 28,
+  COMEDY: 27,
+  DRAMA: 31,
+  EDUCATIONAL: 34,
+  EROTIC: 42,
+  FANTASY: 17,
+  FOUR_X: 41,
+  HISTORICAL: 22,
+  HORROR: 19,
+  KIDS: 35,
+  MYSTERY: 43,
+  NON_FICTION: 32,
+  OPEN_WORLD: 38,
+  PARTY: 40,
+  ROMANCE: 44,
+  SANDBOX: 33,
+  SCIENCE_FICTION: 18,
+  STEALTH: 23,
+  SURVIVAL: 21,
+  THRILLER: 20,
+  WARFARE: 39,
+};
+
+export function themeIgbId(theme: Theme): number | null {
+  return theme === "UNKNOWN" ? null : THEME_IGB_IDS[theme];
+}
+
 // Reverse: slug IGDB de theme -> enum (para el guard anti-sueño del intent:
 // si la LLM metió "horror" en keywords, se redirige a themes).
 export const THEME_BY_SLUG: Record<string, Exclude<Theme, "UNKNOWN">> =
@@ -320,6 +351,22 @@ const PLATFORM_REVERSE: Map<Platform, string[]> = (() => {
 // Nombres IGDB posibles para un enum de plataforma.
 export function platformIgbNames(platform: Platform): string[] {
   return PLATFORM_REVERSE.get(platform) ?? [];
+}
+
+// Reverse perspectiva: nombre IGDB -> Perspective (para el discovery).
+const PERSPECTIVE_REVERSE: Map<Perspective, string[]> = (() => {
+  const map = new Map<Perspective, string[]>();
+  for (const [igdbName, perspective] of Object.entries(PERSPECTIVE_MAP) as [string, Perspective][]) {
+    const names = map.get(perspective) ?? [];
+    names.push(igdbName);
+    map.set(perspective, names);
+  }
+  return map;
+})();
+
+// Nombres IGDB posibles para un enum de perspectiva.
+export function perspectiveIgbNames(perspective: Perspective): string[] {
+  return PERSPECTIVE_REVERSE.get(perspective) ?? [];
 }
 
 // Slug IGDB de una keyword canónica ("pixel art" → "pixel-art").
