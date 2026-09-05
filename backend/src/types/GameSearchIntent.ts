@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+// La informacion objetiva (no semantica) ahora la sacamos de los cambios de IGDB
+// Los campos semanticos son puramente nuestros y los "deduciremos" de busquedas web.
+
 const GENRES = [
   "ADVENTURE",
   "ARCADE",
@@ -27,10 +30,6 @@ const GENRES = [
   "UNKNOWN",
 ] as const;
 
-/*
- * Themes de IGDB (/v4/themes): mundo/tono/ambientación. Capa MUST junto a
- * géneros y plataformas ("de terror", "de acción", "fantasía").
- */
 const THEMES = [
   "ACTION",
   "BUSINESS",
@@ -123,9 +122,7 @@ const ObjectiveSchema = z.object({
 });
 
 /*
- * Red flags: elementos que el usuario ha EXCLUIDO explícitamente ("que no
- * sea X", "sin X"). Cualquier candidato que los contenga queda fuera del
- * match, aunque sea ideal en todo lo demás.
+ * Red flags: elementos que el usuario ha EXCLUIDO explícitamente.
  */
 const ExcludedSchema = z.object({
   keywords: z.array(z.string()).nullable(),
@@ -139,6 +136,7 @@ const ExcludedSchema = z.object({
   yearTo: z.number().int().nullable(),
 });
 
+//Variables semanticas (lo que hace original mi querida app)
 const SemanticSchema = z.object({
   complexity: SemanticScore,
   coziness: SemanticScore,
@@ -156,31 +154,78 @@ const SemanticSchema = z.object({
 });
 
 /*
+ * Overrides semánticos del delta de refinamiento: objeto COMPLETO (todas las
+ * dimensiones, null = no mencionada).
+ * Para trabajar con openai necesitamos pasarse TODOS los campos aunque no los usemos.
+ * Así que null es la convención y 0..1 son los valores permitidos.
+ */
+export const SemanticOverrideSchema = SemanticSchema;
+
+/*
  * Contrato: TODO campo no-semántico que el intérprete rellene es un
  * requisito DURO (must): los resultados deben tenerlos todos — pueden
  * tener más (más géneros, más plataformas, más keywords), nunca menos.
- * Los campos null = "no pedido". Las semánticas (0..1) son la única
- * ponderación numérica del ranking.
  */
 export const GameSearchIntentSchema = z.object({
   gameReferenced: z.array(z.string()).nullable(),
   objective: ObjectiveSchema.nullable(),
   keywords: z.array(z.string()).nullable(),
-  // Año exacto pedido ("del 2004")
+  // Año exacto pedido
   releaseYear: z.number().int().nullable(),
-  // Rangos pedidos ("de los 90" → 1990/1999, "anteriores a 2010" → yearTo 2009)
+  // Rangos de años.
   yearFrom: z.number().int().nullable(),
   yearTo: z.number().int().nullable(),
   // Elementos excluidos explícitamente (red flags)
   excluded: ExcludedSchema.nullable(),
-  /*
-   * Relación con la intención previa de sesión (solo se emite cuando hay
-   * contexto): "refine" = el mensaje continúa/ajusta la búsqueda anterior;
-   * "new" = tema nuevo. Null/ausente = sin contexto (búsqueda fresca).
-   * Default null para no romper fixtures ni clientes antiguos.
-   */
-  relation: z.enum(["new", "refine"]).nullable().default(null),
+  // Relación con la búsqueda anterior (si hay): refine, new o nonsensical.
+  relation: z.enum(["new", "refine", "nonsensical"]).nullable().default(null),
+  // Dimensiones semánticas (0..1, null = no mencionado)
   semantic: SemanticSchema.nullable(),
 });
 
 export type GameSearchIntent = z.infer<typeof GameSearchIntentSchema>;
+
+/*
+ * ¿Que diferenci hay entre esto en GameSearchintent?
+ * Que aqui no se incluye GameReferenced, ni relation, ni excluded. Solo lo que se puede añadir o quitar.
+ */
+const RefineAddSchema = z.object({
+  keywords: z.array(z.string()).nullable(),
+  genres: z.array(GenreSchema).nullable(),
+  themes: z.array(ThemeSchema).nullable(),
+  platforms: z.array(PlatformSchema).nullable(),
+  gameModes: z.array(GameModeSchema).nullable(),
+  perspectives: z.array(PerspectiveSchema).nullable(),
+  gameReferenced: z.array(z.string()).nullable(),
+  releaseYear: z.number().int().nullable(),
+  yearFrom: z.number().int().nullable(),
+  yearTo: z.number().int().nullable(),
+  // Overrides semánticos ("más violento" → violence 0.9); objeto COMPLETO,
+  // null en las dimensiones que el mensaje no menciona.
+  semantic: SemanticSchema.nullable(),
+});
+/*
+ * Firma identica a RefineAddSchema
+ * Pero en este caso definimos que el usuario quiere quitar algo de la busqueda anterior.
+ */
+const RefineRemoveSchema = z.object({
+  keywords: z.array(z.string()).nullable(),
+  genres: z.array(GenreSchema).nullable(),
+  themes: z.array(ThemeSchema).nullable(),
+  platforms: z.array(PlatformSchema).nullable(),
+  gameModes: z.array(GameModeSchema).nullable(),
+  perspectives: z.array(PerspectiveSchema).nullable(),
+  gameReferenced: z.array(z.string()).nullable(),
+  releaseYear: z.boolean().nullable(),
+  yearFrom: z.boolean().nullable(),
+  yearTo: z.boolean().nullable(),
+  semantic: z.array(z.string()).nullable(),
+});
+
+export const RefineDeltaSchema = z.object({
+  add: RefineAddSchema.nullable(),
+  remove: RefineRemoveSchema.nullable(),
+  excluded: ExcludedSchema.nullable(),
+});
+
+export type RefineDelta = z.infer<typeof RefineDeltaSchema>;

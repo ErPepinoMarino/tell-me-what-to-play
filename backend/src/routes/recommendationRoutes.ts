@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { optionalAuthMiddleware } from "../middlewares/optionalAuthMiddleware.js";
 import type { RecommendationAction } from "../types/Recommendation.js";
-import type { GameSearchIntent } from "../types/GameSearchIntent.js";
+import { GameSearchIntentSchema } from "../types/GameSearchIntent.js";
 import {
   InterpretationError,
   LoginRequiredError,
@@ -66,13 +66,19 @@ export async function recommendationRoutes(
       }
 
       try {
+        // El contextIntent llega del cliente: se VALIDA contra el schema
+        // (JSON arbitrario nunca entra como intención).
+        const parsedContext = request.body.contextIntent
+          ? GameSearchIntentSchema.safeParse(request.body.contextIntent)
+          : null;
         const outcome = await orchestrator.handle({
           action,
           message: request.body.message,
           actor,
           contextIntent:
-            (request.body.contextIntent as GameSearchIntent | null | undefined) ??
-            undefined,
+            parsedContext && parsedContext.success
+              ? parsedContext.data
+              : undefined,
         });
 
         // Trabajo orgánico post-respuesta: no bloquea ni hace fallar el request.

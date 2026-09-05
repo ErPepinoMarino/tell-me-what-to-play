@@ -59,7 +59,11 @@ interface SetupOptions {
   enrichment?: FakeEnrichment;
   config?: Partial<RecommendationConfig>;
   limits?: { igdb?: number; brave?: number; llm?: number };
-  classifyRelation?: (message: string, previous: GameSearchIntent) => Promise<"new" | "refine">;
+  classifyRelation?: (message: string, previous?: GameSearchIntent) => Promise<"new" | "refine" | "nonsensical">;
+  extractRefineDelta?: (
+    message: string,
+    previous: GameSearchIntent,
+  ) => Promise<import("../../src/types/GameSearchIntent.js").RefineDelta>;
 }
 
 function setup(options: SetupOptions) {
@@ -70,6 +74,7 @@ function setup(options: SetupOptions) {
   const intents: IntentExtractor = {
     extract,
     classifyRelation: options.classifyRelation,
+    extractRefineDelta: options.extractRefineDelta,
   };
   const igdb = new FakeIgdbClient(options.igdbResults ?? {});
   const enrichment = options.enrichment ?? new FakeEnrichment();
@@ -275,7 +280,7 @@ describe("RecommendationOrchestrator", () => {
     expect(sessions.get(1)?.currentIntent).toEqual(makeIntent());
   });
 
-  it("search con sesión pasa la intención previa al extractor (el LLM decide extender o reemplazar)", async () => {
+  it("search con sesión: sin intención previa no clasifica y extrae fresco", async () => {
     const extendedIntent = makeIntent({
       keywords: ["pirates", "pixel art"],
       objective: {
@@ -304,10 +309,8 @@ describe("RecommendationOrchestrator", () => {
       actor: USER,
     });
 
-    expect(extract).toHaveBeenLastCalledWith(
-      "un RPG de piratas en pixel art",
-      PIRATES_INTENT,
-    );
+    // Sin clasificador en deps se asume búsqueda nueva: extracción fresca.
+    expect(extract).toHaveBeenLastCalledWith("un RPG de piratas en pixel art");
     expect(response.intent).toEqual(extendedIntent);
     expect(sessions.get(1)?.currentIntent).toEqual(extendedIntent);
   });
@@ -324,7 +327,7 @@ describe("RecommendationOrchestrator", () => {
       actor: ANON,
     });
 
-    expect(extract).toHaveBeenCalledWith("un RPG de piratas", undefined);
+    expect(extract).toHaveBeenCalledWith("un RPG de piratas");
   });
 
   it("search no excluye los ya mostrados: los mostrados re-compiten y vuelven si son los mejores", async () => {
@@ -515,15 +518,13 @@ describe("RecommendationOrchestrator", () => {
     expect(catalog.createCalls).toBe(1);
   });
 
-  it("anon que intenta REFINAR (relation refine con contextIntent) → CTA de login sin descubrir", async () => {
+  it("anon que REFINA con contextIntent y clasificador dedicado → CTA de login sin descubrir", async () => {
+    const classify = vi.fn(async () => "refine" as const);
     const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
+      classifyRelation: classify,
     });
-    // El "modelo" clasifica el mensaje como continuación de la anterior
-    extract.mockImplementation(async () =>
-      makeIntent({ relation: "refine" }),
-    );
 
     const { response } = await orchestrator.handle({
       action: "search",
@@ -534,36 +535,12 @@ describe("RecommendationOrchestrator", () => {
 
     expect(response.notices).toContain("REFINE_REQUIRES_LOGIN");
     expect(response.results).toHaveLength(0);
-    // Solo la llamada de clasificación: ni descubrimiento ni explicación
-    expect(extract).toHaveBeenCalledTimes(1);
+    // La clasificación es un paso dedicado: extract no interpreta nada.
+    expect(extract).not.toHaveBeenCalled();
   });
 
-  it("anon con contextIntent que clasifica 'new' → búsqueda fresca (re-extrae sin contexto)", async () => {
-    const { orchestrator, extract } = setup({
-      catalogGames: [PIRATES_GAME],
-      intent: PIRATES_INTENT,
-    });
-    extract.mockImplementation(async () =>
-      makeIntent({ relation: "new", keywords: ["pirates"] }),
-    );
-
-    const { response } = await orchestrator.handle({
-      action: "search",
-      message: "quiero zombies",
-      actor: ANON,
-      contextIntent: PIRATES_INTENT,
-    });
-
-    // 1 clasificación + 1 re-extracción fresca (sin contexto)
-    expect(extract).toHaveBeenCalledTimes(2);
-    expect(extract).toHaveBeenLastCalledWith("quiero zombies", undefined);
-    expect(response.results.map((item) => item.game.slug)).toEqual([
-      "pirates-cove",
-    ]);
-  });
-
-  it("anon con clasificador dedicado 'refine' → CTA sin tocar extract", async () => {
-    const classify = vi.fn(async () => "refine" as const);
+  it("anon con contextIntent que clasifica 'new' → búsqueda fresca (una extracción sin contexto)", async () => {
+    const classify = vi.fn(async () => "new" as const);
     const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
@@ -572,19 +549,21 @@ describe("RecommendationOrchestrator", () => {
 
     const { response } = await orchestrator.handle({
       action: "search",
-      message: "más violento",
+      message: "quiero zombies",
       actor: ANON,
       contextIntent: PIRATES_INTENT,
     });
 
+    // 1 clasificación + 1 extracción fresca (sin contexto)
     expect(classify).toHaveBeenCalledTimes(1);
-    expect(classify).toHaveBeenCalledWith("más violento", PIRATES_INTENT);
-    expect(response.notices).toContain("REFINE_REQUIRES_LOGIN");
-    // La clasificación es un paso dedicado: extract no interpreta nada.
-    expect(extract).not.toHaveBeenCalled();
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect(extract).toHaveBeenCalledWith("quiero zombies");
+    expect(response.results.map((item) => item.game.slug)).toEqual([
+      "pirates-cove",
+    ]);
   });
 
-  it("anon con clasificador dedicado 'new' → búsqueda fresca con una sola extracción", async () => {
+  it("anon SIN contextIntent → clasifica sin contexto y, si 'new', extracción fresca", async () => {
     const classify = vi.fn(async () => "new" as const);
     const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
@@ -596,17 +575,154 @@ describe("RecommendationOrchestrator", () => {
       action: "search",
       message: "quiero un juego de futbol en 2d",
       actor: ANON,
+    });
+
+    // Ahora SIEMPRE se clasifica (incluso sin contexto): el clasificador
+    // decide entre new y nonsensical cuando no hay previousIntent.
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledWith("quiero un juego de futbol en 2d", undefined);
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect(response.notices).not.toContain("REFINE_REQUIRES_LOGIN");
+  });
+
+  it("logueado que REFINA → clasifica, extrae delta y fusiona deterministamente", async () => {
+    const classify = vi.fn(async () => "refine" as const);
+    const extractDelta = vi.fn(async () => ({
+      add: {
+        keywords: ["2d"],
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        gameReferenced: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+        semantic: { ...NULL_SEMANTIC, violence: 0.9 },
+      },
+      remove: null,
+      excluded: null,
+    }));
+    const { orchestrator, extract, sessions } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: classify,
+      extractRefineDelta: extractDelta,
+    });
+    // Sesión con la intención previa de piratas.
+    const session = sessions.ensure(1);
+    session.currentIntent = PIRATES_INTENT;
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "y en 2d, más violento",
+      actor: USER,
+    });
+
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledWith("y en 2d, más violento", PIRATES_INTENT);
+    expect(extractDelta).toHaveBeenCalledTimes(1);
+    // La extracción completa NO se llama: el merge es determinista.
+    expect(extract).not.toHaveBeenCalled();
+    // previo + delta: keywords fusionadas, género previo intacto, semántica override.
+    expect(response.intent.keywords).toEqual(["pirates", "2d"]);
+    expect(response.intent.objective?.genres).toEqual(["ROLE_PLAYING_RPG"]);
+    expect(response.intent.semantic?.violence).toBe(0.9);
+    expect(response.intent.relation).toBe("refine");
+    expect(response.notices).not.toContain("REFINE_REQUIRES_LOGIN");
+  });
+
+  it("logueado con búsqueda NUEVA → extracción fresca, el intent previo es irrelevante", async () => {
+    const classify = vi.fn(async () => "new" as const);
+    const extractDelta = vi.fn();
+    const { orchestrator, extract, sessions } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: makeIntent({ keywords: ["football"], relation: "new" }),
+      classifyRelation: classify,
+      extractRefineDelta: extractDelta,
+    });
+    const session = sessions.ensure(1);
+    session.currentIntent = PIRATES_INTENT;
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "quiero un juego de futbol en 2d",
+      actor: USER,
+    });
+
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect(extract).toHaveBeenCalledWith("quiero un juego de futbol en 2d");
+    expect(extractDelta).not.toHaveBeenCalled();
+    expect(response.intent.keywords).toEqual(["football"]);
+    expect(response.intent.relation).toBe("new");
+  });
+
+  it("nonsensical (anon, sin contexto) → SENSELESS_INPUT, sin buscar ni extraer", async () => {
+    const classify = vi.fn(async () => "nonsensical" as const);
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: classify,
+    });
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "¿por qué las gallinas no vuelan?",
+      actor: ANON,
+    });
+
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(extract).not.toHaveBeenCalled();
+    expect(response.notices).toContain("SENSELESS_INPUT");
+    expect(response.results).toHaveLength(0);
+    expect(response.intent.relation).toBe("nonsensical");
+  });
+
+  it("nonsensical (anon, con contexto refine) → SENSELESS_INPUT, sin CTA de login", async () => {
+    const classify = vi.fn(async () => "nonsensical" as const);
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: classify,
+    });
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "Hola, ¿cómo estás?",
+      actor: ANON,
       contextIntent: PIRATES_INTENT,
     });
 
     expect(classify).toHaveBeenCalledTimes(1);
-    // Búsqueda nueva: una única extracción SIN contexto (la previa es irrelevante)
-    expect(extract).toHaveBeenCalledTimes(1);
-    expect(extract).toHaveBeenCalledWith(
-      "quiero un juego de futbol en 2d",
-      undefined,
-    );
+    expect(extract).not.toHaveBeenCalled();
+    expect(response.notices).toContain("SENSELESS_INPUT");
     expect(response.notices).not.toContain("REFINE_REQUIRES_LOGIN");
+    expect(response.results).toHaveLength(0);
+  });
+
+  it("nonsensical (logueado) → SENSELESS_INPUT, sin buscar", async () => {
+    const classify = vi.fn(async () => "nonsensical" as const);
+    const { orchestrator, extract, sessions } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: classify,
+    });
+    const session = sessions.ensure(1);
+    session.currentIntent = PIRATES_INTENT;
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "Cuéntame un chiste",
+      actor: USER,
+    });
+
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(extract).not.toHaveBeenCalled();
+    expect(response.notices).toContain("SENSELESS_INPUT");
+    expect(response.results).toHaveLength(0);
+    expect(response.intent.relation).toBe("nonsensical");
   });
 
   it("bajo weak nunca se muestra: los no conformes ni entran al pool", async () => {

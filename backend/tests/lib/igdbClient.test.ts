@@ -119,7 +119,7 @@ describe("HttpIgdbClient.searchGames", () => {
 });
 
 describe("HttpIgdbClient.filteredSearch", () => {
-  it("construye condiciones de themes, game_modes y keywords AND-encadenadas", async () => {
+  it("construye condiciones de themes, game_modes y keywords (OR en keywords)", async () => {
     // IDs de themes/keywords llegan YA resueltos (léxico/mapa fijo): no hay
     // llamadas a /v4/themes ni /v4/keywords. Solo se resuelven por nombre los
     // géneros/plataformas/game_modes.
@@ -144,8 +144,9 @@ describe("HttpIgdbClient.filteredSearch", () => {
     expect(call.body).toContain("themes = (19)");
     expect(call.body).toContain("platforms = (6)");
     expect(call.body).toContain("game_modes = (5)");
-    // Keywords AND (cada término su condición): NO un OR `keywords = (a,b)`
-    expect(call.body).toContain("keywords = (906) & keywords = (250)");
+    // Keywords OR (cualquiera de las keywords): `keywords = (a,b)` en IGDB
+    // significa "juegos que tienen AL MENOS UNA de las keywords listadas".
+    expect(call.body).toContain("keywords = (906,250)");
   });
 
   it("reporta taxonomy-unresolved por término vía onFilterDropped", async () => {

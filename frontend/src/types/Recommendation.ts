@@ -17,6 +17,7 @@ export type NoticeCode =
   | "EMPTY_INTENT"
   | "INTENT_UNCHANGED"
   | "REFINE_REQUIRES_LOGIN"
+  | "SENSELESS_INPUT"
   | "PARTIAL_RESULTS"
   | "SEARCH_EXHAUSTED"
   | "DISCOVERY_BUDGET_EXHAUSTED"
@@ -199,8 +200,8 @@ export interface GameSearchIntent {
     yearFrom: number | null;
     yearTo: number | null;
   } | null;
-  // Relación con la intención previa (solo con contexto): refine | new | null
-  relation: "new" | "refine" | null;
+  // Relación con la intención previa (solo con contexto): refine | new | nonsensical | null
+  relation: "new" | "refine" | "nonsensical" | null;
   semantic: Partial<Record<string, number | null>> | null;
 }
 

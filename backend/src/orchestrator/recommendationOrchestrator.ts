@@ -43,7 +43,9 @@ import {
   type ExplanationComposer,
   type ExplanationInput,
 } from "../services/explanationService.js";
-import { applyThemeGuard, applyYearGuard } from "../services/intentService.js";
+import { applyRefineDelta } from "../services/intentService.js";
+import { redirectKeywordsToEnumFields } from "../igdb/normalizers.js";
+import type { RefineDelta } from "../types/GameSearchIntent.js";
 import { createTrace, newTraceId, type Trace } from "../lib/logger.js";
 import type { KeywordLexiconService } from "../services/keywordLexiconService.js";
 
@@ -73,6 +75,12 @@ interface IntentResolution {
   session?: SessionState;
   userId?: number;
   shownGameIds: number[];
+  /*
+   * Cuando el clasificador devuelve "refine" pero el delta está vacío
+   * (el usuario pide "más" sin añadir criterios), el frontend necesita
+   * excluir los ya mostrados como haría "more". Este flag lo señala.
+   */
+  excludeShown: boolean;
 }
 
 type StopReason =
@@ -101,12 +109,11 @@ export class RecommendationOrchestrator {
     const base = await this.resolveIntent(request, notices);
     const action = request.action;
 
-    // Guardia determinista de años: el código decide lo verificable
-    // ("posteriores al año 2000" → yearFrom 2001) si la LLM no lo capturó.
-    base.intent = applyYearGuard(request.message, base.intent);
-    // Guardia anti-sueño de themes: una palabra-theme en keywords se mueve
-    // a objective.themes (los themes son MUST, no keywords).
-    base.intent = applyThemeGuard(base.intent);
+    // Paso 1 del procesado de keywords: rescata a los vocabularios enum
+    // (genres/themes/platforms/gameModes/perspectives) las keywords que
+    // pertenezcan a un vocabulario CERRADO — son filtros must que el léxico
+    // descartaría si quedaran como keyword (p. ej. "horror" no es keyword IGDB).
+    base.intent = redirectKeywordsToEnumFields(base.intent);
 
     /*
      * Canonicalización contra el léxico (punto 1 de integración): las
@@ -134,6 +141,36 @@ export class RecommendationOrchestrator {
       relation: base.intent.relation ?? null,
       semantic: base.intent.semantic,
     });
+
+    /*
+     * Input sin sentido (clasificador = "nonsensical"): el mensaje no tiene
+     * relación con buscar videojuegos. Se rechaza sin gastar en descubrimiento
+     * ni explicación, aplicable a anon y logueado por igual.
+     */
+    if (base.intent.relation === "nonsensical") {
+      notices.add("SENSELESS_INPUT");
+      const response = {
+        results: [],
+        requestedGames: [],
+        intent: base.intent,
+        explanation: "",
+        notices: [...notices],
+        meta: {
+          action,
+          evaluatedCandidates: 0,
+          partial: true,
+          exhaustedPool: true,
+          tierCounts: { excellent: 0, valid: 0, weak: 0, invalid: 0 },
+          discoveryUnitsUsed: 0,
+        },
+      };
+      trace("response", {
+        stopReason: "senseless-input",
+        results: 0,
+        durationMs: Date.now() - startedAt,
+      });
+      return { response };
+    }
 
     /*
      * ANON intenta REFINAR (relation "refine", detectado con el contexto del
@@ -286,11 +323,13 @@ export class RecommendationOrchestrator {
     trace("pool", { candidates: pool.length });
 
     /*
-     * Exclusión de mostrados: SOLO "more" evita repetir lo ya presentado.
-     * En "search" los mostrados compiten de nuevo con la intención actual
-     * (el LLM puede haberla extendido): siempre se muestran los mejores.
+     * Exclusión de mostrados: "more" Y "refine con delta vacío" (el usuario
+     * pide "más" sin añadir criterios) evitan repetir lo ya presentado.
+     * En "search" normal los mostrados compiten de nuevo con la intención
+     * actual (el LLM puede haberla extendida): siempre se muestran los mejores.
      */
-    const excludeIds = action === "more" ? base.shownGameIds : [];
+    const excludeIds =
+      action === "more" || base.excludeShown ? base.shownGameIds : [];
 
     let ranked = rankMatches(base.intent, pool, {
       anchors,
@@ -502,91 +541,133 @@ export class RecommendationOrchestrator {
         session,
         userId: request.actor.userId,
         shownGameIds: session.shownGameIds,
+        excludeShown: true,
       };
     }
 
     /*
-     * search con sesión: el extractor recibe el intent previo y decide si el
-     * mensaje lo EXTIENDE (refine) o lo REEMPLAZA (tema nuevo). Salvaguarda
-     * INTENT_UNCHANGED para mensajes sin contenido ("sí, quiero").
+     * search: obtener contexto disponible (sesión para logueados, contextIntent
+     * para anon) y clasificar SIEMPRE. El clasificador decide entre refine,
+     * new y nonsensical — el nonsensical se devuelve temprano para rechazarlo
+     * sin gastar en descubrimiento ni explicación.
      */
-    if (request.actor.kind === "user") {
-      const session = this.deps.sessions.ensure(request.actor.userId);
-      const previousIntent = session.currentIntent ?? undefined;
+    const previousIntent =
+      request.actor.kind === "user"
+        ? this.deps.sessions.ensure(request.actor.userId).currentIntent ?? undefined
+        : request.contextIntent ?? undefined;
 
-      const extracted = await this.extractWithRetry(
-        request.message,
-        previousIntent,
-      );
+    const relation = await this.classifyRelationStep(
+      request.message,
+      previousIntent,
+    );
 
-      let intent = extracted;
-      if (isEmptyIntent(extracted) && previousIntent) {
-        intent = previousIntent;
-        notices.add("INTENT_UNCHANGED");
+    if (relation === "nonsensical") {
+      return {
+        intent: { ...EMPTY_INTENT, relation: "nonsensical" },
+        session: request.actor.kind === "user" ? this.deps.sessions.ensure(request.actor.userId) : undefined,
+        userId: request.actor.kind === "user" ? request.actor.userId : undefined,
+        shownGameIds: [],
+        excludeShown: false,
+      };
+    }
+
+    if (relation === "refine") {
+      if (request.actor.kind === "anon") {
+        return {
+          intent: { ...(previousIntent ?? EMPTY_INTENT), relation: "refine" },
+          shownGameIds: [],
+          excludeShown: false,
+        };
       }
-
+      // Logueado: hay sesión con previousIntent garantizado aquí.
+      const session = this.deps.sessions.ensure(request.actor.userId);
+      const delta = await this.extractDeltaWithRetry(
+        request.message,
+        previousIntent!,
+      );
+      const intent = applyRefineDelta(previousIntent!, delta);
+      // Delta vacío = el usuario pide "más" sin añadir criterios → excluir mostrados.
+      const excludeShown = isDeltaEmpty(delta);
       return {
         intent,
         session,
         userId: request.actor.userId,
         shownGameIds: session.shownGameIds,
+        excludeShown,
       };
     }
 
     /*
-     * ANON: sin sesión → las búsquedas son siempre frescas. Pero si el
-     * cliente envió su última intención (contextIntent), la usamos SOLO para
-     * clasificar refine-vs-new con un paso dedicado: si el mensaje AFINA la
-     * búsqueda anterior → relation "refine" → CTA de login (el refinamiento
-     * es feature de sesión). Si es búsqueda nueva (reformulación, otro tema,
-     * "quiero/busco/ahora quiero X") → se re-extrae SIN contexto (intención
-     * fresca, la consulta anterior es irrelevante).
+     * "new": extracción fresca, el intent previo es irrelevante.
+     * Para logueados, si la extracción queda vacía y hay previa, se hereda.
      */
-    if (request.contextIntent) {
-      const relation = await this.classifyAnonRelation(
-        request.message,
-        request.contextIntent,
-      );
-      if (relation === "refine") {
-        // El intent devuelto lleva relation "refine" para que handle() emita
-        // el CTA (el refinamiento es feature de sesión).
-        return {
-          intent: { ...request.contextIntent, relation: "refine" },
-          shownGameIds: [],
-        };
+    const extracted = await this.extractWithRetry(request.message);
+    let intent = extracted;
+    if (request.actor.kind === "user") {
+      const session = this.deps.sessions.ensure(request.actor.userId);
+      if (isEmptyIntent(extracted) && previousIntent) {
+        intent = previousIntent;
+        notices.add("INTENT_UNCHANGED");
       }
+      return {
+        intent,
+        session,
+        userId: request.actor.userId,
+        shownGameIds: session.shownGameIds,
+        excludeShown: false,
+      };
     }
 
-    const intent = await this.extractWithRetry(request.message, undefined);
-    return { intent, shownGameIds: [] };
+    return { intent, shownGameIds: [], excludeShown: false };
   }
 
   /*
-   * Clasificación refine-vs-new para anon. Usa el paso dedicado
-   * (classifyRelation) cuando el extractor lo provee; fallback: la
-   * extracción con contexto (que ya decide relation) para fakes/tests.
+   * Clasificación refine-vs-new-vs-nonsensical. Usa el paso dedicado
+   * (classifyRelation) cuando el extractor lo provee; sin clasificador se
+   * asume búsqueda nueva (fakes/tests): el refinamiento es el caso que exige
+   * el clasificador. El previousIntent es opcional: sin contexto, el
+   * clasificador decide entre new y nonsensical.
    */
-  private async classifyAnonRelation(
+  private async classifyRelationStep(
     message: string,
-    previousIntent: GameSearchIntent,
-  ): Promise<"new" | "refine"> {
+    previousIntent?: GameSearchIntent,
+  ): Promise<"new" | "refine" | "nonsensical"> {
     const classifier = this.deps.intents.classifyRelation;
     if (classifier) {
       return classifier(message, previousIntent);
     }
-    const classified = await this.extractWithRetry(message, previousIntent);
-    return classified.relation === "refine" ? "refine" : "new";
+    return "new";
+  }
+
+  private async extractDeltaWithRetry(
+    message: string,
+    previousIntent: GameSearchIntent,
+  ): Promise<RefineDelta> {
+    const extractor = this.deps.intents.extractRefineDelta;
+    if (!extractor) {
+      // Sin extractor de delta (fakes/tests): refinamiento sin cambios.
+      return { add: null, remove: null, excluded: null };
+    }
+    try {
+      return await extractor(message, previousIntent);
+    } catch {
+      try {
+        return await extractor(message, previousIntent);
+      } catch {
+        throw new InterpretationError();
+      }
+    }
   }
 
   private async extractWithRetry(
     message: string,
-    previousIntent?: GameSearchIntent,
+    _previousIntent?: GameSearchIntent,
   ): Promise<GameSearchIntent> {
     try {
-      return await this.deps.intents.extract(message, previousIntent);
+      return await this.deps.intents.extract(message);
     } catch {
       try {
-        return await this.deps.intents.extract(message, previousIntent);
+        return await this.deps.intents.extract(message);
       } catch {
         throw new InterpretationError();
       }
@@ -765,6 +846,18 @@ export class RecommendationOrchestrator {
   }
 }
 
+const EMPTY_INTENT: GameSearchIntent = {
+  gameReferenced: null,
+  objective: null,
+  keywords: null,
+  releaseYear: null,
+  yearFrom: null,
+  yearTo: null,
+  excluded: null,
+  relation: null,
+  semantic: null,
+};
+
 function isEmptyIntent(intent: GameSearchIntent): boolean {
   const hasReferences = (intent.gameReferenced ?? []).length > 0;
   const hasKeywords = (intent.keywords ?? []).length > 0;
@@ -797,6 +890,67 @@ function isEmptyIntent(intent: GameSearchIntent): boolean {
     !hasYear &&
     !hasSemantic
   );
+}
+
+/*
+ * Un delta está vacío cuando no añade, no quita y no excluye nada.
+ * Esto indica que el usuario pide "más resultados" sin cambiar criterios:
+ * el orquestador lo trata como "more" (excluye los ya mostrados).
+ */
+function isDeltaEmpty(delta: RefineDelta): boolean {
+  if (!delta) return true;
+  const add = delta.add;
+  const remove = delta.remove;
+  const excluded = delta.excluded;
+
+  const addEmpty =
+    !add ||
+    ([
+      add.keywords,
+      add.genres,
+      add.themes,
+      add.platforms,
+      add.gameModes,
+      add.perspectives,
+      add.gameReferenced,
+    ].every((f) => !f || f.length === 0)) &&
+    add.releaseYear == null &&
+    add.yearFrom == null &&
+    add.yearTo == null &&
+    (!add.semantic ||
+      SEMANTIC_FIELDS.every((field) => add.semantic?.[field] == null));
+
+  const removeEmpty =
+    !remove ||
+    ([
+      remove.keywords,
+      remove.genres,
+      remove.themes,
+      remove.platforms,
+      remove.gameModes,
+      remove.perspectives,
+      remove.gameReferenced,
+    ].every((f) => !f || f.length === 0)) &&
+    remove.releaseYear == null &&
+    remove.yearFrom == null &&
+    remove.yearTo == null &&
+    (!remove.semantic || remove.semantic.length === 0);
+
+  const excludedEmpty =
+    !excluded ||
+    ([
+      excluded.keywords,
+      excluded.genres,
+      excluded.themes,
+      excluded.platforms,
+      excluded.gameModes,
+      excluded.perspectives,
+    ].every((f) => !f || f.length === 0)) &&
+    excluded.releaseYear == null &&
+    excluded.yearFrom == null &&
+    excluded.yearTo == null;
+
+  return addEmpty && removeEmpty && excludedEmpty;
 }
 
 function countValid(

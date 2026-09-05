@@ -8,7 +8,9 @@ import {
   normalizePerspectives,
   normalizePlatforms,
   normalizeThemes,
+  redirectKeywordsToEnumFields,
 } from "../../src/igdb/normalizers.js";
+import type { GameSearchIntent } from "../../src/types/GameSearchIntent.js";
 
 // 1 ene 2022 00:00:00 UTC
 const EPOCH_2022 = 1640995200;
@@ -206,5 +208,115 @@ describe("generateSlug", () => {
 
   it("trims leading and trailing dashes from symbols at the edges", () => {
     expect(generateSlug("!!!DOOM!!!", 1993)).toBe("doom-1993");
+  });
+});
+
+describe("redirectKeywordsToEnumFields", () => {
+  const objective = (over: Partial<NonNullable<GameSearchIntent["objective"]>> = {}) => ({
+    genres: null,
+    themes: null,
+    platforms: null,
+    gameModes: null,
+    perspectives: null,
+    ...over,
+  });
+
+  it("rescata un theme de keywords y lo coloca en objective.themes", () => {
+    const out = redirectKeywordsToEnumFields({
+      gameReferenced: null,
+      objective: objective(),
+      keywords: ["horror"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    });
+    expect(out.objective?.themes).toEqual(["HORROR"]);
+    expect(out.keywords).toBeNull();
+  });
+
+  it("rescata géneros, plataformas, modos y perspectivas (5 vocabularios)", () => {
+    const out = redirectKeywordsToEnumFields({
+      gameReferenced: null,
+      objective: objective(),
+      keywords: ["rpg", "pc", "co-op", "first person", "horror"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    });
+    expect(out.objective?.genres).toEqual(["ROLE_PLAYING_RPG"]);
+    expect(out.objective?.platforms).toEqual(["PC"]);
+    expect(out.objective?.gameModes).toEqual(["COOPERATIVE"]);
+    expect(out.objective?.perspectives).toEqual(["FIRST_PERSON"]);
+    expect(out.objective?.themes).toEqual(["HORROR"]);
+    expect(out.keywords).toBeNull();
+  });
+
+  it("conserva keywords reales (vocabulario abierto) sin tocar", () => {
+    const out = redirectKeywordsToEnumFields({
+      gameReferenced: null,
+      objective: objective(),
+      keywords: ["steampunk", "pirates"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    });
+    expect(out.keywords).toEqual(["steampunk", "pirates"]);
+    expect(out.objective).toEqual(objective());
+  });
+
+  it("no duplica un enum ya presente en la lista", () => {
+    const out = redirectKeywordsToEnumFields({
+      gameReferenced: null,
+      objective: objective({ themes: ["HORROR"] }),
+      keywords: ["horror", "pirates"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    });
+    expect(out.objective?.themes).toEqual(["HORROR"]);
+    expect(out.keywords).toEqual(["pirates"]);
+  });
+
+  it("devuelve el intent intacto sin keywords", () => {
+    const intent: GameSearchIntent = {
+      gameReferenced: null,
+      objective: null,
+      keywords: null,
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    };
+    expect(redirectKeywordsToEnumFields(intent)).toBe(intent);
+  });
+
+  it("no envia un falso positivo: 'sport fishing' no se convierte en genre SPORT", () => {
+    const out = redirectKeywordsToEnumFields({
+      gameReferenced: null,
+      objective: objective(),
+      keywords: ["sport fishing"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    });
+    expect(out.keywords).toEqual(["sport fishing"]);
+    expect(out.objective?.genres).toBeNull();
   });
 });

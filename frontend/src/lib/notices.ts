@@ -22,7 +22,9 @@ export const NOTICE_MESSAGES: Record<NoticeCode, string> = {
   INTENT_UNCHANGED:
     "No he entendido nada nuevo en tu mensaje: sigo con la búsqueda que teníamos.",
   REFINE_REQUIRES_LOGIN:
-    "Para refinar la búsqueda tienes que iniciar sesión con tu cuenta de Google. Si lo haces podrás, además, crear una lista personalizada de juegos. Si no puedes seguir usando la búsqueda normal.",
+    "He entendido que estás intentando refinar una búsqueda anterior. Desafortunadamente solo los usuarios logueados pueden hacerlo. Puedes iniciar sesión con tu cuenta de Google o hacer una búsqueda nueva desde cero.",
+  SENSELESS_INPUT:
+    "Solo puedo ayudarte a buscar videojuegos. Cuéntame qué te apetece jugar: género, ambiente, mecánicas, una referencia...",
   DISCOVERY_BUDGET_EXHAUSTED: "Presupuesto diario de descubrimiento agotado.",
   DISCOVERY_UNAVAILABLE: "Descubrimiento de juegos nuevos no disponible.",
   CATALOG_FULL: "El catálogo ha alcanzado su límite.",

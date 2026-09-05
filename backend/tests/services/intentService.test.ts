@@ -1,22 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
-// El mock va ANTES de los imports del código real (Vitest lo hoistea).
-// Reproducimos la exportación de lib/ai.js con un vi.fn() que podemos configurar.
+﻿import { describe, expect, it, vi } from "vitest";
+// El mock va ANTES de los imports del cÃ³digo real (Vitest lo hoistea).
+// Reproducimos la exportaciÃ³n de lib/ai.js con un vi.fn() que podemos configurar.
 vi.mock("../../src/lib/ai.js", async () => ({
   gameIntentAIModel: vi.fn(),
   gameRelationAIModel: vi.fn(),
 }));
-//Ahora sí importamos el código real que queremos testear.
+//Ahora sÃ­ importamos el cÃ³digo real que queremos testear.
 import {
   intentService,
-  applyYearGuard,
-  applyThemeGuard,
+  applyRefineDelta,
   classifyRelation,
   createBudgetedIntentExtractor,
 } from "../../src/services/intentService.js";
 import { gameIntentAIModel, gameRelationAIModel } from "../../src/lib/ai.js";
-import type { GameSearchIntent } from "../../src/types/GameSearchIntent.js";
+import type {
+  GameSearchIntent,
+  RefineDelta,
+} from "../../src/types/GameSearchIntent.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
-import { makeIntent } from "../helpers/fakes.js";
+import { makeIntent, NULL_SEMANTIC } from "../helpers/fakes.js";
 
 const fakeIntent: GameSearchIntent = {
   gameReferenced: null,
@@ -94,43 +96,8 @@ describe("createBudgetedIntentExtractor", () => {
   });
 });
 
-describe("intentService session context", () => {
-  it("includes the previous intent and the merge rules in the system message", async () => {
-    const invoke = vi.fn().mockResolvedValue(fakeIntent);
-    vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
-
-    const previous: GameSearchIntent = {
-      gameReferenced: null,
-      objective: null,
-      keywords: ["pirates"],
-      releaseYear: null,
-      yearFrom: null,
-      yearTo: null,
-      excluded: null,
-      relation: null,
-      semantic: null,
-    };
-
-    await intentService.extractIntent("con combates navales", previous);
-
-    const messages = invoke.mock.calls[0][0] as {
-      role: string;
-      content: string;
-    }[];
-    const system = messages.find((m) => m.role === "system");
-    expect(system?.content).toContain("Conversation context");
-    expect(system?.content).toContain("pirates");
-    // Reglas de merge conservador: extender no borra el tema; mensaje sin
-    // contenido devuelve la intención previa.
-    expect(system?.content).toContain("KEEP the previous keywords");
-    expect(system?.content).toContain("STARTING A NEW search");
-    expect(system?.content).toContain("UNCHANGED");
-    // Reglas de clasificación (ERROR 2): atmósfera → semánticas, nunca keywords
-    expect(system?.content).toContain("SEMANTIC attributes, NEVER keywords");
-    expect(system?.content).toContain("NOT keywords");
-  });
-
-  it("does not include session context without a previous intent", async () => {
+describe("intentService fresh extraction", () => {
+  it("extraction is ALWAYS fresh: no session context in the system message", async () => {
     const invoke = vi.fn().mockResolvedValue(fakeIntent);
     vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
 
@@ -141,74 +108,140 @@ describe("intentService session context", () => {
       content: string;
     }[];
     const system = messages.find((m) => m.role === "system");
+    // Reglas base del contrato presenteâ€¦
+    expect(system?.content).toContain("SEMANTIC attributes, NEVER keywords");
+    // â€¦y el contexto de sesiÃ³n vive en el clasificador/delta, no aquÃ­.
     expect(system?.content).not.toContain("Conversation context");
   });
 });
 
-describe("applyYearGuard", () => {
-  it("posteriores al año 2000 → yearFrom 2001", () => {
-    const out = applyYearGuard("busco juegos posteriores al año 2000", makeIntent());
-    expect(out.yearFrom).toBe(2001);
-    expect(out.releaseYear).toBeNull();
+describe("applyRefineDelta", () => {
+  const PREVIOUS: GameSearchIntent = {
+    gameReferenced: null,
+    objective: {
+      genres: ["ROLE_PLAYING_RPG"],
+      themes: null,
+      platforms: null,
+      gameModes: null,
+      perspectives: null,
+    },
+    keywords: ["pirates"],
+    releaseYear: null,
+    yearFrom: null,
+    yearTo: null,
+    excluded: null,
+    relation: null,
+    semantic: null,
+  };
+
+  const delta = (overrides: Partial<RefineDelta> = {}): RefineDelta => ({
+    add: {
+      keywords: null,
+      genres: null,
+      themes: null,
+      platforms: null,
+      gameModes: null,
+      perspectives: null,
+      gameReferenced: null,
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      semantic: null,
+    },
+    remove: {
+      keywords: null,
+      genres: null,
+      themes: null,
+      platforms: null,
+      gameModes: null,
+      perspectives: null,
+      gameReferenced: null,
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      semantic: null,
+    },
+    excluded: null,
+    ...overrides,
   });
 
-  it("anteriores a 2010 → yearTo 2009", () => {
-    const out = applyYearGuard("juegos anteriores a 2010", makeIntent());
-    expect(out.yearTo).toBe(2009);
+  it("delta vacÃ­o = intent previo intacto (relation refine)", () => {
+    const out = applyRefineDelta(PREVIOUS, delta());
+    expect(out.keywords).toEqual(["pirates"]);
+    expect(out.objective?.genres).toEqual(["ROLE_PLAYING_RPG"]);
+    expect(out.relation).toBe("refine");
   });
 
-  it("del año 2004 → releaseYear 2004", () => {
-    const out = applyYearGuard("un juego del año 2004", makeIntent());
-    expect(out.releaseYear).toBe(2004);
-  });
-
-  it("de los 90 → rango 1990-1999", () => {
-    const out = applyYearGuard("juegos de los 90", makeIntent());
-    expect(out.yearFrom).toBe(1990);
-    expect(out.yearTo).toBe(1999);
-  });
-
-  it("nunca pisa lo que la LLM ya capturó", () => {
-    const base = makeIntent({ yearFrom: 2010, yearTo: 2019 });
-    const out = applyYearGuard("anteriores a 2000", base);
-    expect(out.yearFrom).toBe(2010);
-    expect(out.yearTo).toBe(2019);
-  });
-});
-
-describe("applyThemeGuard", () => {
-  it("mueve una palabra-theme de keywords a objective.themes", () => {
-    const out = applyThemeGuard(makeIntent({ keywords: ["horror"] }));
-    expect(out.objective?.themes).toEqual(["HORROR"]);
-    expect(out.keywords).toBeNull();
-  });
-
-  it("mueve variantes por slug (open world) y conserva keywords reales", () => {
-    const out = applyThemeGuard(
-      makeIntent({ keywords: ["open world", "steampunk"] }),
+  it("add keywords: uniÃ³n sin duplicados y conserva lo previo", () => {
+    const out = applyRefineDelta(
+      PREVIOUS,
+      delta({ add: { ...delta().add!, keywords: ["2d", "Pirates"] } }),
     );
-    expect(out.objective?.themes).toEqual(["OPEN_WORLD"]);
-    expect(out.keywords).toEqual(["steampunk"]);
+    expect(out.keywords).toEqual(["pirates", "2d"]);
+    expect(out.objective?.genres).toEqual(["ROLE_PLAYING_RPG"]);
   });
 
-  it("no duplica themes ya presentes ni toca intents sin keywords", () => {
-    const withTheme = makeIntent({
-      keywords: ["horror"],
-      objective: { genres: null, themes: ["HORROR"], platforms: null, gameModes: null, perspectives: null },
-    });
-    const out = applyThemeGuard(withTheme);
-    expect(out.objective?.themes).toEqual(["HORROR"]);
-    expect(applyThemeGuard(makeIntent())).toEqual(makeIntent());
+  it("remove keywords: quita el pedido y conserva el resto", () => {
+    const withTwo = { ...PREVIOUS, keywords: ["pirates", "2d"] };
+    const out = applyRefineDelta(
+      withTwo,
+      delta({ remove: { ...delta().remove!, keywords: ["2d"] } }),
+    );
+    expect(out.keywords).toEqual(["pirates"]);
+  });
+
+  it("override semÃ¡ntico y anulaciÃ³n por remove.semantic", () => {
+    const out = applyRefineDelta(
+      PREVIOUS,
+      delta({
+        add: {
+          ...delta().add!,
+          semantic: { ...NULL_SEMANTIC, violence: 0.9 },
+        },
+      }),
+    );
+    expect(out.semantic?.violence).toBe(0.9);
+
+    const out2 = applyRefineDelta(
+      out,
+      delta({ remove: { ...delta().remove!, semantic: ["violence"] } }),
+    );
+    expect(out2.semantic?.violence).toBeNull();
+  });
+
+  it("remove de aÃ±os y exclusiÃ³n nueva", () => {
+    const withYears = { ...PREVIOUS, yearFrom: 1990, yearTo: 1999 };
+    const out = applyRefineDelta(
+      withYears,
+      delta({
+        remove: { ...delta().remove!, yearFrom: true, yearTo: true },
+        excluded: {
+          keywords: null,
+          genres: null,
+          themes: ["HORROR"],
+          platforms: null,
+          gameModes: null,
+          perspectives: null,
+          releaseYear: null,
+          yearFrom: null,
+          yearTo: null,
+        },
+      }),
+    );
+    expect(out.yearFrom).toBeNull();
+    expect(out.yearTo).toBeNull();
+    expect(out.excluded?.themes).toEqual(["HORROR"]);
   });
 });
+
 
 describe("classifyRelation", () => {
-  it("devuelve la relación que decide el modelo", async () => {
+  it("devuelve la relaciÃ³n que decide el modelo", async () => {
     const invoke = vi.fn().mockResolvedValue({ relation: "refine" });
     vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
 
     const relation = await classifyRelation(
-      "más violento",
+      "mÃ¡s violento",
       makeIntent({ keywords: ["violence"] }),
     );
 
@@ -216,7 +249,7 @@ describe("classifyRelation", () => {
     const messages = invoke.mock.calls[0][0] as { role: string; content: string }[];
     expect(messages[0].role).toBe("system");
     expect(messages[1].content).toContain("Previous search intent");
-    expect(messages[1].content).toContain("más violento");
+    expect(messages[1].content).toContain("mÃ¡s violento");
   });
 
   it("el extractor con presupuesto clasifica y gasta 1 llamada LLM", async () => {
@@ -231,11 +264,11 @@ describe("classifyRelation", () => {
     expect(budget.remaining("llm")).toBe(4);
   });
 
-  it("sin presupuesto de LLM asume búsqueda nueva (no bloquea la búsqueda fresca)", async () => {
+  it("sin presupuesto de LLM asume bÃºsqueda nueva (no bloquea la bÃºsqueda fresca)", async () => {
     const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 0 });
     const extractor = createBudgetedIntentExtractor(budget);
 
-    const relation = await extractor.classifyRelation!("más violento", makeIntent());
+    const relation = await extractor.classifyRelation!("mÃ¡s violento", makeIntent());
 
     expect(relation).toBe("new");
   });

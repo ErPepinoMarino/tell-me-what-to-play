@@ -6,7 +6,7 @@ import {
   perspectiveIgbNames,
   themeIgbId,
 } from "../igdb/normalizers.js";
-import type { IgdbClient, IgdbGameRaw } from "../igdb/types.js";
+import type { IgdbClient, FilteredSearchOptions, IgdbGameRaw } from "../igdb/types.js";
 import type { Candidate, Game, GameToPersist } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 import { passesHardFilters } from "../matching/matchGame.js";
@@ -155,7 +155,7 @@ export class DiscoveryManager {
       .map((theme) => themeIgbId(theme))
       .filter((id): id is number => id !== null);
 
-    return this.igdb.filteredSearch({
+    const options: FilteredSearchOptions = {
       keywordIds,
       genreIgbNames: (intent.objective?.genres ?? [])
         .filter((genre) => genre !== "UNKNOWN")
@@ -194,7 +194,12 @@ export class DiscoveryManager {
       onFilterDropped: (details) => {
         trace?.("taxonomy-unresolved", details);
       },
-    });
+    };
+
+    // LOG: ver qué opciones se pasan a IGDB
+    console.log(`[DISCOVERY-FILTERED] genres=${JSON.stringify(options.genreIgbNames)} themes=${JSON.stringify(options.themeIds)} keywords=${JSON.stringify(options.keywordIds)} platforms=${JSON.stringify(options.platformIgbNames)} perspectives=${JSON.stringify(options.perspectiveIgbNames)} gameModes=${JSON.stringify(options.gameModeIgbNames)} year=${options.releaseYear ?? `${options.yearFrom}-${options.yearTo}`}`);
+
+    return this.igdb.filteredSearch(options);
   }
 
   /*

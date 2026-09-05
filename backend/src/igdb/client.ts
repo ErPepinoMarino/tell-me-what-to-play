@@ -184,9 +184,10 @@ export class HttpIgdbClient implements IgdbClient {
      * léxico local (igdb_id), no de una consulta a /v4/keywords.
      */
     if (options.keywordIds && options.keywordIds.length > 0) {
-      for (const id of options.keywordIds) {
-        conditions.push(`keywords = (${id})`);
-      }
+      // OR semantics: ANY of the keywords (not all). IGDB's `keywords = (a, b)`
+      // matches games that have at least one of the listed keywords. This is
+      // correct for discovery: broadens the pool without diluting precision.
+      conditions.push(`keywords = (${options.keywordIds.join(",")})`);
     }
     if (options.perspectiveIgbNames && options.perspectiveIgbNames.length > 0) {
       const ids = await this.resolveTaxonomyIds(
@@ -284,6 +285,8 @@ export class HttpIgdbClient implements IgdbClient {
     statements.push(`limit ${options.limit ?? 30}`);
 
     const body = statements.join("; ") + ";";
+    // LOG: ver exactamente qué query se envía a IGDB
+    console.log(`[IGDB-QUERY] ${body}`);
     return this.withRetry(() => this.request(token, body));
   }
 
@@ -335,6 +338,8 @@ export class HttpIgdbClient implements IgdbClient {
       const id = cache.get(name.toLowerCase());
       if (id !== undefined && !ids.includes(id)) ids.push(id);
     }
+    // LOG: ver qué nombres se resuelven y a qué IDs
+    console.log(`[IGDB-TAXONOMY] url=${url} names=[${names.join(", ")}] resolved=[${ids.join(", ")}] cacheSize=${cache.size}`);
     return ids;
   }
 

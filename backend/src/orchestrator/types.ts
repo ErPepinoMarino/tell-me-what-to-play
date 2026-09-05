@@ -38,19 +38,33 @@ export interface CacheLayer {
 }
 
 export interface IntentExtractor {
+  /*
+   * Extracción SIEMPRE fresca (sin contexto): el mensaje se interpreta con
+   * el contrato base. El segundo parámetro existe por compatibilidad con
+   * fakes/tests y se ignora.
+   */
   extract(
     userText: string,
     previousIntent?: GameSearchIntent,
   ): Promise<GameSearchIntent>;
   /*
-   * Clasificador de relación refine-vs-new (anon sin sesión): paso mínimo
-   * que solo decide si el mensaje afina la búsqueda anterior o empieza otra.
-   * Sin clasificador, el orquestador usa extract como fallback (tests).
+   * Clasificador de relación refine-vs-new: paso mínimo que solo decide, por
+   * INFERENCIA, si el mensaje afina la búsqueda anterior o empieza otra.
+   * Único punto de decisión para anon y logueado. Sin clasificador, el
+   * orquestador asume búsqueda nueva (fakes/tests).
    */
   classifyRelation?(
     userText: string,
+    previousIntent?: GameSearchIntent,
+  ): Promise<"new" | "refine" | "nonsensical">;
+  /*
+   * Delta del refinamiento: solo se llama tras classifyRelation = "refine".
+   * Extrae qué añadir/quitar; el merge es determinista (applyRefineDelta).
+   */
+  extractRefineDelta?(
+    userText: string,
     previousIntent: GameSearchIntent,
-  ): Promise<"new" | "refine">;
+  ): Promise<import("../types/GameSearchIntent.js").RefineDelta>;
 }
 
 export type Actor = { kind: "anon" } | { kind: "user"; userId: number };
