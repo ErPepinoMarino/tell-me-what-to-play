@@ -176,6 +176,36 @@ describe("DiscoveryManager.discoverByQuery", () => {
     expect(second.variantExhausted).toBe(true);
   });
 
+  it("misma query con distinto intent refetchea: la caché se clavea por (query, intent)", async () => {
+    const { discovery, igdb } = makeSetup({
+      filteredResults: [makeRaw(2, "A")],
+    });
+    const intentA = makeIntent({ keywords: ["x"] });
+    const intentB = makeIntent({ keywords: ["y"] });
+
+    await discovery.discoverByQuery("q", 2, undefined, intentA);
+    const second = await discovery.discoverByQuery("q", 2, undefined, intentB);
+
+    // Intent distinto → nueva llamada IGDB aunque el texto coincida: un
+    // intent estricto que agota la suya no bloquea el refetch de otro.
+    expect(igdb.filteredCalls).toHaveLength(2);
+    expect(second.variantExhausted).toBe(true);
+  });
+
+  it("misma query con el mismo intent no refetchea cuando la lista está consumida", async () => {
+    const { discovery, igdb } = makeSetup({
+      filteredResults: [makeRaw(2, "A")],
+    });
+    const intent = makeIntent({ keywords: ["x"] });
+
+    await discovery.discoverByQuery("q", 2, undefined, intent);
+    const second = await discovery.discoverByQuery("q", 2, undefined, intent);
+
+    expect(igdb.filteredCalls).toHaveLength(1);
+    expect(second.variantExhausted).toBe(true);
+    expect(second.newGames).toHaveLength(0);
+  });
+
   it("pre-filtro must: los candidatos condenados se saltan sin gastar Brave/LLM", async () => {
     const { discovery, catalog, enrichment } = makeSetup({
       filteredResults: [

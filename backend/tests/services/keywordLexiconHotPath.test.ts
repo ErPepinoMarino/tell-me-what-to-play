@@ -154,13 +154,13 @@ describe("KeywordLexiconService.resolveIds", () => {
         canonical: "zombies",
         aliases: [],
         embedding: [1, 0],
-        igdbId: 5,
+        igdb_id: 5,
       },
       {
         canonical: "plants",
         aliases: [],
         embedding: [0, 1],
-        igdbId: 47461,
+        igdb_id: 47461,
       },
       { canonical: "sin-id", aliases: [], embedding: [0, 0] },
     ];

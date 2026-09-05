@@ -308,9 +308,10 @@ export interface LexiconRow {
   canonical: string;
   aliases: string[];
   embedding: unknown;
-  // ID numérico de IGDB del canónico (keyword_lexicon.igdb_id): el diccionario
-  // es la fuente de verdad canónica → id, sin resolver por red en runtime.
-  igdbId?: number | null;
+  // ID numérico de IGDB del canónico. OJO: la columna Prisma se llama
+  // `igdb_id` (snake_case); leer `igdbId` devuelve undefined y anula TODA
+  // la resolución (bug que tumbó el filtro de keywords del discovery).
+  igdb_id?: number | null;
 }
 
 export interface CanonicalizedTerm {
@@ -542,7 +543,7 @@ private resolveByEmbedding(term: string, vector: number[]): CanonicalizedTerm {
             canonical: row.canonical,
             stem: keywordStem(row.canonical),
             embedding: row.embedding as number[],
-            igdbId: row.igdbId ?? null,
+            igdbId: row.igdb_id ?? null,
           }));
         for (const entry of this.entries) {
           this.canonicalTerms.add(entry.canonical);

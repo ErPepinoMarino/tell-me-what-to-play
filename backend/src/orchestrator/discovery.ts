@@ -72,12 +72,36 @@ export class DiscoveryManager {
    * candidatos y cada unidad solo enriquece 2. En lugar de repetir la
    * llamada (mismos resultados) o rendirnos al agotar las variantes, las
    * unidades siguientes CONSUMEN la lista guardada sin gastar IGDB.
+   * La caché se clavea por (query, intent): la lista devuelta depende del
+   * `where` (filtros del intent), así que un intent estricto que agota la
+   * suya no bloquea el refetch de otro más laxo con el mismo texto.
    * V1: un solo proceso; peticiones concurrentes pueden entrelazar el
    * cursor (mismo criterio que la sesión en memoria).
    */
   private lastQuery: string | null = null;
+  private lastIntentKey: string | null = null;
   private lastRaws: IgdbGameRaw[] = [];
   private lastCursor = 0;
+
+  /*
+   * Clave estable de los campos del intent que determinan el `where` de
+   * filteredSearch (null cuando no hay intent: text-search clásico).
+   */
+  private static intentFilterKey(intent?: GameSearchIntent): string | null {
+    if (!intent) return null;
+    return JSON.stringify({
+      keywords: intent.keywords ?? null,
+      genres: intent.objective?.genres ?? null,
+      themes: intent.objective?.themes ?? null,
+      platforms: intent.objective?.platforms ?? null,
+      gameModes: intent.objective?.gameModes ?? null,
+      perspectives: intent.objective?.perspectives ?? null,
+      releaseYear: intent.releaseYear ?? null,
+      yearFrom: intent.yearFrom ?? null,
+      yearTo: intent.yearTo ?? null,
+      excluded: intent.excluded ?? null,
+    });
+  }
 
   constructor(
     private igdb: IgdbClient,
@@ -204,7 +228,9 @@ export class DiscoveryManager {
       : normalizedQuery.length > 0
         ? [normalizedQuery, ...queryWords]
         : [];
-    const sameQuery = this.lastQuery === query;
+    const intentKey = DiscoveryManager.intentFilterKey(intent);
+    const sameQuery =
+      this.lastQuery === query && this.lastIntentKey === intentKey;
     if (sameQuery && this.lastCursor >= this.lastRaws.length) {
       trace?.("igdb-list-exhausted", { query });
       return {
@@ -255,6 +281,7 @@ export class DiscoveryManager {
        * son reutilizables entre unidades.
        */
       this.lastQuery = raws.length > 0 ? query : null;
+      this.lastIntentKey = raws.length > 0 ? intentKey : null;
       this.lastRaws = raws;
       this.lastCursor = 0;
       if (intent) {
