@@ -75,11 +75,10 @@ export function buildQueryVariants(intent: GameSearchIntent): string[] {
     variants.push(genreTerms.slice(0, 2).join(" "));
   }
   /*
-   * CONTRATO ACTUAL: intents solo-plataforma/año (sin keywords ni géneros)
-   * generan [] → no-query inmediato sin gastar IGDB. El text-search de IGDB
-   * busca por título y no puede servir estos intents; el fix estructural es
-   * la consulta filtrada de IGDB (where genres/keywords/year/platforms con
-   * IDs) — ronda aprobada, pendiente de implementar.
+   * Intents solo-plataforma/año (sin keywords ni géneros) generan [] aquí;
+   * el descubrimiento por atributos (filteredSearch IGDB) los cubre en el
+   * orquestador. El text-search de IGDB busca por título y no sirve para
+   * estos intents.
    */
 
   return [

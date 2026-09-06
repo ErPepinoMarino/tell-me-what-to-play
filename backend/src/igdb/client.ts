@@ -51,7 +51,7 @@ export class HttpIgdbClient implements IgdbClient {
     this.auth = new IgdbAuth(clientId, clientSecret, httpClient);
   }
   //Aqui implementamos los metodos que declaramos en types.ts
-  //Este no creo que lo usemos porque devuelve juegos sin criterio.
+  //Paginación genérica sin criterio (útil en tests/scripts; en runtime se usa search/filtered).
   async fetchGames(options: {
     offset: number;
     limit: number;
@@ -177,11 +177,10 @@ export class HttpIgdbClient implements IgdbClient {
       conditions.push(`themes = (${options.themeIds.join(",")})`);
     }
     /*
-     * Keywords con semántica AND: cada término es una condición separada
-     * (`keywords = (a) & keywords = (b)`), que IGDB interpreta como "debe
-     * tener ambas". Un único `keywords = (a,b)` es OR (cualquiera) y con
-     * términos débiles ("3d") diluía todo el filtro. Los IDs vienen del
-     * léxico local (igdb_id), no de una consulta a /v4/keywords.
+     * Keywords con semántica OR: un único `keywords = (a,b)` en IGDB casa
+     * juegos que tengan AL MENOS una. Es lo correcto para descubrimiento
+     * (amplía el pool sin diluir precisión); el AND estricto lo aplica
+     * después el matcher determinista. Los IDs vienen del léxico local.
      */
     if (options.keywordIds && options.keywordIds.length > 0) {
       // OR semantics: ANY of the keywords (not all). IGDB's `keywords = (a, b)`
@@ -285,8 +284,6 @@ export class HttpIgdbClient implements IgdbClient {
     statements.push(`limit ${options.limit ?? 30}`);
 
     const body = statements.join("; ") + ";";
-    // LOG: ver exactamente qué query se envía a IGDB
-    console.log(`[IGDB-QUERY] ${body}`);
     return this.withRetry(() => this.request(token, body));
   }
 
@@ -338,8 +335,6 @@ export class HttpIgdbClient implements IgdbClient {
       const id = cache.get(name.toLowerCase());
       if (id !== undefined && !ids.includes(id)) ids.push(id);
     }
-    // LOG: ver qué nombres se resuelven y a qué IDs
-    console.log(`[IGDB-TAXONOMY] url=${url} names=[${names.join(", ")}] resolved=[${ids.join(", ")}] cacheSize=${cache.size}`);
     return ids;
   }
 

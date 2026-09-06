@@ -1,4 +1,4 @@
-import { Game } from "@/types/Game";
+import type { Game } from "@/types/Game";
 import Image from "next/image";
 
 type GameInfoProps = {
@@ -27,9 +27,6 @@ export default function GameInfo({ game }: GameInfoProps) {
             Description:{" "}
             {game.description_es || game.description_en || "Sin descripción."}
           </p>
-          {game.genres.map((genre) => (
-            <p key={genre}>{genre}</p>
-          ))}
           {game.platforms.map((platform) => (
             <p key={platform}>{platform}</p>
           ))}

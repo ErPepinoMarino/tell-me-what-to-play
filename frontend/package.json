@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "import-games": "tsx scripts/importGames.ts",
+    "lint": "eslint .",
     "format": "prettier --write ."
   },
   "dependencies": {

@@ -23,26 +23,43 @@ export default async function Home({ searchParams }: HomeProps) {
   //ves.
   const { q, game } = await searchParams;
 
-  const apiUrl = process.env.API_URL;
+  const apiUrl = process.env.API_URL ?? "http://localhost:3001";
+
+  async function fetchGames(path: string): Promise<Game[]> {
+    try {
+      const res = await fetch(`${apiUrl}${path}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function fetchGame(path: string): Promise<Game | undefined> {
+    try {
+      const res = await fetch(`${apiUrl}${path}`);
+      if (!res.ok) return undefined;
+      return (await res.json()) as Game;
+    } catch {
+      return undefined;
+    }
+  }
 
   // Búsqueda de catálogo por deep-link (?q=): sigue funcionando para URLs
   // compartidas e indexación. La interacción principal es el flujo de
   // recomendación (RecommendationSection), que es conversacional.
   const games: Game[] = q
-    ? await fetch(`${apiUrl}/api/games?q=${encodeURIComponent(q)}`).then(
-        (res) => res.json()
-      )
+    ? await fetchGames(`/api/games?q=${encodeURIComponent(q)}`)
     : [];
 
   const selectedGame: Game | undefined = game
-    ? await fetch(`${apiUrl}/api/games/${encodeURIComponent(game)}`).then(
-        (res) => res.json()
-      )
+    ? await fetchGame(`/api/games/${encodeURIComponent(game)}`)
     : undefined;
 
   return (
-    <main className="min-h-screen bg-gray-100 py-8">
-      <div className="mx-auto max-w-4xl px-6">
+    <main>
+      <div>
         <Header />
         <RecommendationSection />
         {q ? <SearchResults games={games} query={q} /> : null}

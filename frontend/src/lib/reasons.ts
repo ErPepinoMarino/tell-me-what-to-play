@@ -6,7 +6,7 @@ import type { GameSearchIntent, MatchReason, MatchTier } from "@/types/Recommend
  * es dueño de la presentación en español.
  */
 
-export const SEMANTIC_LABELS: Record<string, string> = {
+const SEMANTIC_LABELS: Record<string, string> = {
   difficulty: "Dificultad",
   pace: "Ritmo",
   narrative: "Narrativa",
@@ -117,7 +117,7 @@ function semanticLabel(field: string): string {
  * La temática (keywords) se muestra siempre primero: es el bloque que
  * domina el score según la calibración.
  */
-export function reasonToChip(reason: MatchReason): ReasonChip | null {
+function reasonToChip(reason: MatchReason): ReasonChip | null {
   if (reason.kind === "skipped") return null;
 
   const chip = ((): ReasonChip | null => {

@@ -3,7 +3,7 @@
 // para sobrevivir a la expiración de 15 min del access token sin sacar al
 // usuario de la conversación.
 
-export interface ApiFailure {
+interface ApiFailure {
   ok: false;
   status: number;
   message?: string;

@@ -5,7 +5,7 @@ import type { NoticeCode } from "@/types/Recommendation";
  * (PARTIAL_RESULTS, SEARCH_EXHAUSTED, DISCOVERY_*, CATALOG_FULL, PG_DEGRADED)
  * no se muestran al usuario normal: solo aparecen en el modo demo/técnico.
  * La información útil para el usuario va en el mensaje de ayuda para
- * anónimos (ver HINT_FOR_ANONYMOUS en RecommendationSection).
+ * anónimos (ver mensaje de ayuda en RecommendationSection).
  */
 
 export const NOTICE_MESSAGES: Record<NoticeCode, string> = {
@@ -34,7 +34,7 @@ export const NOTICE_MESSAGES: Record<NoticeCode, string> = {
 // Los que solo interesan en modo demo/técnico. EXPLICIT_GAME_REQUESTED va
 // aquí: la fila de juegos de referencia ya comunica el ancla visualmente, y
 // el mensaje burlón no encaja en búsquedas "similar a X pero que no sea X".
-export const INTERNAL_NOTICES: NoticeCode[] = [
+const INTERNAL_NOTICES: NoticeCode[] = [
   "EXPLICIT_GAME_REQUESTED",
   "PARTIAL_RESULTS",
   "SEARCH_EXHAUSTED",

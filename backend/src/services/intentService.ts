@@ -167,7 +167,9 @@ export async function classifyRelation(
     { role: "system", content: classifyRelationInstructions },
     { role: "user", content: contextBlock },
   ]);
-  return (result as { relation: "new" | "refine" | "nonsensical" }).relation ?? "new";
+  return (
+    (result as { relation: "new" | "refine" | "nonsensical" }).relation ?? "new"
+  );
 }
 
 /*
@@ -368,7 +370,7 @@ export function createBudgetedIntentExtractor(
   budget: BudgetLedger,
 ): IntentExtractor {
   return {
-    async extract(userText: string, _previousIntent?: GameSearchIntent) {
+    async extract(userText: string) {
       if (!budget.tryReserve("llm", 1)) {
         throw new Error("LLM daily budget exhausted");
       }
@@ -399,7 +401,10 @@ export function createBudgetedIntentExtractor(
         throw error;
       }
     },
-    async classifyRelation(userText: string, previousIntent?: GameSearchIntent) {
+    async classifyRelation(
+      userText: string,
+      previousIntent?: GameSearchIntent,
+    ) {
       if (!budget.tryReserve("llm", 1)) {
         // Sin presupuesto no se puede clasificar: se asume búsqueda nueva
         // (una búsqueda fresca siempre es posible; el refinamiento es el

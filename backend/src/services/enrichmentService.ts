@@ -109,6 +109,7 @@ function pickAnchor(candidate: Candidate): string | null {
 // Construye las queries de búsqueda web a partir de los datos objetivos del candidate.
 // Vamos, las frases que el agente buscara en internet para documentarse.
 // Dos clusters diferenciados: gameplay/mecánica y mundo/historia/tono.
+// Exportada: cubierta por tests unitarios del contrato de queries.
 export function buildQueries(candidate: Candidate): string[] {
   const title = candidate.title;
   const year = candidate.releaseYear ? ` ${candidate.releaseYear}` : "";
@@ -244,8 +245,6 @@ export class EnrichmentServiceImpl implements EnrichmentService {
     );
   }
 }
-
-export { EMPTY_SEMANTIC };
 
 import { BraveResearchProvider } from "./braveResearchProvider.js";
 

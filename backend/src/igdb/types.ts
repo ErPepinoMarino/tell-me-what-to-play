@@ -84,7 +84,7 @@ export interface FilteredSearchOptions {
 }
 
 // Interfaz con las peticiones que le haremos a IGDB
-// fetchGames para que nos devuelva un array de juegos que no sabemos (no la usaremos)
+// fetchGames: paginación genérica (tests/scripts; en runtime se prefiere search/filtered)
 // searchGames (la buena) que nos permite añadir una query con criterios de búsqueda y un límite de resultados.
 // fetchGamesByIds: recovery/backfill de metadatos (ratings) para fichas ya descubiertas.
 // filteredSearch: descubrimiento por ATRIBUTOS (géneros/keywords/plataformas/año).

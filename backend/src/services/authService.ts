@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
+import { hashRefreshToken } from "../lib/refreshToken.js";
 import { prismaSessionRepository } from "../repositories/prismaSessionRepository.js";
 import { prismaUserRepository } from "../repositories/prismaUserRepository.js";
 
@@ -21,15 +22,10 @@ export function createAuthService(
         aud: "tellmewhattoplay-client",
       });
     },
-    async createSession(userId: number) {
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-      return sessionRepository.create(userId, expiresAt);
-    },
     createRefreshToken() {
       const token = randomBytes(32).toString("base64url");
 
-      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const tokenHash = hashRefreshToken(token);
 
       return {
         token,
@@ -61,22 +57,8 @@ export function createAuthService(
         refreshToken,
       };
     },
-    async validateRefreshToken(token: string) {
-      const tokenHash = createHash("sha256").update(token).digest("hex");
-
-      const refreshToken = await sessionRepository.findRefreshToken(tokenHash);
-
-      if (!refreshToken) {
-        return null;
-      }
-
-      return refreshToken;
-    },
-    isSessionExpired(expiresAt: Date) {
-      return Date.now() >= expiresAt.getTime();
-    },
     async refreshSession(token: string) {
-      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const tokenHash = hashRefreshToken(token);
       const newRefreshToken = this.createRefreshToken();
       const now = new Date();
       const result = await sessionRepository.rotateRefreshToken(
@@ -104,15 +86,12 @@ export function createAuthService(
      * Idempotente: token inexistente → no hace nada.
      */
     async logoutSession(token: string): Promise<void> {
-      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const tokenHash = hashRefreshToken(token);
       const refreshToken = await sessionRepository.findRefreshToken(tokenHash);
       if (!refreshToken) return;
 
       await sessionRepository.revokeSession(refreshToken.sessions.id);
       await sessionRepository.revokeRefreshToken(refreshToken.id);
-    },
-    isRefreshTokenExpired(createdAt: Date) {
-      return Date.now() >= createdAt.getTime() + 60 * 60 * 1000;
     },
     async exchangeGoogleCode(code: string) {
       const response = await fetch("https://oauth2.googleapis.com/token", {

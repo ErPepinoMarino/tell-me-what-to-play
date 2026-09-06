@@ -553,8 +553,9 @@ export class RecommendationOrchestrator {
      */
     const previousIntent =
       request.actor.kind === "user"
-        ? this.deps.sessions.ensure(request.actor.userId).currentIntent ?? undefined
-        : request.contextIntent ?? undefined;
+        ? (this.deps.sessions.ensure(request.actor.userId).currentIntent ??
+          undefined)
+        : (request.contextIntent ?? undefined);
 
     const relation = await this.classifyRelationStep(
       request.message,
@@ -564,8 +565,12 @@ export class RecommendationOrchestrator {
     if (relation === "nonsensical") {
       return {
         intent: { ...EMPTY_INTENT, relation: "nonsensical" },
-        session: request.actor.kind === "user" ? this.deps.sessions.ensure(request.actor.userId) : undefined,
-        userId: request.actor.kind === "user" ? request.actor.userId : undefined,
+        session:
+          request.actor.kind === "user"
+            ? this.deps.sessions.ensure(request.actor.userId)
+            : undefined,
+        userId:
+          request.actor.kind === "user" ? request.actor.userId : undefined,
         shownGameIds: [],
         excludeShown: false,
       };
@@ -659,10 +664,7 @@ export class RecommendationOrchestrator {
     }
   }
 
-  private async extractWithRetry(
-    message: string,
-    _previousIntent?: GameSearchIntent,
-  ): Promise<GameSearchIntent> {
+  private async extractWithRetry(message: string): Promise<GameSearchIntent> {
     try {
       return await this.deps.intents.extract(message);
     } catch {
@@ -884,11 +886,7 @@ function isEmptyIntent(intent: GameSearchIntent): boolean {
     intent.semantic !== null &&
     SEMANTIC_FIELDS.some((field) => intent.semantic?.[field] !== null);
   return (
-    !hasReferences &&
-    !hasKeywords &&
-    !hasObjective &&
-    !hasYear &&
-    !hasSemantic
+    !hasReferences && !hasKeywords && !hasObjective && !hasYear && !hasSemantic
   );
 }
 
@@ -913,12 +911,12 @@ function isDeltaEmpty(delta: RefineDelta): boolean {
       add.gameModes,
       add.perspectives,
       add.gameReferenced,
-    ].every((f) => !f || f.length === 0)) &&
-    add.releaseYear == null &&
-    add.yearFrom == null &&
-    add.yearTo == null &&
-    (!add.semantic ||
-      SEMANTIC_FIELDS.every((field) => add.semantic?.[field] == null));
+    ].every((f) => !f || f.length === 0) &&
+      add.releaseYear == null &&
+      add.yearFrom == null &&
+      add.yearTo == null &&
+      (!add.semantic ||
+        SEMANTIC_FIELDS.every((field) => add.semantic?.[field] == null)));
 
   const removeEmpty =
     !remove ||
@@ -930,11 +928,11 @@ function isDeltaEmpty(delta: RefineDelta): boolean {
       remove.gameModes,
       remove.perspectives,
       remove.gameReferenced,
-    ].every((f) => !f || f.length === 0)) &&
-    remove.releaseYear == null &&
-    remove.yearFrom == null &&
-    remove.yearTo == null &&
-    (!remove.semantic || remove.semantic.length === 0);
+    ].every((f) => !f || f.length === 0) &&
+      remove.releaseYear == null &&
+      remove.yearFrom == null &&
+      remove.yearTo == null &&
+      (!remove.semantic || remove.semantic.length === 0));
 
   const excludedEmpty =
     !excluded ||
@@ -945,10 +943,10 @@ function isDeltaEmpty(delta: RefineDelta): boolean {
       excluded.platforms,
       excluded.gameModes,
       excluded.perspectives,
-    ].every((f) => !f || f.length === 0)) &&
-    excluded.releaseYear == null &&
-    excluded.yearFrom == null &&
-    excluded.yearTo == null;
+    ].every((f) => !f || f.length === 0) &&
+      excluded.releaseYear == null &&
+      excluded.yearFrom == null &&
+      excluded.yearTo == null);
 
   return addEmpty && removeEmpty && excludedEmpty;
 }
