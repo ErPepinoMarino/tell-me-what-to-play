@@ -134,10 +134,10 @@ export function mergeKeywords(
 ): string[] {
   const result = [...existing];
   for (const kw of additional) {
-    const normalized = kw.toLowerCase();
+    const normalized = kw.trim().toLowerCase();
     if (
-      !result.some((k) => k.toLowerCase() === normalized) &&
-      normalized.length > 0
+      normalized.length > 0 &&
+      !result.some((k) => k.trim().toLowerCase() === normalized)
     ) {
       result.push(normalized);
     }

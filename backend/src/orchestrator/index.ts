@@ -5,7 +5,6 @@ import { createExplanationComposer } from "../services/explanationService.js";
 import { createKeywordEmbedder } from "../lib/embeddings.js";
 import { createKeywordLexiconService } from "../services/keywordLexiconService.js";
 import { InMemoryBudgetLedger } from "../budget/budgetLedger.js";
-import { InMemorySessionStore } from "../sessions/sessionStore.js";
 import { RECOMMENDATION_CONFIG } from "../recommendation/constants.js";
 import { DiscoveryManager } from "./discovery.js";
 import { RecommendationOrchestrator } from "./recommendationOrchestrator.js";
@@ -17,8 +16,8 @@ let singleton: RecommendationOrchestrator | undefined;
 
 /*
  * Construcción perezosa: el server arranca aunque falten credenciales de
- * IGDB/Brave y la ruta responde 503 hasta que existan. El presupuesto y la
- * sesión son singletons por proceso (memoria).
+ * IGDB/Brave y la ruta responde 503 hasta que existan. El presupuesto es
+ * singleton por proceso (memoria).
  */
 export function createRecommendationOrchestrator(): RecommendationOrchestrator {
   let igdb;
@@ -36,11 +35,6 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     brave: RECOMMENDATION_CONFIG.braveDailyLimit,
     llm: RECOMMENDATION_CONFIG.llmDailyLimit,
     embedding: RECOMMENDATION_CONFIG.embeddingDailyLimit,
-  });
-
-  const sessions = new InMemorySessionStore({
-    ttlMs: RECOMMENDATION_CONFIG.sessionTtlMinutes * 60 * 1000,
-    maxEntries: RECOMMENDATION_CONFIG.sessionMaxEntries,
   });
 
   /*
@@ -71,7 +65,6 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     cache: jsonCacheLayer,
     catalog: prismaCatalogLayer,
     discovery,
-    sessions,
     explainer: createExplanationComposer(budget),
     lexicon,
   });

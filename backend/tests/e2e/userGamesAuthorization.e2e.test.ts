@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import fastify from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -7,29 +6,9 @@ import { prismaSessionRepository } from "../../src/repositories/prismaSessionRep
 import { prismaUserRepository } from "../../src/repositories/prismaUserRepository.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { resetTestDatabase } from "../helpers/resetTestDatabase.js";
+import { startTestServer, type TestServer } from "./startTestServer.js";
 
-const baseUrl = "http://127.0.0.1:3001";
-let serverProcess: ChildProcess;
-
-async function waitForServer(): Promise<void> {
-  const deadline = Date.now() + 10_000;
-
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/api/health`);
-
-      if (response.ok) {
-        return;
-      }
-    } catch {
-      // The server is still starting.
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  throw new Error("Backend server did not start within 10 seconds");
-}
+let server: TestServer;
 //Creamos el JWT para las peticiones.
 async function createAccessToken(userId: number): Promise<string> {
   const tokenApp = fastify();
@@ -72,17 +51,7 @@ async function createValidTokenForSubject(subject: number): Promise<string> {
 //Arrancamos server.
 describe("user library authorization E2E", () => {
   beforeAll(async () => {
-    serverProcess = spawn(
-      process.execPath,
-      ["--import", "tsx/esm", "src/server.ts"],
-      {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: "ignore",
-      },
-    );
-
-    await waitForServer();
+    server = await startTestServer();
   });
 
   beforeEach(async () => {
@@ -90,7 +59,7 @@ describe("user library authorization E2E", () => {
   });
 
   afterAll(async () => {
-    serverProcess.kill();
+    server.stop();
     await prisma.$disconnect();
   });
 
@@ -125,7 +94,7 @@ describe("user library authorization E2E", () => {
     //El primer campo del fetch es la url que apunta a vicente, pero la peticion la hace Concha
     //El segundo campo del fetch es el objeto de configuracion, donde se indica el metodo PUT, la cabecera con el JWT de Concha y el body con los datos a actualizar.
     const otherUserResponse = await fetch(
-      `${baseUrl}/api/users/${vicente.id}/library/${gameB.id}`,
+      `${server.baseUrl}/api/users/${vicente.id}/library/${gameB.id}`,
       {
         method: "PUT",
         headers: {
@@ -168,7 +137,7 @@ describe("user library authorization E2E", () => {
     //Sin más, esta es Concha tratando de actualizar su propio juego. 200 OK.
     const conchaAccessToken = await createAccessToken(concha.id);
     const ownGameResponse = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${gameA.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${gameA.id}`,
       {
         method: "PUT",
         headers: {
@@ -198,7 +167,7 @@ describe("user library authorization E2E", () => {
     // En esta peticion no se envia JWT, por lo que el servidor devuelve 401 Unauthorized.
     // Si te fijas estamos usarndo users/1/ porque ni siquiera hace falta que exista el usuario 1,
     // ya que la peticion ni siquiera llega a comprobarlo. El error es de autenticacion, no de autorizacion.
-    const response = await fetch(`${baseUrl}/api/users/1/library/1`, {
+    const response = await fetch(`${server.baseUrl}/api/users/1/library/1`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -216,7 +185,7 @@ describe("user library authorization E2E", () => {
   it("returns 401 when the JWT is invalid", async () => {
     //En esta peticion se envia un JWT llamado "token-falso".
     //¿Resultado? Que el token es falso. Esperable.
-    const response = await fetch(`${baseUrl}/api/users/1/library/1`, {
+    const response = await fetch(`${server.baseUrl}/api/users/1/library/1`, {
       method: "PUT",
       headers: {
         Authorization: "Bearer token-falso",
@@ -237,7 +206,7 @@ describe("user library authorization E2E", () => {
 
     //En esta peticion se envia un JWT valido, pero el usuario del JWT no existe en la base de datos.
     //lo sabemos porque la bdd está vacía. Por lo que no existe ni 123 ni ninguno.
-    const response = await fetch(`${baseUrl}/api/users/123/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/123/library`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const body = await response.json();
@@ -262,7 +231,7 @@ describe("user library authorization E2E", () => {
     const accessToken = await createAccessToken(concha.id);
 
     //Concha entra y trata de añadir un juego a su propia biblioteca. Esto se permite.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -286,7 +255,7 @@ describe("user library authorization E2E", () => {
 
   it("returns 401 when adding a game without a JWT", async () => {
     //Se trata de añadir un juego pero sin JWT. 401 Unauthorized.
-    const response = await fetch(`${baseUrl}/api/users/1/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/1/library`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gameId: 1 }),
@@ -315,7 +284,7 @@ describe("user library authorization E2E", () => {
 
     //Concha entra y trata de añadir un juego a la biblioteca de Vicente. Esto no se permite.
     //Similar, aunque no igual, a la prueba de actualizar un juego de otro usuario.
-    const response = await fetch(`${baseUrl}/api/users/${vicente.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${vicente.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -334,7 +303,7 @@ describe("user library authorization E2E", () => {
     const accessToken = await createAccessToken(concha.id);
 
     //Concha entra y trata de añadir un juego que no existe a su propia biblioteca. 404 Not Found.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -370,7 +339,7 @@ describe("user library authorization E2E", () => {
 
     //Concha entra y trata de añadir un juego que ya tiene en su biblioteca.
     // No admitimos duplicados. 409 Conflict.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -395,7 +364,7 @@ describe("user library authorization E2E", () => {
 
     //Concha entra y trata de añadir un juego a su propia biblioteca
     //En este caso el body de la peticion es invalido. 400 Bad Request.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -417,7 +386,7 @@ describe("user library authorization E2E", () => {
     //Si el juego no existe no puede estar en la biblioteca. 404 Not Found.
     //Ya teniamos el de actualizar un juego de otro usuario, este aun no.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/999999`,
+      `${server.baseUrl}/api/users/${concha.id}/library/999999`,
       {
         method: "PUT",
         headers: {
@@ -450,7 +419,7 @@ describe("user library authorization E2E", () => {
     //En este caso el juego podria existir, pero no esta en la biblioteca de Concha.
     //404 Not Found.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "PUT",
         headers: {
@@ -472,7 +441,7 @@ describe("user library authorization E2E", () => {
 
     //Concha entra y trata de eliminar un juego que no existe de su propia biblioteca. 404 Not Found.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/999999`,
+      `${server.baseUrl}/api/users/${concha.id}/library/999999`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -502,7 +471,7 @@ describe("user library authorization E2E", () => {
 
     //Concha trata de eliminar un juego de su propia biblioteca. 200ok.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -521,7 +490,7 @@ describe("user library authorization E2E", () => {
   it("returns 401 when deleting without a JWT", async () => {
     //Se trata de eliminar un juego pero sin JWT. 401 Unauthorized.
     //Ademas se coreta rapido ya que users/1/ no pasa ni de la autenticacion.
-    const response = await fetch(`${baseUrl}/api/users/1/library/1`, {
+    const response = await fetch(`${server.baseUrl}/api/users/1/library/1`, {
       method: "DELETE",
     });
 
@@ -552,7 +521,7 @@ describe("user library authorization E2E", () => {
     //Concha trata de eliminar un juego de la biblioteca de Vicente. Esto no se permite. 404 Not Found.
     //Importante el 404 y no el 403, SEGURIDAD. Lo repito pa que no se olvide.
     const response = await fetch(
-      `${baseUrl}/api/users/${vicente.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${vicente.id}/library/${game.id}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -579,7 +548,7 @@ describe("user library authorization E2E", () => {
 
     //Concha trata de eliminar un juego que no tiene en su biblioteca. 404 Not Found.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -608,7 +577,7 @@ describe("user library authorization E2E", () => {
     const accessToken = await createAccessToken(concha.id);
 
     //Concha entra y trata de consultar su propia biblioteca. 200 OK.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const body = await response.json();
@@ -627,7 +596,7 @@ describe("user library authorization E2E", () => {
     const accessToken = await createAccessToken(concha.id);
 
     //Concha entra y trata de consultar la biblioteca de Vicente. Esto no se permite. 404 (como antes)
-    const response = await fetch(`${baseUrl}/api/users/${vicente.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${vicente.id}/library`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -642,7 +611,7 @@ describe("user library authorization E2E", () => {
 
     //Concha entra y trata de consultar la biblioteca de un usuario que no existe. 404 Not Found.
     //En este caso 404 es no es por seguridad, sino porque el usuario no existe.
-    const response = await fetch(`${baseUrl}/api/users/999999/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/999999/library`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -660,7 +629,7 @@ describe("user library authorization E2E", () => {
 
     //Aqui quien entra es un ADMIN, la cosa cambia.
     //ADMIN puede consultar la biblioteca de otro usuario. 200 OK.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const body = await response.json();
@@ -672,7 +641,7 @@ describe("user library authorization E2E", () => {
   it("returns 401 when querying a library without a JWT", async () => {
     //Facil, aqui no hay JWT. 401 Unauthorized.
     //Mismo sistema que antes, users/1/ no pasa ni de la autenticacion.
-    const response = await fetch(`${baseUrl}/api/users/1/library`);
+    const response = await fetch(`${server.baseUrl}/api/users/1/library`);
 
     expect(response.status).toBe(401);
   });
@@ -696,7 +665,7 @@ describe("user library authorization E2E", () => {
     const accessToken = await createAccessToken(admin.id);
 
     //el Admin trata de añadir un juego a la biblioteca de Concha. 200 OK.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -741,7 +710,7 @@ describe("user library authorization E2E", () => {
 
     //El Admin trata de actualizar un juego de la biblioteca de Concha. 200 OK.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "PUT",
         headers: {
@@ -784,7 +753,7 @@ describe("user library authorization E2E", () => {
 
     //El Admin trata de eliminar un juego de la biblioteca de Concha. 200 OK.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -816,7 +785,7 @@ describe("user library authorization E2E", () => {
     const accessToken = await createAccessToken(concha.id);
 
     //Fastify/Ajv convierte el string numerico al entero definido por el schema.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -850,7 +819,7 @@ describe("user library authorization E2E", () => {
     const accessToken = await createAccessToken(concha.id);
 
     //Fastify/Ajv elimina propiedades no declaradas porque additionalProperties es false.
-    const response = await fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+    const response = await fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -876,7 +845,7 @@ describe("user library authorization E2E", () => {
 
     //Si se trata de actualizar un juego en la biblioteca de Concha pero el body esta vacio, 400 Bad Request.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/1`,
+      `${server.baseUrl}/api/users/${concha.id}/library/1`,
       {
         method: "PUT",
         headers: {
@@ -898,7 +867,7 @@ describe("user library authorization E2E", () => {
 
     //Si se trata de actualizar un juego en la biblioteca de Concha pero el status es invalido, 400 Bad Request.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/1`,
+      `${server.baseUrl}/api/users/${concha.id}/library/1`,
       {
         method: "PUT",
         headers: {
@@ -932,7 +901,7 @@ describe("user library authorization E2E", () => {
 
     //Fastify/Ajv elimina propiedades no declaradas porque additionalProperties es false.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "PUT",
         headers: {
@@ -960,7 +929,7 @@ describe("user library authorization E2E", () => {
 
     //Si se trata de eliminar un juego de la biblioteca de Concha pero el parametro de la ruta no es un entero, 400 Bad Request.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/not-an-integer`,
+      `${server.baseUrl}/api/users/${concha.id}/library/not-an-integer`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -989,7 +958,7 @@ describe("user library authorization E2E", () => {
     //La entrada no existe inicialmente. La DB debe ser la autoridad de integridad
     //y detectar el duplicado via la clave unica (user_id, game_id).
     const responsePromises = [
-      fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+      fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -997,7 +966,7 @@ describe("user library authorization E2E", () => {
         },
         body: JSON.stringify({ gameId: game.id }),
       }),
-      fetch(`${baseUrl}/api/users/${concha.id}/library`, {
+      fetch(`${server.baseUrl}/api/users/${concha.id}/library`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -1020,7 +989,7 @@ describe("user library authorization E2E", () => {
 
     // Una segunda operación normal sobre la entrada persistida debe seguir funcionando.
     const updateResponse = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "PUT",
         headers: {
@@ -1061,7 +1030,7 @@ describe("user library authorization E2E", () => {
     //Concha actualiza su entrada con recommendation y verificamos que se persiste
     //a traves de la frontera real: HTTP -> route -> validation -> service -> repository -> PostgreSQL.
     const response = await fetch(
-      `${baseUrl}/api/users/${concha.id}/library/${game.id}`,
+      `${server.baseUrl}/api/users/${concha.id}/library/${game.id}`,
       {
         method: "PUT",
         headers: {

@@ -174,18 +174,36 @@ describe("POST /api/recommendations E2E", () => {
     expect(body.notices).toContain("PARTIAL_RESULTS");
   });
 
-  it("more anónimo exige login", async () => {
-    const response = await app.inject({
+  it("more anónimo con contexto: ya NO exige login", async () => {
+    await seedPiratesGame();
+
+    const search = await app.inject({
       method: "POST",
       url: "/api/recommendations",
-      payload: { message: "dame más", action: "more" },
+      payload: { message: "quiero un juego de piratas" },
+    });
+    expect(search.statusCode).toBe(200);
+
+    const more = await app.inject({
+      method: "POST",
+      url: "/api/recommendations",
+      payload: {
+        message: "dame más",
+        action: "more",
+        contextIntent: search.json().intent,
+        shownGameIds: search.json().results.map((item) => item.game.id),
+      },
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json().notice).toBe("LOGIN_REQUIRED");
+    expect(more.statusCode).toBe(200);
+    const body = more.json();
+    expect(body.results).toHaveLength(0);
+    expect(body.meta.action).toBe("more");
+    expect(body.meta.lifecycle).toBe("continue");
+    expect(body.notices).not.toContain("REFINE_REQUIRES_LOGIN");
   });
 
-  it("usuario autenticado: search guarda sesión y more excluye los mostrados", async () => {
+  it("usuario autenticado: more excluye los mostrados del contexto del cliente", async () => {
     await seedPiratesGame();
     const { accessToken } = await createUserAndToken();
 
@@ -201,7 +219,12 @@ describe("POST /api/recommendations E2E", () => {
     const more = await app.inject({
       method: "POST",
       url: "/api/recommendations",
-      payload: { message: "dame más", action: "more" },
+      payload: {
+        message: "dame más",
+        action: "more",
+        contextIntent: search.json().intent,
+        shownGameIds: search.json().results.map((item) => item.game.id),
+      },
       headers: { authorization: `Bearer ${accessToken}` },
     });
 
@@ -209,6 +232,7 @@ describe("POST /api/recommendations E2E", () => {
     const body = more.json();
     expect(body.results).toHaveLength(0);
     expect(body.meta.action).toBe("more");
+    expect(body.meta.lifecycle).toBe("continue");
     expect(body.meta.exhaustedPool).toBe(true);
     expect(body.notices).toContain("SEARCH_EXHAUSTED");
   });
@@ -257,7 +281,10 @@ describe("POST /api/recommendations E2E", () => {
     const second = await app.inject({
       method: "POST",
       url: "/api/recommendations",
-      payload: { message: "si que quiero" },
+      payload: {
+        message: "si que quiero",
+        contextIntent: first.json().intent,
+      },
       headers: { authorization: `Bearer ${accessToken}` },
     });
 

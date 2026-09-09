@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DiscoveryManager,
+  dropRelaxGroup,
   knownSemanticsCount,
+  RELAX_ORDER,
 } from "../../src/orchestrator/discovery.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import { RECOMMENDATION_CONFIG } from "../../src/recommendation/constants.js";
@@ -609,5 +611,247 @@ describe("knownSemanticsCount", () => {
     expect(
       knownSemanticsCount(makeGame({ id: 2, difficulty: 0.5, horror: 0.1 })),
     ).toBe(2);
+  });
+});
+
+describe("RELAX_ORDER y dropRelaxGroup", () => {
+  it("suelta en orden años → perspectives → platforms → modes → themes → genres → keywords", () => {
+    expect(RELAX_ORDER).toEqual([
+      "years",
+      "perspectives",
+      "platforms",
+      "gameModes",
+      "themes",
+      "genres",
+      "keywords",
+    ]);
+  });
+
+  it("suelta solo el grupo pedido y jamás toca los excluidos", () => {
+    const intent = makeIntent({
+      keywords: ["cowboys"],
+      objective: {
+        genres: ["ADVENTURE"],
+        themes: ["ACTION", "OPEN_WORLD"],
+        platforms: ["PC"],
+        gameModes: null,
+        perspectives: null,
+      },
+      releaseYear: 2010,
+      excluded: {
+        keywords: ["mods"],
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+      },
+    });
+    const dropped = dropRelaxGroup(intent, "themes");
+    expect(dropped.objective?.themes).toBeNull();
+    expect(dropped.objective?.genres).toEqual(["ADVENTURE"]);
+    expect(dropped.keywords).toEqual(["cowboys"]);
+    expect(dropped.releaseYear).toBe(2010);
+    expect(dropped.excluded?.keywords).toEqual(["mods"]);
+  });
+});
+
+describe("DiscoveryManager.discoverRelaxed", () => {
+  const COWBOYS_INTENT = makeIntent({
+    keywords: ["cowboys"],
+    objective: {
+      genres: null,
+      themes: ["ACTION", "OPEN_WORLD"],
+      platforms: null,
+      gameModes: null,
+      perspectives: null,
+    },
+  });
+
+  it("criba en cascada: lo que falla el must completo pasa al soltar themes", async () => {
+    const { discovery, catalog, igdb, budget } = makeSetup({
+      filteredResults: [
+        makeRaw(201, "Cowboy Action", {
+          themes: [{ id: 1, name: "Action" }],
+          keywords: [{ id: 5, name: "cowboys" }],
+        }),
+      ],
+    });
+
+    const attempt = await discovery.discoverRelaxed(
+      "cowboys",
+      8,
+      undefined,
+      COWBOYS_INTENT,
+    );
+
+    expect(attempt.outcome).toBe("ok");
+    expect(attempt.newGames).toHaveLength(1);
+    // Grupos vacíos (años, perspectives, platforms, modes) se saltan sin ruido.
+    expect(attempt.droppedGroups).toEqual(["themes"]);
+    expect(attempt.relaxedIntent.objective?.themes).toBeNull();
+    expect(attempt.relaxedIntent.keywords).toEqual(["cowboys"]);
+    // 1 llamada estricta previa no hay (fresco): amplia + where relajado.
+    // (la rica no existe aquí: 1 raw < 2*8).
+    expect(igdb.filteredCalls).toHaveLength(2);
+    expect(catalog.createCalls).toBe(1);
+    expect(budget.remaining("igdb")).toBe(98);
+  });
+
+  it("sin red flags relajados: los excluidos nunca se crean", async () => {
+    const { discovery, catalog } = makeSetup({
+      filteredResults: [
+        makeRaw(202, "Cowboy Mods", {
+          themes: [{ id: 1, name: "Action" }],
+          keywords: [{ id: 5, name: "cowboys" }],
+        }),
+      ],
+    });
+    const intent = makeIntent({
+      keywords: ["cowboys"],
+      objective: {
+        genres: null,
+        themes: ["ACTION", "OPEN_WORLD"],
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+      },
+      excluded: {
+        keywords: ["cowboys"],
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+      },
+    });
+
+    const attempt = await discovery.discoverRelaxed(
+      "cowboys",
+      8,
+      undefined,
+      intent,
+    );
+
+    expect(attempt.newGames).toHaveLength(0);
+    expect(catalog.createCalls).toBe(0);
+  });
+
+  it("sin presupuesto IGDB no llama y marca budget-exhausted", async () => {
+    const { discovery, igdb } = makeSetup({ limits: { igdb: 0 } });
+
+    const attempt = await discovery.discoverRelaxed(
+      "cowboys",
+      8,
+      undefined,
+      COWBOYS_INTENT,
+    );
+
+    expect(attempt.outcome).toBe("budget-exhausted");
+    expect(attempt.budgetExhausted).toBe(true);
+    expect(igdb.filteredCalls).toHaveLength(0);
+  });
+
+  it("recicla la lista estricta y completa con amplia + where relajado", async () => {
+    const { discovery, igdb } = makeSetup({
+      filteredResults: [
+        makeRaw(201, "Cowboy Action", {
+          themes: [{ id: 1, name: "Action" }],
+          keywords: [{ id: 5, name: "cowboys" }],
+        }),
+      ],
+    });
+
+    // La pasada estricta la tumba el must pero deja la lista en caché.
+    const strict = await discovery.discoverByQuery(
+      "cowboys",
+      2,
+      undefined,
+      COWBOYS_INTENT,
+    );
+    expect(strict.newGames).toHaveLength(0);
+    expect(igdb.filteredCalls).toHaveLength(1);
+
+    const attempt = await discovery.discoverRelaxed(
+      "cowboys cowgirls",
+      8,
+      undefined,
+      COWBOYS_INTENT,
+    );
+
+    // 1 estricta + amplia + where relajado (la lista cacheada sola no basta).
+    expect(igdb.filteredCalls).toHaveLength(3);
+    expect(attempt.newGames).toHaveLength(1);
+    expect(attempt.droppedGroups).toEqual(["themes"]);
+  });
+
+  it("sin caché la amplia usa el PRIMER keyword como texto (no la frase)", async () => {
+    const { discovery, igdb } = makeSetup({
+      filteredResults: [
+        makeRaw(201, "Cowboy Action", {
+          themes: [{ id: 1, name: "Action" }],
+          keywords: [{ id: 5, name: "cowboys" }],
+        }),
+      ],
+    });
+
+    const attempt = await discovery.discoverRelaxed(
+      "cowboys cowgirls",
+      8,
+      undefined,
+      COWBOYS_INTENT,
+    );
+
+    expect(igdb.filteredCalls).toHaveLength(2);
+    expect(igdb.filteredCalls[0]?.text).toBe("cowboys");
+    expect(igdb.filteredCalls[1]?.text).toBeUndefined();
+    expect(attempt.newGames).toHaveLength(1);
+  });
+
+  it("lista agotada con mismo intent pide la página siguiente (offset)", async () => {
+    const raws = Array.from({ length: 35 }, (_, index) =>
+      makeRaw(300 + index, `Pirate ${index}`),
+    );
+    const { discovery, igdb } = makeSetup({
+      filteredResults: raws,
+      limits: { igdb: 10, brave: 300, llm: 300 },
+    });
+    const intent = makeIntent({ keywords: ["pirates"] });
+
+    const first = await discovery.discoverByQuery(
+      "pirates",
+      100,
+      undefined,
+      intent,
+    );
+    expect(first.newGames).toHaveLength(30);
+    expect(igdb.filteredCalls).toHaveLength(1);
+    expect(igdb.filteredCalls[0]?.offset).toBeUndefined();
+
+    const second = await discovery.discoverByQuery(
+      "pirates",
+      100,
+      undefined,
+      intent,
+    );
+    expect(second.newGames).toHaveLength(5);
+    expect(igdb.filteredCalls).toHaveLength(2);
+    expect(igdb.filteredCalls[1]?.offset).toBe(30);
+
+    // Tercera: tope de 60 por lista → agotada sin más llamadas.
+    const third = await discovery.discoverByQuery(
+      "pirates",
+      100,
+      undefined,
+      intent,
+    );
+    expect(third.newGames).toHaveLength(0);
+    expect(igdb.filteredCalls).toHaveLength(2);
   });
 });

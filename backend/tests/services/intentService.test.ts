@@ -110,6 +110,8 @@ describe("intentService fresh extraction", () => {
     const system = messages.find((m) => m.role === "system");
     // Reglas base del contrato presenteâ€¦
     expect(system?.content).toContain("SEMANTIC attributes, NEVER keywords");
+    // Principio de género literal (vaqueros→cowboys, sin expansión).
+    expect(system?.content).toContain("Inclusive gender expansion is FORBIDDEN");
     // â€¦y el contexto de sesiÃ³n vive en el clasificador/delta, no aquÃ­.
     expect(system?.content).not.toContain("Conversation context");
   });
@@ -160,6 +162,7 @@ describe("applyRefineDelta", () => {
       yearFrom: null,
       yearTo: null,
       semantic: null,
+      excluded: null,
     },
     excluded: null,
     ...overrides,
@@ -179,6 +182,16 @@ describe("applyRefineDelta", () => {
     );
     expect(out.keywords).toEqual(["pirates", "2d"]);
     expect(out.objective?.genres).toEqual(["ROLE_PLAYING_RPG"]);
+  });
+
+  it("unicidad tolerancia-cero: caso, espacios y repetidos colapsan", () => {
+    const out = applyRefineDelta(
+      PREVIOUS,
+      delta({
+        add: { ...delta().add!, keywords: ["Pirates ", "PIRATES", "pirates"] },
+      }),
+    );
+    expect(out.keywords).toEqual(["pirates"]);
   });
 
   it("remove keywords: quita el pedido y conserva el resto", () => {
@@ -232,6 +245,104 @@ describe("applyRefineDelta", () => {
     expect(out.yearTo).toBeNull();
     expect(out.excluded?.themes).toEqual(["HORROR"]);
   });
+
+  it("remove.excluded revoca una exclusión previa (los mods son irrelevantes)", () => {
+    const withExclusion: GameSearchIntent = {
+      ...PREVIOUS,
+      excluded: {
+        keywords: ["mods"],
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+      },
+    };
+    const out = applyRefineDelta(
+      withExclusion,
+      delta({
+        remove: {
+          ...delta().remove!,
+          excluded: {
+            keywords: ["mods"],
+            genres: null,
+            themes: null,
+            platforms: null,
+            gameModes: null,
+            perspectives: null,
+            releaseYear: null,
+            yearFrom: null,
+            yearTo: null,
+          },
+        },
+      }),
+    );
+    expect(out.excluded?.keywords).toBeNull();
+    expect(out.keywords).toEqual(["pirates"]);
+  });
+
+  it("add revoca la exclusión del mismo término (ok, con mods)", () => {
+    const withExclusion: GameSearchIntent = {
+      ...PREVIOUS,
+      excluded: {
+        keywords: ["mods"],
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+      },
+    };
+    const out = applyRefineDelta(
+      withExclusion,
+      delta({ add: { ...delta().add!, keywords: ["mods"] } }),
+    );
+    expect(out.excluded?.keywords).toBeNull();
+    expect(out.keywords).toEqual(["pirates", "mods"]);
+  });
+
+  it("solo X: el delta quita el resto de grupos y el ancla", () => {
+    const cluttered: GameSearchIntent = {
+      gameReferenced: ["Red Dead Redemption"],
+      objective: {
+        genres: ["ADVENTURE"],
+        themes: ["ACTION", "OPEN_WORLD"],
+        platforms: null,
+        gameModes: ["SINGLE_PLAYER"],
+        perspectives: null,
+      },
+      keywords: ["cowboys"],
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      excluded: null,
+      relation: null,
+      semantic: null,
+    };
+    const out = applyRefineDelta(
+      cluttered,
+      delta({
+        remove: {
+          ...delta().remove!,
+          genres: ["ADVENTURE"],
+          themes: ["ACTION", "OPEN_WORLD"],
+          gameModes: ["SINGLE_PLAYER"],
+          gameReferenced: ["Red Dead Redemption"],
+        },
+      }),
+    );
+    expect(out.keywords).toEqual(["cowboys"]);
+    expect(out.objective?.genres).toBeNull();
+    expect(out.objective?.themes).toBeNull();
+    expect(out.objective?.gameModes).toBeNull();
+    expect(out.gameReferenced).toBeNull();
+  });
 });
 
 
@@ -250,6 +361,21 @@ describe("classifyRelation", () => {
     expect(messages[0].role).toBe("system");
     expect(messages[1].content).toContain("Previous search intent");
     expect(messages[1].content).toContain("mÃ¡s violento");
+  });
+
+  it("el prompt ordena 'solo X' como búsqueda nueva aunque el tema coincida", async () => {
+    const invoke = vi.fn().mockResolvedValue({ relation: "new" });
+    vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
+
+    await classifyRelation(
+      "solo juegos de cowboys",
+      makeIntent({ keywords: ["cowboys"] }),
+    );
+
+    const messages = invoke.mock.calls[0][0] as { role: string; content: string }[];
+    const system = messages.find((m) => m.role === "system")?.content ?? "";
+    expect(system).toContain("solo");
+    expect(system).toContain("ALWAYS means");
   });
 
   it("el extractor con presupuesto clasifica y gasta 1 llamada LLM", async () => {

@@ -53,6 +53,12 @@ describe("buildQueryVariants", () => {
     ).toEqual(["pirates"]);
   });
 
+  it("unicidad tolerancia-cero: sin variantes dobles tipo 'cowboys cowboys'", () => {
+    expect(
+      buildQueryVariants(makeIntent({ keywords: ["cowboys", "Cowboys "] })),
+    ).toEqual(["cowboys"]);
+  });
+
   it("sin keywords usa los términos de género", () => {
     const variants = buildQueryVariants(
       makeIntent({
@@ -67,5 +73,37 @@ describe("buildQueryVariants", () => {
     );
 
     expect(variants.length).toBeGreaterThan(0);
+  });
+
+  it("solo tema + modo (mmo fantasía) genera variante: siempre se llama a IGDB", () => {
+    const variants = buildQueryVariants(
+      makeIntent({
+        objective: {
+          genres: null,
+          themes: ["FANTASY"],
+          platforms: null,
+          gameModes: ["MASSIVELY_MULTIPLAYER"],
+          perspectives: null,
+        },
+      }),
+    );
+
+    expect(variants).toEqual(["fantasy mmo"]);
+  });
+
+  it("solo plataforma genera variante en vez de no-query", () => {
+    const variants = buildQueryVariants(
+      makeIntent({
+        objective: {
+          genres: null,
+          themes: null,
+          platforms: ["PC"],
+          gameModes: null,
+          perspectives: null,
+        },
+      }),
+    );
+
+    expect(variants).toEqual(["pc"]);
   });
 });

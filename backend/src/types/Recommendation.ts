@@ -32,7 +32,8 @@ export type NoticeCode =
   | "DISCOVERY_BUDGET_EXHAUSTED"
   | "DISCOVERY_UNAVAILABLE"
   | "CATALOG_FULL"
-  | "PG_DEGRADED";
+  | "PG_DEGRADED"
+  | "RELAXED_FILTERS";
 
 export interface RecommendedGameDTO {
   id: number;
@@ -79,11 +80,25 @@ export interface RecommendationResultItem {
 
 export interface RecommendationMeta {
   action: RecommendationAction;
+  /*
+   * Ciclo de vida conversacional (el cliente es el dueño del contexto):
+   * "reset" = el turno empezó UNA BÚSQUEDA NUEVA (el cliente vacía su
+   * listado de mostrados y adopta el intent devuelto como contexto nuevo);
+   * "continue" = el turno siguió el mismo hilo (refine, more o ningún
+   * resultado) y el cliente acumula mostrados.
+   */
+  lifecycle: "reset" | "continue";
   evaluatedCandidates: number;
   partial: boolean;
   exhaustedPool: boolean;
   tierCounts: Record<MatchTier, number>;
   discoveryUnitsUsed: number;
+  /*
+   * Grupos de requisitos soltados por la criba relajada (solo "more"):
+   * "years" | "perspectives" | "platforms" | "gameModes" | "themes" |
+   * "genres" | "keywords". Ausente o vacío = búsqueda estricta.
+   */
+  relaxedFilters?: string[];
 }
 
 export interface RecommendationResponse {
@@ -97,3 +112,18 @@ export interface RecommendationResponse {
   notices: NoticeCode[];
   meta: RecommendationMeta;
 }
+
+/*
+ * Eventos del stream POST /api/recommendations/stream (SSE por trozos):
+ * intent nada más resolverse, snapshots rankeados por tanda creada y done
+ * con la respuesta completa final. El endpoint clásico sigue intacto.
+ */
+export type RecommendationStreamEvent =
+  | { event: "intent"; intent: GameSearchIntent }
+  | { event: "results"; results: RecommendationResultItem[] }
+  | { event: "done"; response: RecommendationResponse }
+  | { event: "error"; status: number; message?: string; notice?: string };
+
+export type RecommendationStreamSink = (
+  event: RecommendationStreamEvent,
+) => void;

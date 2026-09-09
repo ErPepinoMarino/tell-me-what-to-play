@@ -150,6 +150,8 @@ export class FakeCatalogLayer implements CatalogLayer {
     themes: string[];
     keywords: string[];
     platforms: string[];
+    gameModes?: string[];
+    perspectives?: string[];
     limit: number;
   }): Promise<Game[]> {
     this.findCandidatesCalls++;
@@ -158,7 +160,9 @@ export class FakeCatalogLayer implements CatalogLayer {
       filter.genres.length > 0 ||
       filter.themes.length > 0 ||
       filter.keywords.length > 0 ||
-      filter.platforms.length > 0;
+      filter.platforms.length > 0 ||
+      (filter.gameModes ?? []).length > 0 ||
+      (filter.perspectives ?? []).length > 0;
     if (!hasSignals) return all.slice(0, filter.limit);
 
     const matching = all.filter(
@@ -166,6 +170,8 @@ export class FakeCatalogLayer implements CatalogLayer {
         overlap(game.genres, filter.genres) ||
         overlap(game.themes, filter.themes) ||
         overlap(game.platforms, filter.platforms) ||
+        overlap(game.gameModes, filter.gameModes ?? []) ||
+        overlap(game.perspectives, filter.perspectives ?? []) ||
         overlapKeywords(game.keywords, filter.keywords),
     );
     return (matching.length > 0 ? matching : all).slice(0, filter.limit);
@@ -264,7 +270,9 @@ export class FakeIgdbClient implements IgdbClient {
   async filteredSearch(options: FilteredSearchOptions): Promise<IgdbGameRaw[]> {
     this.filteredCalls.push(options);
     if (this.error) throw this.error;
-    return this.filteredResults.slice(0, options.limit ?? this.filteredResults.length);
+    const limit = options.limit ?? this.filteredResults.length;
+    const offset = options.offset ?? 0;
+    return this.filteredResults.slice(offset, offset + limit);
   }
 
   async fetchAllKeywords(): Promise<{ id: number; name: string; slug: string }[]> {

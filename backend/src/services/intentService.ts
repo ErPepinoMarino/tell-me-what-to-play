@@ -14,66 +14,30 @@ import { SEMANTIC_FIELDS } from "../matching/constants.js";
 // 1. Instrucciones y anti prompt injection para el modelo de AI
 const instructions = `You extract video game search preferences from user input into a structured intent.
 
-CONTRACT: every field you fill (keywords, themes, genres, platforms, gameModes, perspectives, releaseYear, yearFrom, yearTo) is a HARD REQUIREMENT. The results MUST have ALL of them: games may have more than requested (more genres, more themes, more platforms, more keywords), never less. Fill a field ONLY when the user explicitly asks for it; otherwise null. Semantic attributes are the ONLY numeric ranking signal.
+CONTRACT: every field you fill (keywords, themes, genres, platforms, gameModes, perspectives, releaseYear, yearFrom, yearTo) is a HARD REQUIREMENT. The results MUST have ALL of them: games may have more than requested, never less. Fill a field ONLY when the user explicitly asks for it; otherwise null. Semantic attributes are the ONLY numeric ranking signal.
 
-Rules:
-- Semantic attributes are numbers between 0 and 1.
-- 0 means the user explicitly wants the complete absence of that attribute.
-- 1 means the user wants that attribute to be abundant or central.
-- null means the attribute could not be clearly inferred. Never confuse null with 0.
-- "keywords" is an OPEN vocabulary of HARD thematic requirements (e.g., "western", "cooking", "pirates", "zombies", "soulslike", "roguelike", "metroidvania", "hack and slash", "steampunk", "cyberpunk", "3d", "pixel art"). Include a term ONLY when it is clearly and explicitly inferable.
-- "themes" is a CLOSED vocabulary of the IGDB themes (world/tone/setting): action, fantasy, science fiction, horror, thriller, survival, historical, stealth, comedy, drama, romance, mystery, open world, sandbox, warfare, party, kids, educational, business, non-fiction, erotic, 4X. THEMES ARE MUST FILTERS, like genres.
-- Fill themes ONLY when the user EXPLICITLY names the world/tone ("de fantasía", "fantasy", "de terror", "mundo abierto", "open world", "sci-fi", "sigilo"). NEVER infer a theme from keywords or the setting: "plantas y zombies" → keywords: ["plants", "zombies"], themes: null — a zombie game is not necessarily fantasy, horror or anything else; "dame un juego que incluya plantas y zombies" → keywords: ["plants", "zombies"], themes: null.
-- NEVER INFER GENRES OR SEMANTICS FROM A THEME. A theme or franchise keyword does NOT imply a genre or a mood:
-  - "un juego de zombies" → genres: null, semantic: null, keywords: ["zombies"] (zombie games can be horror, comedy, strategy or shooters — the genre is the user's choice, not yours).
-  - "un juego de coches" → genres: null, keywords: ["cars"] (NOT genres: ["RACING"]).
-  - Genres/semantics ONLY when the user names them explicitly.
-- GENRES are the STYLE OF PLAY the user names explicitly (you fill them MORE often than themes — a genre is named, not inferred):
-  - "de aventura", "aventura", "adventure" → ["ADVENTURE"].
-  - "aventura gráfica", "aventuras gráficas", "graphic adventure", "point and click", "point-and-click" → ["POINT_AND_CLICK"].
-  - "plataformas", "platformer" → ["PLATFORM"]. "RPG", "rol", "juego de rol" → ["ROLE_PLAYING_RPG"].
-  - "shooter", "disparos" → ["SHOOTER"]. "estrategia" → ["STRATEGY"]. "puzles", "puzzle" → ["PUZZLE"]. "carreras" → ["RACING"]. "deportes" → ["SPORT"]. "lucha" → ["FIGHTING"].
-  - Pick ONE genre value when unsure between related ones (the results must have ALL requested genres, so never list both ADVENTURE and POINT_AND_CLICK for a single named genre).
-- NEVER put a genre name in keywords: "un point and click de piratas" → objective.genres: ["POINT_AND_CLICK"], keywords: ["pirates"] — NOT keywords: ["point and click", "pirates"].
-  - Worked example: "quiero una aventura gráfica de piratas tranquila y en 2d" → objective.genres: ["POINT_AND_CLICK"], keywords: ["pirates", "2d"], themes: null ("aventura gráfica" is a genre, NOT the ACTION theme), semantic: { coziness: 0.8 }.
-- CLASSIFY every request into the right field. Atmosphere, mood and feeling words are SEMANTIC attributes, NEVER keywords:
-  - "dark", "grim", "bleak" → semantic darkness.
-  - "claustrophobic", "isolated", "lonely", "oppressive" → semantic isolation (and tension when suffocating).
-  - "cozy", "relaxing", "chill", "tranquilo", "tranquila", "apacible", "relajante" → semantic coziness (high: 0.7-0.9).
-  - "fast", "frantic", "rápido", "trepidante" → high pace (0.8-1.0); "slow", "paced", "lento", "pausado" → LOW pace (0.1-0.2). Never leave pace at 0.5 for a stated rhythm.
-  - "scary", "terrifying", "de terror", "spooky" → themes: ["HORROR"] and semantic horror (horror is a THEME, NOT a genre and NOT a keyword).
-  - "de acción", "acción" → themes: ["ACTION"] (not genres, not keywords).
-  - "fantasía", "fantasy" → themes: ["FANTASY"]. "ciencia ficción", "sci-fi" → themes: ["SCIENCE_FICTION"].
-  - "mundo abierto", "open world" → themes: ["OPEN_WORLD"]. "sigilo" → themes: ["STEALTH"].
-  - NEVER duplicate: if a word is already expressed as a theme, genre or semantic attribute, do not also put it in keywords.
-  - Worked example: "un juego oscuro, asfixiante, de terror en 3d" →
-    themes: ["HORROR"], keywords: ["3d"],
-    semantic: { darkness: 1, isolation: 1, tension: 1, horror: 1 }.
-    NOT keywords: ["dark", "claustrophobic", "horror"].
-- The user message may be in ANY language (Spanish, English, etc.). ALWAYS normalize keywords to CANONICAL ENGLISH terms, lowercase: "coches"→"cars", "zombis"/"muertos vivientes"→"zombies", "naves espaciales"→"space", "granja"→"farming", "vaqueros"→"cowboys", "puzles"→"puzzle".
-- Prefer CANONICAL established terms: "zombies" (not "undead"), "soulslike" (not "like Dark Souls"), "vampires" (not "bloodsucker"), "steampunk" (NOT "cyberpunk" — steampunk and cyberpunk are completely different subgenres, never confuse them), "cyberpunk" (only when the user means cyberpunk).
-- Visual styles are keywords, not perspectives: "2d" → keywords ["2d"], "3d" → keywords ["3d"], "pixel art" → keywords ["pixel art"], "retro" → keywords ["retro"].
-- perspectives is ONLY for explicitly named camera views: "first person" → ["FIRST_PERSON"], "third person" → ["THIRD_PERSON"], "top-down" → ["TOP_DOWN"], "isometric" → ["ISOMETRIC"], "side view" → ["SIDE_VIEW"].
-- Years: "from 2004" → releaseYear 2004. "from the 90s" → yearFrom 1990 and yearTo 1999. "before 2010" → yearTo 2009. "after 2015" → yearFrom 2016. Spanish equivalents work the same: "posteriores al año 2000" → yearFrom 2001. "anteriores a 2010" → yearTo 2009. "del año 2004" → releaseYear 2004.
-- Do NOT infer attributes from a referenced game. A game mentioned by name is only a reference, not a set of preferences.
-- "gameReferenced" must contain ONLY complete video game titles that the user explicitly mentions as a game they know or want to play.
-  - Asking about a specific game ("qué tal X?", "cómo es X?", "y el juego X?", "y que tal el juego X?") → ALWAYS gameReferenced: ["X"]. "y que tal el juego Plantas vs Zombies?" → gameReferenced: ["Plants vs. Zombies"] (a real game title is a reference, NOT a keyword).
-  - "un juego de batman" → gameReferenced: null, keywords: ["batman"] (a franchise or theme is NOT a game).
-  - "quiero jugar a GTA V" → gameReferenced: ["GTA V"].
-  - "algo parecido a Dark Souls pero con pistolas" → gameReferenced: ["Dark Souls"], keywords: ["guns", "shooter"].
-  - NEVER invent or expand a full title from a partial or thematic reference.
+1. FIELD DEFINITIONS (what each field IS and where its vocabulary comes from)
+- keywords: OPEN vocabulary of hard thematic requirements, in canonical English lowercase (established terms: "zombies" not "undead", "soulslike", "vampires"; "steampunk" and "cyberpunk" are different subgenres). Only clearly inferable terms.
+- themes: CLOSED IGDB vocabulary of world/tone/setting: ACTION, FANTASY, SCIENCE_FICTION, HORROR, THRILLER, SURVIVAL, HISTORICAL, STEALTH, COMEDY, DRAMA, ROMANCE, MYSTERY, OPEN_WORLD, SANDBOX, WARFARE, PARTY, KIDS, EDUCATIONAL, BUSINESS, NON_FICTION, EROTIC, FOUR_X. Must filters. Fill only from explicit world/tone words you recognize in any language.
+- genres: CLOSED vocabulary of STYLE OF PLAY: ADVENTURE, ARCADE, CARD_AND_BOARD_GAME, FIGHTING, HACK_AND_SLASH_BEAT_EM_UP, INDIE, MOBA, MUSIC, PINBALL, PLATFORM, POINT_AND_CLICK, PUZZLE, QUIZ_TRIVIA, RACING, REAL_TIME_STRATEGY, ROLE_PLAYING_RPG, SHOOTER, SIMULATOR, SPORT, STRATEGY, TACTICAL, TURN_BASED_STRATEGY, VISUAL_NOVEL. ADVENTURE (action/exploration) and POINT_AND_CLICK (graphic adventure) are different genres: pick ONE when unsure, never both for a single named genre.
+- gameModes: CLOSED vocabulary of how it is played: SINGLE_PLAYER, MULTIPLAYER, COOPERATIVE, COMPETITIVE, MASSIVELY_MULTIPLAYER. MMO is a game mode, never a genre and never a keyword; MOBA is a different thing (a genre). Possessives and plurals ("MMO's", "MMOs") are the same mode, NOT "mods".
+- platforms: the hardware named (PC, PlayStation, Xbox, Switch, ...), mapped to canonical values. perspectives: CLOSED camera vocabulary: FIRST_PERSON, THIRD_PERSON, TOP_DOWN, ISOMETRIC, SIDE_VIEW, TEXT — only for explicitly named camera views, never for visual styles ("2d", "3d", "pixel art", "retro" are keywords).
+- semantic: numbers 0-1 (0 = explicitly absent, 1 = central, null = unknown; never confuse null with 0). The ONLY numeric signal.
+- gameReferenced: ONLY complete video game titles the user explicitly mentions as games they know or want. Franchises and themes are NOT games; never invent or expand titles.
 
-EXCLUSIONS (red flags):
-- "that is not X", "without X", "anything but X", "but not X", "no X" → fill the matching excluded field (keywords, themes, genres, platforms, gameModes, perspectives, releaseYear, yearFrom, yearTo), normalized to canonical English like everything else.
-- Any candidate containing an excluded element is discarded even if it matches everything else, so be precise.
-- "que no sea de terror" → excluded.themes: ["HORROR"]; "que no sea de lego" → excluded.keywords: ["lego"].
-- For games or franchises, EXPAND abbreviations to both the abbreviation and the full name: "que no sea el gta" → excluded.keywords ["gta", "grand theft auto"]. Similarly for other well-known franchises.
+2. INFERENCE RULES
+- Explicit only: a theme, genre or mood NEVER implies another field. A zombie game is not necessarily horror; a car game is not a racing genre; a referenced game implies no preferences at all.
+- One concept, one field: never duplicate the same concept (a theme/genre/semantic word does not also go to keywords).
+- Generic nouns ("game(s)", "juego(s)", "videojuego(s)") are never a genre: they just mean video games.
+- Grammatical gender translates literally: masculine input forms map to masculine English forms ("vaqueros" → keywords ["cowboys"]), feminine to feminine ("vaqueras" → ["cowgirls"]). Inclusive gender expansion is FORBIDDEN: never add the pair unasked.
+- User messages may be in ANY language: map their words to the vocabularies above yourself.
+- Years: exact ("del año 2004" → releaseYear 2004) or ranges ("de los 90" → yearFrom 1990, yearTo 1999; "anteriores a 2010" → yearTo 2009; "posteriores al 2000" → yearFrom 2001).
+- Atmosphere, mood, feeling and rhythm words are SEMANTIC attributes, NEVER keywords: map them to their dimension (darkness, isolation, coziness, pace, difficulty, horror...) with decisive values (high 0.7-1.0, low 0.1-0.2, never a 0.5 default); grinding words ("grindeo", "farmeo") are the keyword ["grind"].
 
-SIMILARITY + EXCLUSION combined (critical — do not drop the reference):
-- "something similar to X but not X" → gameReferenced MUST contain X (the anchor), AND excluded.keywords MUST contain X (normalized; the catalog tags franchise games with the search term that discovered them, so the exclusion is what keeps the franchise out of the results).
-  - "algo similar a god of war pero que no sea god of war" →
-    gameReferenced: ["God of War"], excluded.keywords: ["god of war"],
-    keywords: null unless the user names concrete themes besides the similarity.
+3. EXCLUSIONS (red flags — anything matching is discarded, so be precise)
+- "not X" in any language fills the matching excluded field, canonically ("que no sea de terror" → excluded.themes ["HORROR"]; "no MOBA" → excluded.genres ["MOBA"]). Genre/theme/mode concepts go to their ENUM excluded field, never as free-text keywords; excluded.keywords holds only genuine thematic terms in English.
+- Clearing an exclusion ("los mods son irrelevantes", "con mods" when mods was excluded) revokes it. For franchises, expand abbreviations ("que no sea el gta" → ["gta", "grand theft auto"]).
+- "Something similar to X but not X" keeps X as the anchor AND excludes X by keyword (the catalog tags franchise games with the discovery term): gameReferenced ["God of War"] with excluded.keywords ["god of war"].
 
 RELATION:
 - Set relation: "new" for any fresh search (no previous context, or the user
@@ -117,7 +81,9 @@ CLASSIFY AS:
   - prev: "racing games"; msg: "more" / "sigue buscando" / "dame más" / "más así" / "continúa" / "show more" → refine (no new criteria: user wants more results from the same search)
 
 - "new": the message starts a different game search or is unrelated to the previous one.
+  - "solo", "únicamente", "solamente", "only", "just" + criteria ALWAYS means "new", even when the topic overlaps the previous search: the user is restarting scoped to X, NOT continuing. The same goes for "desde cero" / "from scratch", "nueva búsqueda" / "new search", "empieza de nuevo" / "start over", "olvida todo" / "forget everything".
   Examples:
+  - prev: "cowboys de acción y mundo abierto"; msg: "solo juegos de cowboys" / "only cowboy games" → new (restart scoped to cowboys: previous filters do NOT carry over)
   - prev: "2d adventure"; msg: "quiero un juego de fútbol" / "I want a football game" → new (different topic)
   - prev: "pirate game"; msg: "dame algo de coches" / "give me something with cars" → new
   - prev: null; msg: "un rpg de fantasía" / "a fantasy rpg" → new (first search)
@@ -183,9 +149,11 @@ Previous search intent: provided in the message.
 New message: provided in the message.
 
 INFER the user's intention; do NOT match literal phrases. Fill ONLY what the message adds, adjusts or removes:
-- "add": characteristics the message INTRODUCES or ADJUSTS. Lists are merged into the previous ones; semantic values (0-1) OVERWRITE the previous value of that dimension ("más violento" → violence high; "menos difícil" → difficulty low).
-- "remove": characteristics the message WITHDRAWS from the previous search ("quita el 2d" → keywords; "ya no en PC" → platforms; "olvida lo de la dificultad" → semantic). Years: true = remove the field.
-- "excluded": NEW hard exclusions ("que no sea de terror", "sin sangre") — same rules as the main extraction contract (canonical English, expand franchise abbreviations).
+- "add": characteristics the message INTRODUCES or ADJUSTS. Lists are merged into the previous ones; semantic values (0-1) OVERWRITE the previous value of that dimension ("more violent" → violence high; "less difficult" → difficulty low).
+- "remove": characteristics the message WITHDRAWS from the previous search ("remove the 2d" → keywords; "no longer on PC" → platforms; "forget about difficulty" → semantic). Years: true = remove the field. Dismissed exclusions go here too: "mods are irrelevant", "forget the MOBA exclusion" → remove.excluded.
+- REMOVE BEATS EXCLUDE: "no X" / "sin X" / "quita X" about something ALREADY in the previous search means WITHDRAW it → remove.* (never excluded.*). "no aventura" with genres ["ADVENTURE"] → remove.genres: ["ADVENTURE"]. Only when X is NOT in the previous search does "no X" mean a NEW hard exclusion → excluded.*.
+- "solo X" / "únicamente X" / "only X" / "just X" (if you ever see it here instead of a fresh search): WITHDRAW EVERYTHING else — every group of the previous intent not named by X goes to remove (genres, themes, platforms, gameModes, perspectives, keywords, years as applicable) AND the referenced game goes to remove.gameReferenced. "únicamente cowboys" with genres ["ADVENTURE"], gameReferenced ["Red Dead Redemption"] → remove.genres: ["ADVENTURE"], remove.themes, remove.gameModes as applicable, remove.gameReferenced: ["Red Dead Redemption"], keeping only keywords: ["cowboys"] via add if needed.
+- "excluded": NEW hard exclusions about things NOT in the previous search. Same vocabulary rules as the main extraction contract: canonical English values in their ENUM field ("MMO" is a gameMode, never genres ["MOBA"]; franchise abbreviations expanded). excluded.keywords holds ONLY genuine thematic terms — never genre/theme/mode/platform names, never non-English words.
 - A field the message does not mention stays null. NEVER carry previous values into the delta: the previous intent is merged separately, deterministically.
 - If the message adds nothing interpretable, return everything null.
 
@@ -206,7 +174,8 @@ export async function extractRefineDelta(
 }
 
 // Fusión de listas (keywords, géneros, themes...): unión sin duplicados
-// (comparación case-insensitive) menos lo eliminado. null final = vacío.
+// (comparación con trim + case-insensitive: "Cowboys " y "cowboys" son lo
+// mismo) menos lo eliminado. Se guarda el término recortado. null = vacío.
 function mergeList<T extends string>(
   previous: T[] | null | undefined,
   added: T[] | null,
@@ -214,17 +183,24 @@ function mergeList<T extends string>(
 ): T[] | null {
   const base = [...(previous ?? [])];
   for (const term of added ?? []) {
-    const normalized = term.toLowerCase();
-    if (!base.some((existing) => existing.toLowerCase() === normalized)) {
-      base.push(term);
+    const normalized = term.trim().toLowerCase();
+    if (
+      normalized.length > 0 &&
+      !base.some((existing) => existing.trim().toLowerCase() === normalized)
+    ) {
+      base.push(term.trim() as T);
     }
   }
-  const removedSet = new Set((removed ?? []).map((term) => term.toLowerCase()));
+  const removedSet = new Set(
+    (removed ?? []).map((term) => term.trim().toLowerCase()),
+  );
   // Sin cambios (ni añadir ni quitar), la lista previa se PRESERVA tal cual.
   if ((added ?? []).length === 0 && (removed ?? []).length === 0) {
     return previous && previous.length > 0 ? previous : null;
   }
-  const merged = base.filter((term) => !removedSet.has(term.toLowerCase()));
+  const merged = base.filter(
+    (term) => !removedSet.has(term.trim().toLowerCase()),
+  );
   return merged.length > 0 ? merged : null;
 }
 
@@ -266,9 +242,17 @@ export function applyRefineDelta(
       remove?.perspectives ?? null,
     ),
   };
-  const hasObjective = Object.values(objectiveLists).some(
-    (list) => list !== null,
-  );
+  // Si el remove tocó el objetivo, el resultado manda aunque quede vacío:
+  // quitar el ÚLTIMO criterio debe dejar null, no resucitar el previo.
+  const removeTouchedObjective =
+    (remove?.genres ?? []).length > 0 ||
+    (remove?.themes ?? []).length > 0 ||
+    (remove?.platforms ?? []).length > 0 ||
+    (remove?.gameModes ?? []).length > 0 ||
+    (remove?.perspectives ?? []).length > 0;
+  const hasObjective =
+    Object.values(objectiveLists).some((list) => list !== null) ||
+    removeTouchedObjective;
 
   // Semánticas: overrides del add (solo dimensiones conocidas y numéricas);
   // remove anula dimensiones por nombre. Si todo queda null → previo.
@@ -309,43 +293,68 @@ export function applyRefineDelta(
       remove?.yearFrom === true ? null : (add?.yearFrom ?? previous.yearFrom),
     yearTo: remove?.yearTo === true ? null : (add?.yearTo ?? previous.yearTo),
     excluded: {
-      // Las exclusiones del delta son ADITIVAS sobre las previas, PERO si el
-      // usuario añade explícitamente un criterio que antes excluyó, la
-      // exclusión se revoca (no puede querer Y no querer lo mismo).
+      // Las exclusiones del delta son ADITIVAS sobre las previas, PERO la
+      // exclusión revocada gana: si el usuario descarta X (remove.excluded)
+      // o re-añade X explícitamente (add), se limpia — no puede querer Y no
+      // querer lo mismo.
       keywords: mergeList(
         previous.excluded?.keywords,
         delta.excluded?.keywords ?? null,
-        delta.add?.keywords ?? null,
+        [
+          ...(remove?.excluded?.keywords ?? []),
+          ...(delta.add?.keywords ?? []),
+        ],
       ),
       genres: mergeList(
         previous.excluded?.genres,
         delta.excluded?.genres ?? null,
-        delta.add?.genres ?? null,
+        [...(remove?.excluded?.genres ?? []), ...(delta.add?.genres ?? [])],
       ),
       themes: mergeList(
         previous.excluded?.themes,
         delta.excluded?.themes ?? null,
-        delta.add?.themes ?? null,
+        [...(remove?.excluded?.themes ?? []), ...(delta.add?.themes ?? [])],
       ),
       platforms: mergeList(
         previous.excluded?.platforms,
         delta.excluded?.platforms ?? null,
-        delta.add?.platforms ?? null,
+        [
+          ...(remove?.excluded?.platforms ?? []),
+          ...(delta.add?.platforms ?? []),
+        ],
       ),
       gameModes: mergeList(
         previous.excluded?.gameModes,
         delta.excluded?.gameModes ?? null,
-        delta.add?.gameModes ?? null,
+        [
+          ...(remove?.excluded?.gameModes ?? []),
+          ...(delta.add?.gameModes ?? []),
+        ],
       ),
       perspectives: mergeList(
         previous.excluded?.perspectives,
         delta.excluded?.perspectives ?? null,
-        delta.add?.perspectives ?? null,
+        [
+          ...(remove?.excluded?.perspectives ?? []),
+          ...(delta.add?.perspectives ?? []),
+        ],
       ),
       releaseYear:
-        delta.excluded?.releaseYear ?? previous.excluded?.releaseYear ?? null,
-      yearFrom: delta.excluded?.yearFrom ?? previous.excluded?.yearFrom ?? null,
-      yearTo: delta.excluded?.yearTo ?? previous.excluded?.yearTo ?? null,
+        remove?.excluded?.releaseYear === true
+          ? null
+          : (delta.excluded?.releaseYear ??
+            previous.excluded?.releaseYear ??
+            null),
+      yearFrom:
+        remove?.excluded?.yearFrom === true
+          ? null
+          : (delta.excluded?.yearFrom ??
+            previous.excluded?.yearFrom ??
+            null),
+      yearTo:
+        remove?.excluded?.yearTo === true
+          ? null
+          : (delta.excluded?.yearTo ?? previous.excluded?.yearTo ?? null),
     },
     relation: "refine",
     semantic: hasSemantic

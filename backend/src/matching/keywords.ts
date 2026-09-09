@@ -1,4 +1,4 @@
-// Normalización ligera de keywords para el matching: minúsculas + talo
+﻿// Normalización ligera de keywords para el matching: minúsculas + talo
 // singular quitando una 's' final ("zombies" -> "zombie", "pirates" ->
 // "pirate"). Regla deliberadamente mínima y segura: false negatives raros
 // ("city"/"cities") son preferibles a falsos positivos.
@@ -47,3 +47,113 @@ export const KEYWORD_STOPWORDS = new Set([
   "y",
   "o",
 ]);
+
+/*
+ * Torniquete de género (diseño: específico del español, idioma de la UI).
+ * El modelo a veces "expande inclusivamente" lo que el usuario pide
+ * ("vaqueros" → cowboys + cowgirls) aunque el prompt lo prohíbe. Como el
+ * prompt ha fallado, se ata en código — pero con alcance quirúrgico: SOLO
+ * keywords AÑADIDAS por un delta (nunca extracción fresca ni lo ya
+ * guardado en sesión). El peor caso es perder un añadido recuperable
+ * con un "con X".
+ * Principio: se respeta el género gramatical de la palabra de entrada,
+ * literalmente (vaqueros→cowboys, vaqueras→cowgirls). Sin evidencia en
+ * contra se conserva (conservador).
+ */
+
+// Parejas de género en inglés [masculino, femenino], en singular.
+const GENDER_PAIRS: [string, string][] = [
+  ["cowboy", "cowgirl"],
+  ["hero", "heroine"],
+  ["actor", "actress"],
+  ["waiter", "waitress"],
+  ["boy", "girl"],
+  ["man", "woman"],
+  ["male", "female"],
+];
+
+// ¿El término es esta cara de la pareja? Tolera plural (+s/+es).
+function matchesSide(term: string, side: string): boolean {
+  const lower = term.trim().toLowerCase();
+  if (!lower.startsWith(side)) return false;
+  const rest = lower.slice(side.length);
+  return rest === "" || rest === "s" || rest === "es";
+}
+
+function stripAccents(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+const MASCULINE_ENDINGS = ["o", "os", "or", "ores", "on", "ones"];
+const FEMININE_ENDINGS = ["a", "as", "ora", "oras", "esa", "esas", "ona", "onas"];
+
+// Tokens del mensaje con género gramatical evidente (sin tildes, >3
+// letras, fuera de stopwords: así "más"→"mas" no cuenta como femenino).
+function messageGenders(message: string): { masc: boolean; fem: boolean } {
+  const tokens = stripAccents(message)
+    .split(/[^a-z0-9]+/u)
+    .filter((t) => t.length > 3 && !KEYWORD_STOPWORDS.has(t));
+  let masc = false;
+  let fem = false;
+  for (const token of tokens) {
+    if (token === "mas") continue;
+    if (FEMININE_ENDINGS.some((ending) => token.endsWith(ending))) {
+      fem = true;
+    } else if (MASCULINE_ENDINGS.some((ending) => token.endsWith(ending))) {
+      masc = true;
+    }
+  }
+  return { masc, fem };
+}
+
+export interface GenderCheckedKeywords {
+  kept: string[] | null;
+  dropped: string[];
+}
+
+// Filtra añadidos con género contradicho por el mensaje. null se preserva.
+export function filterGenderMismatchedAdditions(
+  message: string,
+  added: string[] | null | undefined,
+): GenderCheckedKeywords {
+  if (!added) return { kept: added ?? null, dropped: [] };
+  const loweredMessage = message.trim().toLowerCase();
+  const { masc, fem } = messageGenders(message);
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  for (const term of added) {
+    let side: "masc" | "fem" | null = null;
+    for (const [mascSide, femSide] of GENDER_PAIRS) {
+      if (matchesSide(term, femSide)) {
+        side = "fem";
+        break;
+      }
+      if (matchesSide(term, mascSide)) {
+        side = "masc";
+        break;
+      }
+    }
+    if (side === null) {
+      kept.push(term);
+      continue;
+    }
+    // Mención literal en el mensaje manda sobre todo lo demás.
+    if (loweredMessage.includes(term.trim().toLowerCase())) {
+      kept.push(term);
+      continue;
+    }
+    if (side === "fem" && masc && !fem) {
+      dropped.push(term);
+      continue;
+    }
+    if (side === "masc" && fem && !masc) {
+      dropped.push(term);
+      continue;
+    }
+    kept.push(term);
+  }
+  return { kept, dropped };
+}

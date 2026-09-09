@@ -11,7 +11,10 @@ import { healthRoutes } from "./routes/healthRoutes.js";
 import { gameRoutes } from "./routes/gameRoutes.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { userGamesRoutes } from "./routes/userGamesRoutes.js";
-import { recommendationRoutes } from "./routes/recommendationRoutes.js";
+import {
+  recommendationRoutes,
+  recommendationStreamRoutes,
+} from "./routes/recommendationRoutes.js";
 
 /*
  * Construcción de la app separada del listen: los e2e pueden levantar la
@@ -36,6 +39,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(gameRoutes);
   app.register(userGamesRoutes);
   app.register(recommendationRoutes);
+  app.register(recommendationStreamRoutes);
 
   await app.ready();
 

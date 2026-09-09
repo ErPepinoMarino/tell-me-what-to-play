@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { RecommendationResultItem } from "@/types/Recommendation";
 import RecommendationCard from "./RecommendationCard/RecommendationCard";
 
@@ -19,6 +20,16 @@ export default function RecommendationResults({
   demoMode,
   searching,
 }: RecommendationResultsProps) {
+  // Capa 3/3 de traza de streaming (pintado real): distingue "el estado se
+  // actualizó pero React no pintó" de "los eventos llegaron tarde".
+  useEffect(() => {
+    if (results.length > 0) {
+      console.debug("[stream] paint", {
+        count: results.length,
+        ids: results.map((item) => item.game.id),
+      });
+    }
+  }, [results]);
   if (results.length === 0 && !searching) return null;
 
   return (

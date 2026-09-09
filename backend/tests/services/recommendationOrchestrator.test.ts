@@ -1,20 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
-import { RecommendationOrchestrator } from "../../src/orchestrator/recommendationOrchestrator.js";
+import {
+  isSameIntent,
+  RecommendationOrchestrator,
+} from "../../src/orchestrator/recommendationOrchestrator.js";
 import { DiscoveryManager } from "../../src/orchestrator/discovery.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
-import { InMemorySessionStore } from "../../src/sessions/sessionStore.js";
 import {
   RECOMMENDATION_CONFIG,
   type RecommendationConfig,
 } from "../../src/recommendation/constants.js";
 import type { IntentExtractor } from "../../src/orchestrator/types.js";
-import {
-  LoginRequiredError,
-  SessionExpiredError,
-} from "../../src/orchestrator/errors.js";
+import type { KeywordLexiconService } from "../../src/services/keywordLexiconService.js";
 import type { IgdbGameRaw } from "../../src/igdb/types.js";
 import type { Game } from "../../src/types/Game.js";
-import type { GameSearchIntent } from "../../src/types/GameSearchIntent.js";
+import type {
+  GameSearchIntent,
+  RefineDelta,
+} from "../../src/types/GameSearchIntent.js";
 import {
   FakeCacheLayer,
   FakeCatalogLayer,
@@ -64,6 +66,10 @@ interface SetupOptions {
     message: string,
     previous: GameSearchIntent,
   ) => Promise<import("../../src/types/GameSearchIntent.js").RefineDelta>;
+  lexicon?: {
+    canonicalizeIntent(intent: GameSearchIntent): Promise<GameSearchIntent>;
+    drainDropped(): { term: string; topMatch: string | null; similarity: number }[];
+  };
 }
 
 function setup(options: SetupOptions) {
@@ -84,10 +90,6 @@ function setup(options: SetupOptions) {
     llm: options.limits?.llm ?? 0,
   });
   const discovery = new DiscoveryManager(igdb, enrichment, catalog, budget);
-  const sessions = new InMemorySessionStore({
-    ttlMs: 30 * 60 * 1000,
-    maxEntries: 100,
-  });
   const config: RecommendationConfig = {
     ...RECOMMENDATION_CONFIG,
     ...options.config,
@@ -101,8 +103,13 @@ function setup(options: SetupOptions) {
       cache,
       catalog,
       discovery,
-      sessions,
       explainer: { compose: composeExplanation },
+      ...(options.lexicon
+        ? {
+            lexicon:
+              options.lexicon as unknown as KeywordLexiconService,
+          }
+        : {}),
     },
     config,
   );
@@ -114,10 +121,91 @@ function setup(options: SetupOptions) {
     igdb,
     enrichment,
     budget,
-    sessions,
     composeExplanation,
   };
 }
+
+describe("isSameIntent", () => {
+  it("ignora relation, orden de listas y null ≡ []", () => {
+    const a = makeIntent({
+      keywords: ["pirates", "2d"],
+      objective: {
+        genres: ["ROLE_PLAYING_RPG"],
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+      },
+      relation: "new",
+    });
+    const b = makeIntent({
+      keywords: ["2d", "pirates"],
+      objective: {
+        genres: ["ROLE_PLAYING_RPG"],
+        themes: [],
+        platforms: [],
+        gameModes: [],
+        perspectives: [],
+      },
+      relation: "refine",
+    });
+    expect(isSameIntent(a, b)).toBe(true);
+  });
+
+  it("null ≡ objeto con todo vacío (fresco vs fusionado)", () => {
+    const fresh = makeIntent({ keywords: ["pirates"], excluded: null });
+    const merged = makeIntent({
+      keywords: ["pirates"],
+      excluded: {
+        keywords: null,
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+      },
+    });
+    expect(isSameIntent(fresh, merged)).toBe(true);
+  });
+
+  it("detecta cambios en keywords, semánticas y excluidos", () => {
+    const base = makeIntent({ keywords: ["pirates"] });
+    expect(
+      isSameIntent(base, makeIntent({ keywords: ["pirates", "mmo"] })),
+    ).toBe(false);
+    expect(
+      isSameIntent(
+        base,
+        makeIntent({
+          keywords: ["pirates"],
+          semantic: { ...NULL_SEMANTIC, difficulty: 0.8 },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameIntent(
+        { ...base, excluded: null },
+        {
+          ...base,
+          excluded: {
+            keywords: ["mods"],
+            genres: null,
+            themes: null,
+            platforms: null,
+            gameModes: null,
+            perspectives: null,
+            releaseYear: null,
+            yearFrom: null,
+            yearTo: null,
+          },
+        },
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("RecommendationOrchestrator", () => {
   it("búsqueda anónima: devuelve el match local, notices honestos y no llama a IGDB con presupuesto seco", async () => {
@@ -205,59 +293,148 @@ describe("RecommendationOrchestrator", () => {
     expect(response.notices).not.toContain("DISCOVERY_BUDGET_EXHAUSTED");
   });
 
-  it("more reusa la intención de sesión, excluye los mostrados y no llama al extractor", async () => {
-    const { orchestrator, extract, sessions } = setup({
+  it("more reusa la intención del cliente, excluye los mostrados y no llama al extractor", async () => {
+    const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
     });
 
-    await orchestrator.handle({
+    const first = await orchestrator.handle({
       action: "search",
       message: "un RPG de piratas",
       actor: USER,
     });
     expect(extract).toHaveBeenCalledTimes(1);
+    expect(first.response.meta.lifecycle).toBe("reset");
+
+    const { response } = await orchestrator.handle({
+      action: "more",
+      message: "dame más",
+      actor: USER,
+      contextIntent: first.response.intent,
+      shownGameIds: first.response.results.map((item) => item.game.id),
+    });
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect(response.results).toHaveLength(0);
+    expect(response.meta.action).toBe("more");
+    expect(response.meta.lifecycle).toBe("continue");
+    expect(response.meta.exhaustedPool).toBe(true);
+  });
+
+  it("more anónimo con contexto: ya NO exige login", async () => {
+    const { orchestrator } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+    });
+
+    const first = await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
+      actor: ANON,
+    });
+    expect(first.response.results).toHaveLength(1);
+
+    const { response } = await orchestrator.handle({
+      action: "more",
+      message: "dame más",
+      actor: ANON,
+      contextIntent: first.response.intent,
+      shownGameIds: first.response.results.map((item) => item.game.id),
+    });
+    // El "more" anónimo está permitido: no lanza login.
+    expect(response.results).toHaveLength(0);
+    expect(response.meta.lifecycle).toBe("continue");
+    expect(response.notices).not.toContain("REFINE_REQUIRES_LOGIN");
+  });
+
+  it("refine sin contexto previo cae a extracción fresca (sin crash)", async () => {
+    const extractRefineDelta = vi.fn(async () => {
+      throw new Error("no debería llamarse sin previo");
+    });
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: vi.fn(async () => "refine" as const),
+      extractRefineDelta,
+    });
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "y de piratas",
+      actor: USER,
+    });
+
+    expect(extract).toHaveBeenCalledWith("y de piratas");
+    expect(extractRefineDelta).not.toHaveBeenCalled();
+    expect(response.intent).toEqual(PIRATES_INTENT);
+    expect(response.meta.lifecycle).toBe("reset");
+  });
+
+  it("refine sobre intent vacío (contextIntent vacío) cae a extracción fresca", async () => {
+    const { orchestrator, extract } = setup({
+      catalogGames: [PIRATES_GAME],
+      intent: PIRATES_INTENT,
+      classifyRelation: vi.fn(async () => "refine" as const),
+      extractRefineDelta: vi.fn(async () => ({
+        add: {
+          keywords: null,
+          genres: null,
+          themes: null,
+          platforms: null,
+          gameModes: null,
+          perspectives: null,
+          gameReferenced: null,
+          releaseYear: null,
+          yearFrom: null,
+          yearTo: null,
+          semantic: null,
+        },
+        remove: {
+          keywords: null,
+          genres: null,
+          themes: null,
+          platforms: null,
+          gameModes: null,
+          perspectives: null,
+          gameReferenced: null,
+          releaseYear: null,
+          yearFrom: null,
+          yearTo: null,
+          semantic: null,
+          excluded: null,
+        },
+        excluded: null,
+      })),
+    });
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
+      actor: USER,
+      contextIntent: makeIntent(),
+    });
+
+    expect(extract).toHaveBeenCalledWith("un RPG de piratas");
+    expect(response.intent).toEqual(PIRATES_INTENT);
+    expect(response.meta.lifecycle).toBe("reset");
+  });
+
+  it("more sin contexto → EMPTY_INTENT reutilizado (sin error)", async () => {
+    const { orchestrator } = setup({ intent: PIRATES_INTENT });
 
     const { response } = await orchestrator.handle({
       action: "more",
       message: "dame más",
       actor: USER,
     });
-    expect(extract).toHaveBeenCalledTimes(1);
+
     expect(response.results).toHaveLength(0);
-    expect(response.meta.action).toBe("more");
-    expect(response.meta.exhaustedPool).toBe(true);
-
-    const session = sessions.get(1);
-    expect(session?.shownGameIds).toEqual([1]);
-  });
-
-  it("more anónimo exige login", async () => {
-    const { orchestrator } = setup({ intent: PIRATES_INTENT });
-
-    await expect(
-      orchestrator.handle({
-        action: "more",
-        message: "dame más",
-        actor: ANON,
-      }),
-    ).rejects.toThrow(LoginRequiredError);
-  });
-
-  it("more sin sesión previa o expirada devuelve SessionExpiredError", async () => {
-    const { orchestrator } = setup({ intent: PIRATES_INTENT });
-
-    await expect(
-      orchestrator.handle({
-        action: "more",
-        message: "dame más",
-        actor: USER,
-      }),
-    ).rejects.toThrow(SessionExpiredError);
+    expect(response.notices).toContain("EMPTY_INTENT");
+    expect(response.meta.lifecycle).toBe("continue");
   });
 
   it("intención vacía: respuesta inmediata sin tocar catálogo ni IGDB", async () => {
-    const { orchestrator, catalog, igdb, sessions, composeExplanation } = setup(
+    const { orchestrator, catalog, igdb, composeExplanation } = setup(
       {
         intent: makeIntent(),
       },
@@ -277,7 +454,6 @@ describe("RecommendationOrchestrator", () => {
     // La intención vacía no gasta LLM: plantilla determinista
     expect(composeExplanation).not.toHaveBeenCalled();
     expect(response.explanation).toContain("No he llegado a entender");
-    expect(sessions.get(1)?.currentIntent).toEqual(makeIntent());
   });
 
   it("search con sesión: sin intención previa no clasifica y extrae fresco", async () => {
@@ -291,7 +467,7 @@ describe("RecommendationOrchestrator", () => {
         perspectives: null,
       },
     });
-    const { orchestrator, extract, sessions } = setup({
+    const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
     });
@@ -312,7 +488,7 @@ describe("RecommendationOrchestrator", () => {
     // Sin clasificador en deps se asume búsqueda nueva: extracción fresca.
     expect(extract).toHaveBeenLastCalledWith("un RPG de piratas en pixel art");
     expect(response.intent).toEqual(extendedIntent);
-    expect(sessions.get(1)?.currentIntent).toEqual(extendedIntent);
+    expect(response.meta.lifecycle).toBe("reset");
   });
 
   it("search anónimo extrae sin contexto de sesión", async () => {
@@ -355,8 +531,8 @@ describe("RecommendationOrchestrator", () => {
     ]);
   });
 
-  it("INTENT_UNCHANGED: un mensaje sin intención nueva reutiliza la intención previa de sesión", async () => {
-    const { orchestrator, extract, sessions } = setup({
+  it("INTENT_UNCHANGED: un mensaje sin intención nueva reutiliza el contexto del cliente", async () => {
+    const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
     });
@@ -385,11 +561,11 @@ describe("RecommendationOrchestrator", () => {
       action: "search",
       message: "si que quiero",
       actor: USER,
+      contextIntent: PIRATES_INTENT,
     });
 
     expect(response.notices).toContain("INTENT_UNCHANGED");
     expect(response.intent).toEqual(PIRATES_INTENT);
-    expect(sessions.get(1)?.currentIntent).toEqual(PIRATES_INTENT);
     expect(response.results.map((item) => item.game.slug)).toEqual([
       "pirates-cove",
     ]);
@@ -459,6 +635,8 @@ describe("RecommendationOrchestrator", () => {
       action: "more",
       message: "dame más",
       actor: USER,
+      contextIntent: first.response.intent,
+      shownGameIds: first.response.results.map((item) => item.game.id),
     });
 
     // "more" NO re-muestra: exclusión estricta. La tanda nueva trae lo descubierto
@@ -471,6 +649,356 @@ describe("RecommendationOrchestrator", () => {
     // "pirates") dispara una consulta por atributos antes de rendirse.
     expect(igdb.filteredCalls).toHaveLength(2);
     expect(response.meta.exhaustedPool).toBe(true);
+  });
+
+  it("refine no-op (re-menciona lo pedido) excluye lo mostrado como more", async () => {
+    const shelf = Array.from({ length: 10 }, (_, index) =>
+      makeGame({
+        id: index + 1,
+        slug: `pirates-cove-${index + 1}`,
+        title: `Pirates Cove ${index + 1}`,
+        genres: ["ROLE_PLAYING_RPG"],
+        keywords: ["pirates"],
+        ...FULL_SEMANTIC,
+      }),
+    );
+    const emptyAdd = {
+      keywords: null,
+      genres: null,
+      themes: null,
+      platforms: null,
+      gameModes: null,
+      perspectives: null,
+      gameReferenced: null,
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      semantic: null,
+    };
+    const emptyRemove = { ...emptyAdd, excluded: null };
+    // "mas mmo's?": el delta re-añade el género ya pedido → fusión idéntica.
+    const extractRefineDelta = vi.fn(
+      async (): Promise<RefineDelta> => ({
+        add: { ...emptyAdd, genres: ["ROLE_PLAYING_RPG"] },
+        remove: emptyRemove,
+        excluded: null,
+      }),
+    );
+    const classifyRelation = vi
+      .fn()
+      .mockResolvedValueOnce("new" as const)
+      .mockResolvedValue("refine" as const);
+    const { orchestrator } = setup({
+      catalogGames: shelf,
+      intent: PIRATES_INTENT,
+      classifyRelation,
+      extractRefineDelta,
+      config: { organicUnitsPerRequest: 0 },
+      limits: { igdb: 100, brave: 100, llm: 100 },
+    });
+
+    const first = await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
+      actor: USER,
+    });
+    expect(first.response.results).toHaveLength(8);
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "mas RPG de piratas?",
+      actor: USER,
+      contextIntent: first.response.intent,
+      shownGameIds: first.response.results.map((item) => item.game.id),
+    });
+
+    // No repite: excluye los 8 mostrados y trae los 2 restantes.
+    expect(response.results).toHaveLength(2);
+    const firstIds = new Set(first.response.results.map((item) => item.game.id));
+    for (const item of response.results) {
+      expect(firstIds.has(item.game.id)).toBe(false);
+    }
+    expect(response.intent.relation).toBe("refine");
+  });
+
+  it("refine cuya diferencia la lima el léxico excluye como more (no-op tardío)", async () => {
+    const shelf = Array.from({ length: 10 }, (_, index) =>
+      makeGame({
+        id: index + 1,
+        slug: `pirates-cove-${index + 1}`,
+        title: `Pirates Cove ${index + 1}`,
+        genres: ["ROLE_PLAYING_RPG"],
+        keywords: ["pirates"],
+        ...FULL_SEMANTIC,
+      }),
+    );
+    const emptyAdd = {
+      keywords: null,
+      genres: null,
+      themes: null,
+      platforms: null,
+      gameModes: null,
+      perspectives: null,
+      gameReferenced: null,
+      releaseYear: null,
+      yearFrom: null,
+      yearTo: null,
+      semantic: null,
+    };
+    // "más como este": el delta trae "more like this" como keyword, que el
+    // léxico dropea. Pre-léxico parece distinto; post-léxico es idéntico.
+    const extractRefineDelta = vi.fn(async () => ({
+      add: { ...emptyAdd, keywords: ["more like this"] },
+      remove: { ...emptyAdd, excluded: null },
+      excluded: null,
+    }));
+    const classifyRelation = vi
+      .fn()
+      .mockResolvedValueOnce("new" as const)
+      .mockResolvedValue("refine" as const);
+    const { orchestrator } = setup({
+      catalogGames: shelf,
+      intent: PIRATES_INTENT,
+      classifyRelation,
+      extractRefineDelta,
+      lexicon: {
+        async canonicalizeIntent(intent: GameSearchIntent) {
+          const keywords = (intent.keywords ?? []).filter(
+            (k) => k !== "more like this",
+          );
+          return {
+            ...intent,
+            keywords: keywords.length > 0 ? keywords : null,
+          };
+        },
+        drainDropped: () => [],
+      },
+      config: { organicUnitsPerRequest: 0 },
+      limits: { igdb: 100, brave: 100, llm: 100 },
+    });
+
+    const first = await orchestrator.handle({
+      action: "search",
+      message: "un RPG de piratas",
+      actor: USER,
+    });
+    expect(first.response.results).toHaveLength(8);
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "más como este",
+      actor: USER,
+      contextIntent: first.response.intent,
+      shownGameIds: first.response.results.map((item) => item.game.id),
+    });
+
+    expect(response.results).toHaveLength(2);
+    const firstIds = new Set(first.response.results.map((item) => item.game.id));
+    for (const item of response.results) {
+      expect(firstIds.has(item.game.id)).toBe(false);
+    }
+  });
+
+  it("more con pool fino rescata relajado: avisa qué soltó y guarda el original", async () => {
+    const local = makeGame({
+      id: 1,
+      slug: "local-cowboy",
+      title: "Local Cowboy",
+      themes: ["ACTION", "OPEN_WORLD"],
+      keywords: ["cowboys"],
+      ...FULL_SEMANTIC,
+    });
+    const cowboysIntent = makeIntent({
+      keywords: ["cowboys"],
+      objective: {
+        genres: null,
+        themes: ["ACTION", "OPEN_WORLD"],
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+      },
+    });
+    const { orchestrator, igdb } = setup({
+      catalogGames: [local],
+      intent: cowboysIntent,
+      // El estricto lo ve todo pero el must completo lo tumba: 0 creados.
+      // El amplio devuelve lo mismo y la cascada lo rescata al soltar themes.
+      limits: { igdb: 100, brave: 100, llm: 100 },
+      config: { organicUnitsPerRequest: 0 },
+    });
+    igdb.filteredResults = [
+      makeRaw(201, "Cowboy Action", {
+        themes: [{ id: 1, name: "Action" }],
+        keywords: [{ id: 5, name: "cowboys" }],
+      }),
+    ];
+
+    const first = await orchestrator.handle({
+      action: "search",
+      message: "cowboys de acción y mundo abierto",
+      actor: USER,
+    });
+    // Búsqueda normal: estricta y honesta, sin relajación ni aviso.
+    expect(first.response.results).toHaveLength(1);
+    expect(first.response.notices).not.toContain("RELAXED_FILTERS");
+    expect(first.response.meta.relaxedFilters ?? []).toEqual([]);
+
+    const { response } = await orchestrator.handle({
+      action: "more",
+      message: "dame más",
+      actor: USER,
+      contextIntent: first.response.intent,
+      shownGameIds: first.response.results.map((item) => item.game.id),
+    });
+
+    expect(response.results.map((item) => item.game.slug)).toEqual([
+      "cowboy-action",
+    ]);
+    expect(response.notices).toContain("RELAXED_FILTERS");
+    expect(response.meta.relaxedFilters).toEqual(["themes"]);
+    // Responde con el efectivo (sin OPEN_WORLD); el intent original lo
+    // conserva el CLIENTE, no el servidor.
+    expect(response.intent.objective?.themes).toBeNull();
+    // El rescate reúne 3 patas (estricta reciclada + amplia + where
+    // relajado): 1 llamada estricta + 2 de rescate.
+    expect(igdb.filteredCalls).toHaveLength(3);
+  });
+
+  it("streaming: emite intent y un snapshot por tanda creada", async () => {
+    const { orchestrator, igdb } = setup({
+      catalogGames: [
+        makeGame({
+          id: 1,
+          slug: "pirates-cove-1",
+          title: "Pirates Cove 1",
+          genres: ["ROLE_PLAYING_RPG"],
+          keywords: ["pirates"],
+          ...FULL_SEMANTIC,
+        }),
+      ],
+      intent: PIRATES_INTENT,
+      limits: { igdb: 100, brave: 100, llm: 100 },
+      config: { organicUnitsPerRequest: 0 },
+    });
+    igdb.filteredResults = [
+      makeRaw(101, "Pirate Gold", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+      makeRaw(102, "Pirate Sea", {
+        genres: [{ id: 1, name: "Role-playing (RPG)" }],
+      }),
+    ];
+
+    const seen: string[] = [];
+    const snapshotSizes: number[] = [];
+    const { response } = await orchestrator.handle(
+      { action: "search", message: "un RPG de piratas", actor: USER },
+      (event) => {
+        seen.push(event.event);
+        if (event.event === "results") snapshotSizes.push(event.results.length);
+        if (event.event === "intent") {
+          expect(event.intent.keywords).toEqual(["pirates"]);
+        }
+      }
+    );
+
+    expect(seen[0]).toBe("intent");
+    expect(seen).toContain("results");
+    // Snapshot inicial (1 local) y uno por ficha creada (1+1, 1+2).
+    expect(snapshotSizes).toEqual([1, 2, 3]);
+    expect(response.results).toHaveLength(3);
+  });
+
+  it("refine sin cambios con pool fino también rescata (rama more completa)", async () => {
+    const local = makeGame({
+      id: 1,
+      slug: "local-cowboy",
+      title: "Local Cowboy",
+      themes: ["ACTION", "OPEN_WORLD"],
+      keywords: ["cowboys"],
+      ...FULL_SEMANTIC,
+    });
+    const cowboysIntent = makeIntent({
+      keywords: ["cowboys"],
+      objective: {
+        genres: null,
+        themes: ["ACTION", "OPEN_WORLD"],
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+      },
+    });
+    const emptyDelta = {
+      add: {
+        keywords: null,
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        gameReferenced: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+        semantic: null,
+      },
+      remove: {
+        keywords: null,
+        genres: null,
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+        gameReferenced: null,
+        releaseYear: null,
+        yearFrom: null,
+        yearTo: null,
+        semantic: null,
+        excluded: null,
+      },
+      excluded: null,
+    };
+    const classifyRelation = vi
+      .fn()
+      .mockResolvedValueOnce("new" as const)
+      .mockResolvedValue("refine" as const);
+    const { orchestrator, igdb } = setup({
+      catalogGames: [local],
+      intent: cowboysIntent,
+      classifyRelation,
+      extractRefineDelta: vi.fn(async () => emptyDelta),
+      limits: { igdb: 100, brave: 100, llm: 100 },
+      config: { organicUnitsPerRequest: 0 },
+    });
+    igdb.filteredResults = [
+      makeRaw(201, "Cowboy Action", {
+        themes: [{ id: 1, name: "Action" }],
+        keywords: [{ id: 5, name: "cowboys" }],
+      }),
+    ];
+
+    const first = await orchestrator.handle({
+      action: "search",
+      message: "cowboys de acción y mundo abierto",
+      actor: USER,
+    });
+    expect(first.response.results).toHaveLength(1);
+    expect(first.response.notices).not.toContain("RELAXED_FILTERS");
+
+    const { response } = await orchestrator.handle({
+      action: "search",
+      message: "más como este",
+      actor: USER,
+      contextIntent: first.response.intent,
+      shownGameIds: first.response.results.map((item) => item.game.id),
+    });
+
+    // No repite el mostrado y rescata relajado con aviso.
+    expect(response.results.map((item) => item.game.slug)).toEqual([
+      "cowboy-action",
+    ]);
+    expect(response.notices).toContain("RELAXED_FILTERS");
+    expect(response.meta.relaxedFilters).toEqual(["themes"]);
   });
 
   it("juego pedido explícitamente: el ancla va a requestedGames y nunca a results", async () => {
@@ -604,20 +1132,18 @@ describe("RecommendationOrchestrator", () => {
       remove: null,
       excluded: null,
     }));
-    const { orchestrator, extract, sessions } = setup({
+    const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
       classifyRelation: classify,
       extractRefineDelta: extractDelta,
     });
-    // Sesión con la intención previa de piratas.
-    const session = sessions.ensure(1);
-    session.currentIntent = PIRATES_INTENT;
 
     const { response } = await orchestrator.handle({
       action: "search",
       message: "y en 2d, más violento",
       actor: USER,
+      contextIntent: PIRATES_INTENT,
     });
 
     expect(classify).toHaveBeenCalledTimes(1);
@@ -636,19 +1162,19 @@ describe("RecommendationOrchestrator", () => {
   it("logueado con búsqueda NUEVA → extracción fresca, el intent previo es irrelevante", async () => {
     const classify = vi.fn(async () => "new" as const);
     const extractDelta = vi.fn();
-    const { orchestrator, extract, sessions } = setup({
+    const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: makeIntent({ keywords: ["football"], relation: "new" }),
       classifyRelation: classify,
       extractRefineDelta: extractDelta,
     });
-    const session = sessions.ensure(1);
-    session.currentIntent = PIRATES_INTENT;
 
     const { response } = await orchestrator.handle({
       action: "search",
       message: "quiero un juego de futbol en 2d",
       actor: USER,
+      // El intent previo se envía pero se IGNORA: el clasificador dice "new".
+      contextIntent: PIRATES_INTENT,
     });
 
     expect(classify).toHaveBeenCalledTimes(1);
@@ -704,18 +1230,17 @@ describe("RecommendationOrchestrator", () => {
 
   it("nonsensical (logueado) → SENSELESS_INPUT, sin buscar", async () => {
     const classify = vi.fn(async () => "nonsensical" as const);
-    const { orchestrator, extract, sessions } = setup({
+    const { orchestrator, extract } = setup({
       catalogGames: [PIRATES_GAME],
       intent: PIRATES_INTENT,
       classifyRelation: classify,
     });
-    const session = sessions.ensure(1);
-    session.currentIntent = PIRATES_INTENT;
 
     const { response } = await orchestrator.handle({
       action: "search",
       message: "Cuéntame un chiste",
       actor: USER,
+      contextIntent: PIRATES_INTENT,
     });
 
     expect(classify).toHaveBeenCalledTimes(1);

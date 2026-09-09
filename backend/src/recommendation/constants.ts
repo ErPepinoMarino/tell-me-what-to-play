@@ -44,6 +44,16 @@ export const RECOMMENDATION_CONFIG = {
    */
   igdbSearchLimit: intFromEnv("RECOMMENDATION_IGDB_SEARCH_LIMIT", 30),
   /*
+   * Tope de la llamada AMPLIA de rescate (solo "more" cuando lo estricto
+   * no crea nada): trae de sobra para que la criba local en cascada elija.
+   * Cuesta 1 unidad IGDB traiga 10 o 50; lo caro (enrich) sigue acotado
+   * por maxNewGamesPerRequest.
+   */
+  igdbBroadSearchLimit: intFromEnv(
+    "RECOMMENDATION_IGDB_BROAD_SEARCH_LIMIT",
+    50,
+  ),
+  /*
    * Gate de calidad del descubrimiento: una ficha descubierta por relleno
    * necesita señal mínima de la comunidad IGDB (nº de ratings) para no
    * gastar enriquecimiento en basura. undefined/ausente = desconocido = se
@@ -96,11 +106,6 @@ export const RECOMMENDATION_CONFIG = {
 
   // Límite superior del catálogo propio
   maxCatalogSize: intFromEnv("RECOMMENDATION_MAX_CATALOG_SIZE", 350000),
-
-  // Sesión efímera en memoria (solo usuarios autenticados)
-  sessionTtlMinutes: intFromEnv("SESSION_TTL_MINUTES", 30),
-  sessionMaxEntries: intFromEnv("SESSION_MAX_ENTRIES", 1000),
-  sessionShownCap: intFromEnv("SESSION_SHOWN_CAP", 200),
 } as const;
 
 export type RecommendationConfig = typeof RECOMMENDATION_CONFIG;

@@ -9,7 +9,7 @@ import {
 import type { IgdbClient, FilteredSearchOptions, IgdbGameRaw } from "../igdb/types.js";
 import type { Candidate, Game, GameToPersist } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
-import { passesHardFilters } from "../matching/matchGame.js";
+import { hardFilterViolations, passesHardFilters } from "../matching/matchGame.js";
 import { KEYWORD_STOPWORDS } from "../matching/keywords.js";
 import type { MatchableGame } from "../matching/types.js";
 import type {
@@ -53,6 +53,14 @@ export interface DiscoveryAttempt {
   enrichmentErrors: number;
 }
 
+// Progreso ficha a ficha para streaming: cada juego creado, con el intent
+// que lo filtró (el relajado vigente en cascada). El orquestador re-rankea
+// y emite snapshot sin esperar a la tanda.
+export type DiscoveryProgress = (
+  newGames: Game[],
+  filterIntent: GameSearchIntent | undefined,
+) => void;
+
 export type AnchorDiscoveryResult =
   | { status: "found"; game: Game }
   | { status: "not-found" }
@@ -65,6 +73,107 @@ export type ReEnrichResult =
   | { status: "skipped" }
   | { status: "budget-exhausted" }
   | { status: "error" };
+
+// Tope de raws acumulados por lista (query, intent): primera página más UNA
+// extra. Suficiente para que "buscar más" traiga títulos nuevos sin quemar
+// el presupuesto diario en un nicho infinito.
+const MAX_IGDB_LIST_RESULTS = 60;
+
+// Grupos de requisitos, del primero al último en soltarse en la criba
+// relajada: lo circunstancial (años, cámara, plataforma) antes que la
+// esencia (temática). Los red flags (excluded) NO se sueltan nunca.
+export type RelaxGroup =
+  | "years"
+  | "perspectives"
+  | "platforms"
+  | "gameModes"
+  | "themes"
+  | "genres"
+  | "keywords";
+
+export const RELAX_ORDER: RelaxGroup[] = [
+  "years",
+  "perspectives",
+  "platforms",
+  "gameModes",
+  "themes",
+  "genres",
+  "keywords",
+];
+
+// Suelta un grupo de requisitos del intent (copia; el original intacto).
+export function dropRelaxGroup(
+  intent: GameSearchIntent,
+  group: RelaxGroup,
+): GameSearchIntent {
+  switch (group) {
+    case "years":
+      return { ...intent, releaseYear: null, yearFrom: null, yearTo: null };
+    case "keywords":
+      return { ...intent, keywords: null };
+    default:
+      return {
+        ...intent,
+        objective: intent.objective
+          ? { ...intent.objective, [group]: null }
+          : intent.objective,
+      };
+  }
+}
+
+// ¿Queda alguna señal objetiva? La cascada nunca suelta el último grupo:
+// sin nada que buscar no hay rescate.
+function hasObjectiveSignal(intent: GameSearchIntent): boolean {
+  return (
+    (intent.keywords ?? []).length > 0 ||
+    intent.releaseYear != null ||
+    intent.yearFrom != null ||
+    intent.yearTo != null ||
+    (intent.objective?.genres ?? []).length > 0 ||
+    (intent.objective?.themes ?? []).length > 0 ||
+    (intent.objective?.platforms ?? []).length > 0 ||
+    (intent.objective?.gameModes ?? []).length > 0 ||
+    (intent.objective?.perspectives ?? []).length > 0
+  );
+}
+
+// ¿Constriñe este grupo? Soltar un grupo vacío solo ensuciaría el aviso.
+function relaxGroupHasSignal(
+  intent: GameSearchIntent,
+  group: RelaxGroup,
+): boolean {
+  switch (group) {
+    case "years":
+      return (
+        intent.releaseYear != null ||
+        intent.yearFrom != null ||
+        intent.yearTo != null
+      );
+    case "keywords":
+      return (intent.keywords ?? []).length > 0;
+    case "genres":
+      return (intent.objective?.genres ?? []).length > 0;
+    case "themes":
+      return (intent.objective?.themes ?? []).length > 0;
+    case "platforms":
+      return (intent.objective?.platforms ?? []).length > 0;
+    case "gameModes":
+      return (intent.objective?.gameModes ?? []).length > 0;
+    case "perspectives":
+      return (intent.objective?.perspectives ?? []).length > 0;
+  }
+}
+
+export interface RelaxedAttempt {
+  outcome: DiscoveryAttemptOutcome;
+  newGames: Game[];
+  // Intent efectivo (el que filtró a los creados): para rankear y responder.
+  relaxedIntent: GameSearchIntent;
+  // Grupos soltados hasta crear el ÚLTIMO juego (orden de soltado).
+  droppedGroups: RelaxGroup[];
+  budgetExhausted: boolean;
+  enrichmentErrors: number;
+}
 
 export class DiscoveryManager {
   /*
@@ -82,6 +191,8 @@ export class DiscoveryManager {
   private lastIntentKey: string | null = null;
   private lastRaws: IgdbGameRaw[] = [];
   private lastCursor = 0;
+  private lastOffset = 0;
+  private lastLimit = 0;
 
   /*
    * Clave estable de los campos del intent que determinan el `where` de
@@ -143,6 +254,7 @@ export class DiscoveryManager {
   private async filteredSearch(
     intent: GameSearchIntent,
     trace?: Trace | null,
+    offset = 0,
   ): Promise<IgdbGameRaw[]> {
     const keywordIds = await this.resolveKeywordIds(intent.keywords ?? []);
     const themeIds = (intent.objective?.themes ?? [])
@@ -186,6 +298,8 @@ export class DiscoveryManager {
         .filter((perspective) => perspective !== "UNKNOWN")
         .flatMap((perspective) => perspectiveIgbNames(perspective)),
       limit: this.config.igdbSearchLimit,
+      // Offset solo en páginas >0: la primera página no cambia.
+      ...(offset > 0 ? { offset } : {}),
       /*
        * Visibilidad de los drops de taxonomía: un término que no resuelve a
        * ID de IGDB se deja fuera del where — nunca en silencio (decisión
@@ -214,6 +328,7 @@ export class DiscoveryManager {
     traceId?: string,
     intent?: GameSearchIntent,
     anchors?: Game[],
+    onProgress?: DiscoveryProgress,
   ): Promise<DiscoveryAttempt> {
     const trace = traceId ? createTrace(traceId) : null;
 
@@ -237,14 +352,65 @@ export class DiscoveryManager {
     const sameQuery =
       this.lastQuery === query && this.lastIntentKey === intentKey;
     if (sameQuery && this.lastCursor >= this.lastRaws.length) {
-      trace?.("igdb-list-exhausted", { query });
-      return {
-        outcome: "ok",
-        newGames: [],
-        budgetExhausted: false,
-        variantExhausted: true,
-        enrichmentErrors: 0,
-      };
+      /*
+       * Paginación: la misma pregunta agotada pide la página siguiente
+       * (hasta MAX_IGDB_LIST_RESULTS en total) en vez de rendirse para
+       * siempre — "buscar más" debe poder traer títulos nuevos de IGDB.
+       * Sin presupuesto para la página, agotado sin ruido (no es un error
+       * de descubrimiento, es fin de lista por hoy).
+       */
+      const nextOffset = this.lastOffset + this.lastRaws.length;
+      const canPage =
+        intent !== undefined &&
+        this.lastRaws.length >= this.lastLimit &&
+        nextOffset < MAX_IGDB_LIST_RESULTS &&
+        this.budget.tryReserve("igdb", 1);
+      if (!canPage) {
+        trace?.("igdb-list-exhausted", { query });
+        return {
+          outcome: "ok",
+          newGames: [],
+          budgetExhausted: false,
+          variantExhausted: true,
+          enrichmentErrors: 0,
+        };
+      }
+      let page: IgdbGameRaw[];
+      try {
+        page = await withTimeout(
+          this.filteredSearch(intent, trace, nextOffset),
+          this.config.unitTimeoutMs,
+          "IGDB search",
+        );
+      } catch {
+        this.budget.release("igdb", 1);
+        return {
+          outcome: "error",
+          newGames: [],
+          budgetExhausted: false,
+          variantExhausted: false,
+          enrichmentErrors: 0,
+        };
+      }
+      this.budget.commit("igdb", 1);
+      if (page.length === 0) {
+        trace?.("igdb-list-exhausted", { query, offset: nextOffset });
+        return {
+          outcome: "ok",
+          newGames: [],
+          budgetExhausted: false,
+          variantExhausted: true,
+          enrichmentErrors: 0,
+        };
+      }
+      this.lastRaws = [...this.lastRaws, ...page];
+      this.lastOffset = nextOffset;
+      trace?.("igdb-list-next-page", {
+        query,
+        offset: nextOffset,
+        results: page.length,
+      });
+      // Se sigue al procesado normal: el cursor continúa en la página nueva.
     }
 
     if (!sameQuery) {
@@ -289,6 +455,8 @@ export class DiscoveryManager {
       this.lastIntentKey = raws.length > 0 ? intentKey : null;
       this.lastRaws = raws;
       this.lastCursor = 0;
+      this.lastOffset = 0;
+      this.lastLimit = this.config.igdbSearchLimit;
       if (intent) {
         // Traza de la consulta filtrada: qué atributos fueron al `where`.
         trace?.("igdb-filtered", {
@@ -342,7 +510,14 @@ export class DiscoveryManager {
           { semanticGates: false, anchors },
         )
       ) {
-        trace?.("discovery-skip-must", { slug: candidate.slug, query });
+        trace?.("discovery-skip-must", {
+          slug: candidate.slug,
+          query,
+          ...hardFilterViolations(
+            intent,
+            candidateAsMatchable(candidate),
+          ),
+        });
         continue;
       }
 
@@ -394,6 +569,7 @@ export class DiscoveryManager {
           continue;
         }
         newGames.push(await this.catalog.create(enriched));
+        onProgress?.([...newGames], intent);
       } catch (error) {
         // El intento pudo haber consumido llamadas de Brave a mitad: se
         // contabilizan igual (pesimista) y se sigue con el siguiente raw.
@@ -421,6 +597,299 @@ export class DiscoveryManager {
       variantExhausted: this.lastCursor >= this.lastRaws.length,
       enrichmentErrors,
     };
+  }
+
+  /*
+   * Rescate relajado (rama "more"): criba local en cascada — pasada 0 con
+   * must completo, luego soltando un grupo por pasada (RELAX_ORDER) hasta
+   * llenar maxNew o agotar grupos. Solo se enriquece a los ≤maxNew
+   * supervivientes. Recicla la lista estricta del turno (mismo intent:
+   * 0 llamadas); solo si no hay caché útil hace UNA llamada amplia.
+   */
+  async discoverRelaxed(
+    query: string,
+    maxNew: number,
+    traceId: string | undefined,
+    intent: GameSearchIntent,
+    anchors: Game[] = [],
+    onProgress?: DiscoveryProgress,
+  ): Promise<RelaxedAttempt> {
+    const trace = traceId ? createTrace(traceId) : null;
+    const empty: RelaxedAttempt = {
+      outcome: "ok",
+      newGames: [],
+      relaxedIntent: intent,
+      droppedGroups: [],
+      budgetExhausted: false,
+      enrichmentErrors: 0,
+    };
+    if (maxNew <= 0) return empty;
+
+    /*
+     * Sin señal objetiva (p. ej. intent solo-semántico) no hay rescate:
+     * la llamada amplia sin texto traería el top general y la pasada 0,
+     * sin requisitos, lo crearía todo. Cero llamadas, cero ruido.
+     */
+    if (!hasObjectiveSignal(intent)) return empty;
+
+    // Fases de fetch (tope: 2 llamadas de pago por rescate):
+    //  1. reciclar la lista estricta del turno (gratis);
+    //  2. amplia de texto (trae títulos que el where no ve);
+    //  3. where relajado en el primer grupo con señal (trae lo que el
+    //     estricto excluye por un filtro de más).
+    // Un fallo de fase no tumba el rescate: se sigue con lo reunido (la
+    // criba honesta dirá si basta). Sin ninguna llamada por presupuesto,
+    // budget-exhausted como antes.
+    const intentKey = DiscoveryManager.intentFilterKey(intent);
+    const allRaws: IgdbGameRaw[] = [];
+    const seenRawIds = new Set<number>();
+    const collectUnique = (list: IgdbGameRaw[]): void => {
+      for (const raw of list) {
+        if (!seenRawIds.has(raw.id)) {
+          seenRawIds.add(raw.id);
+          allRaws.push(raw);
+        }
+      }
+    };
+    if (this.lastIntentKey === intentKey && this.lastRaws.length > 0) {
+      collectUnique(this.lastRaws);
+      trace?.("igdb-list-reuse-relaxed", {
+        query,
+        available: this.lastRaws.length,
+      });
+    }
+
+    // Margen de criba: con menos del doble de candidatos que huecos, ni
+    // la criba tiene de dónde elegir ni compensan más llamadas. Una lista
+    // rica (21 para 8 huecos) no gasta de más.
+    const needRaws = maxNew * 2;
+    let fetchedAny = false;
+    let fetchBlockedByBudget = false;
+
+    if (allRaws.length < needRaws) {
+      if (this.budget.tryReserve("igdb", 1)) {
+        try {
+          const broad = await withTimeout(
+            this.broadSearch(query, intent, trace),
+            this.config.unitTimeoutMs,
+            "IGDB broad search",
+          );
+          this.budget.commit("igdb", 1);
+          fetchedAny = true;
+          trace?.("igdb-broad", { query, results: broad.length });
+          collectUnique(broad);
+        } catch {
+          this.budget.release("igdb", 1);
+          trace?.("igdb-phase-error", { phase: "broad", query });
+        }
+      } else {
+        fetchBlockedByBudget = true;
+      }
+    }
+
+    const firstGroup = RELAX_ORDER.find((group) =>
+      relaxGroupHasSignal(intent, group),
+    );
+    if (firstGroup && allRaws.length < needRaws) {
+      if (this.budget.tryReserve("igdb", 1)) {
+        try {
+          const relaxed = await withTimeout(
+            this.filteredSearch(dropRelaxGroup(intent, firstGroup), trace),
+            this.config.unitTimeoutMs,
+            "IGDB relaxed search",
+          );
+          this.budget.commit("igdb", 1);
+          fetchedAny = true;
+          trace?.("igdb-relaxed-where", {
+            query,
+            droppedGroup: firstGroup,
+            results: relaxed.length,
+          });
+          collectUnique(relaxed);
+        } catch {
+          this.budget.release("igdb", 1);
+          trace?.("igdb-phase-error", { phase: "relaxed-where", query });
+        }
+      } else {
+        fetchBlockedByBudget = true;
+      }
+    }
+
+    if (allRaws.length === 0 && fetchBlockedByBudget && !fetchedAny) {
+      return { ...empty, outcome: "budget-exhausted", budgetExhausted: true };
+    }
+    const raws = allRaws;
+
+    // Siembra + gates baratos, una sola vez para todas las pasadas.
+    const normalizedQuery = query.trim().toLowerCase();
+    const queryWords = normalizedQuery
+      .split(/\s+/)
+      .filter((word) => word.length >= 3 && !KEYWORD_STOPWORDS.has(word));
+    const seedTerms = this.lexicon
+      ? await this.lexicon.canonicalizeTerms(
+          normalizedQuery.length > 0 ? [normalizedQuery, ...queryWords] : [],
+        )
+      : normalizedQuery.length > 0
+        ? [normalizedQuery, ...queryWords]
+        : [];
+    const candidates: Candidate[] = [];
+    for (const raw of raws) {
+      if (shouldSkipNonIndependentGame(raw)) continue;
+      if (this.isLowQualityRaw(raw)) continue;
+      candidates.push(this.seedQueryKeywords(mapToCandidate(raw), seedTerms));
+    }
+
+    const newGames: Game[] = [];
+    const seen = new Set<string>();
+    const dropped: RelaxGroup[] = [];
+    let relaxed = intent;
+    let lastCreationPass = -1;
+    let effectiveRelaxed = intent;
+    let budgetExhausted = false;
+    let enrichmentErrors = 0;
+
+    // Pasada 0 = must completo; pasada N suelta RELAX_ORDER[N-1].
+    for (let pass = 0; pass <= RELAX_ORDER.length; pass++) {
+      if (newGames.length >= maxNew) break;
+      if (pass > 0) {
+        const group = RELAX_ORDER[pass - 1]!;
+        if (!relaxGroupHasSignal(relaxed, group)) continue;
+        const candidate = dropRelaxGroup(relaxed, group);
+        if (!hasObjectiveSignal(candidate)) break;
+        relaxed = candidate;
+        dropped.push(group);
+        trace?.("relax-pass", { droppedGroup: group });
+      }
+      for (const candidate of candidates) {
+        if (newGames.length >= maxNew) break;
+        if (seen.has(candidate.slug)) continue;
+        if (
+          !passesHardFilters(
+            relaxed,
+            candidateAsMatchable(candidate),
+            { semanticGates: false, anchors },
+          )
+        ) {
+          trace?.("discovery-skip-must", {
+            slug: candidate.slug,
+            query,
+            pass,
+            ...hardFilterViolations(
+              relaxed,
+              candidateAsMatchable(candidate),
+            ),
+          });
+          continue;
+        }
+        if (await this.existsInCatalog(candidate.sourceId, candidate.slug)) {
+          seen.add(candidate.slug);
+          continue;
+        }
+        if (!this.reserveEnrichmentBudget()) {
+          budgetExhausted = true;
+          break;
+        }
+        try {
+          const enriched = await withTimeout(
+            this.enrichment.enrich(candidate),
+            this.config.unitTimeoutMs,
+            "enrichment",
+          );
+          this.commitEnrichmentBudget();
+          if (this.lexicon) {
+            enriched.keywords = await this.lexicon.canonicalizeTerms(
+              enriched.keywords,
+            );
+          }
+          if (!enrichmentAddsValue(enriched, candidate)) {
+            seen.add(candidate.slug);
+            continue;
+          }
+          newGames.push(await this.catalog.create(enriched));
+          lastCreationPass = pass;
+          // El intent efectivo es el que filtraba cuando se creó el último
+          // juego: lo anunciado (droppedGroups) y lo rankeado coinciden.
+          effectiveRelaxed = relaxed;
+          onProgress?.([...newGames], effectiveRelaxed);
+        } catch (error) {
+          trace?.("enrichment-error", {
+            slug: candidate.slug,
+            query,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          enrichmentErrors++;
+          this.commitEnrichmentBudget();
+        }
+        seen.add(candidate.slug);
+      }
+      if (budgetExhausted) break;
+    }
+
+    // Grupos efectivamente soltados: solo hasta la pasada donde se creó el
+    // ÚLTIMO juego (soltar sin crear no cuenta para el aviso).
+    const effectiveDropped =
+      lastCreationPass < 0 ? [] : dropped.slice(0, lastCreationPass);
+    trace?.("discovery-relaxed", {
+      query,
+      created: newGames.map((game) => game.slug),
+      droppedGroups: effectiveDropped,
+      budgetExhausted,
+    });
+
+    return {
+      outcome: "ok",
+      newGames,
+      relaxedIntent: effectiveRelaxed,
+      droppedGroups: effectiveDropped,
+      budgetExhausted,
+      enrichmentErrors,
+    };
+  }
+
+  /*
+   * Llamada AMPLIA (último recurso, sin caché útil): coincide CUALQUIERA,
+   * solo filtra lo prohibido (red flags). Texto = PRIMER keyword (un solo
+   * término: la búsqueda por texto de IGDB con frases multi-término
+   * devuelve vacío). Sin atributos en el `where`: la exigencia la pone
+   * la criba local, no IGDB.
+   */
+  private async broadSearch(
+    query: string,
+    intent: GameSearchIntent,
+    trace?: Trace | null,
+  ): Promise<IgdbGameRaw[]> {
+    const firstKeyword = (intent.keywords ?? [])
+      .map((k) => k.trim())
+      .find((k) => k.length > 0);
+    const text =
+      firstKeyword ?? (query.trim().length > 0 ? query.trim() : undefined);
+    const excludeKeywordIds = await this.resolveKeywordIds(
+      intent.excluded?.keywords ?? [],
+    );
+    const excludeThemeIds = (intent.excluded?.themes ?? [])
+      .map((theme) => themeIgbId(theme))
+      .filter((id): id is number => id !== null);
+
+    const options: FilteredSearchOptions = {
+      text,
+      excludeKeywordIds,
+      excludeThemeIds,
+      excludeGenreIgbNames: (intent.excluded?.genres ?? [])
+        .filter((genre) => genre !== "UNKNOWN")
+        .flatMap((genre) => genreIgbNames(genre)),
+      excludePlatformIgbNames: (intent.excluded?.platforms ?? [])
+        .filter((platform) => platform !== "UNKNOWN")
+        .flatMap((platform) => platformIgbNames(platform)),
+      excludePerspectiveIgbNames: (intent.excluded?.perspectives ?? [])
+        .filter((perspective) => perspective !== "UNKNOWN")
+        .flatMap((perspective) => perspectiveIgbNames(perspective)),
+      limit: this.config.igdbBroadSearchLimit,
+      onFilterDropped: (details) => {
+        trace?.("taxonomy-unresolved", details);
+      },
+    };
+
+    return this.igdb.filteredSearch(options);
   }
 
   /*

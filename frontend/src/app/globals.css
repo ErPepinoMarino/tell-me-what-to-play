@@ -238,6 +238,26 @@ button:disabled {
   border-radius: 10px;
   overflow: hidden;
   background: #1a1a1a;
+  animation: card-enter 0.45s ease-out;
+}
+
+/* Entrada progresiva del streaming: cada tanda que nace aparece
+ * deslizándose. Los nodos reconciliados por React no se re-animan. */
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-card {
+    animation: none;
+  }
 }
 
 .tier-excellent {

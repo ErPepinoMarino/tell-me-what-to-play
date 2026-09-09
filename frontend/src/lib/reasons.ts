@@ -241,14 +241,34 @@ export function intentSummaryChips(intent: GameSearchIntent): IntentChip[] {
     }
   }
 
-  const exclusions = [
-    ...(intent.excluded?.keywords ?? []),
-    ...(intent.excluded?.genres ?? []),
-    ...(intent.excluded?.themes ?? []),
-    ...(intent.excluded?.platforms ?? []),
+  const exclusions: { label: string; tone: "negative" }[] = [
+    ...(intent.excluded?.keywords ?? []).map((keyword) => ({
+      label: `▼ sin ${keyword}`,
+      tone: "negative" as const,
+    })),
+    ...(intent.excluded?.genres ?? []).map((genre) => ({
+      label: `▼ sin ${GENRE_LABELS[genre] ?? genre}`,
+      tone: "negative" as const,
+    })),
+    ...(intent.excluded?.themes ?? []).map((theme) => ({
+      label: `▼ sin ${THEME_LABELS[theme] ?? theme}`,
+      tone: "negative" as const,
+    })),
+    ...(intent.excluded?.platforms ?? []).map((platform) => ({
+      label: `▼ sin ${platform}`,
+      tone: "negative" as const,
+    })),
+    ...(intent.excluded?.gameModes ?? []).map((mode) => ({
+      label: `▼ sin ${MODE_LABELS[mode] ?? mode}`,
+      tone: "negative" as const,
+    })),
+    ...(intent.excluded?.perspectives ?? []).map((perspective) => ({
+      label: `▼ sin ${PERSPECTIVE_LABELS[perspective] ?? perspective}`,
+      tone: "negative" as const,
+    })),
   ];
   for (const excluded of exclusions) {
-    chips.push({ label: `-- sin ${excluded}`, tone: "negative" });
+    chips.push(excluded);
   }
 
   return chips;

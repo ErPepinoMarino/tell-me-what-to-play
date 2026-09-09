@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import fastify from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -7,29 +6,9 @@ import { prismaSessionRepository } from "../../src/repositories/prismaSessionRep
 import { prismaUserRepository } from "../../src/repositories/prismaUserRepository.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { resetTestDatabase } from "../helpers/resetTestDatabase.js";
+import { startTestServer, type TestServer } from "./startTestServer.js";
 
-const baseUrl = "http://127.0.0.1:3001";
-let serverProcess: ChildProcess;
-
-async function waitForServer(): Promise<void> {
-  const deadline = Date.now() + 10_000;
-
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/api/health`);
-
-      if (response.ok) {
-        return;
-      }
-    } catch {
-      // The server is still starting.
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  throw new Error("Backend server did not start within 10 seconds");
-}
+let server: TestServer;
 
 async function createAuthSession(userId: number) {
   const tokenApp = fastify();
@@ -56,7 +35,7 @@ async function createUser(email = "refresh@example.com") {
 }
 
 async function refreshRequest(refreshToken: string) {
-  return fetch(`${baseUrl}/api/auth/refresh`, {
+  return fetch(`${server.baseUrl}/api/auth/refresh`, {
     method: "POST",
     headers: { cookie: `refresh_token=${refreshToken}` },
   });
@@ -64,17 +43,7 @@ async function refreshRequest(refreshToken: string) {
 
 describe("POST /api/auth/refresh E2E", () => {
   beforeAll(async () => {
-    serverProcess = spawn(
-      process.execPath,
-      ["--import", "tsx/esm", "src/server.ts"],
-      {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: "ignore",
-      },
-    );
-
-    await waitForServer();
+    server = await startTestServer();
   });
 
   beforeEach(async () => {
@@ -82,13 +51,13 @@ describe("POST /api/auth/refresh E2E", () => {
   });
 
   afterAll(async () => {
-    serverProcess.kill();
+    server.stop();
     await prisma.$disconnect();
   });
 
   it("returns 401 when the refresh cookie is missing", async () => {
     //Lanzamos una peticion POST a /api/auth/refresh sin la cookie de refresh token y esperamos un 401.
-    const response = await fetch(`${baseUrl}/api/auth/refresh`, {
+    const response = await fetch(`${server.baseUrl}/api/auth/refresh`, {
       method: "POST",
     });
     const body = await response.json();
@@ -110,7 +79,7 @@ describe("POST /api/auth/refresh E2E", () => {
     const user = await createUser();
     const session = await createAuthSession(user.id);
 
-    const logout = await fetch(`${baseUrl}/api/auth/logout`, {
+    const logout = await fetch(`${server.baseUrl}/api/auth/logout`, {
       method: "POST",
       headers: { cookie: `refresh_token=${session.refreshToken}` },
     });
@@ -121,7 +90,7 @@ describe("POST /api/auth/refresh E2E", () => {
   });
 
   it("logout es idempotente: token desconocido → 204", async () => {
-    const logout = await fetch(`${baseUrl}/api/auth/logout`, {
+    const logout = await fetch(`${server.baseUrl}/api/auth/logout`, {
       method: "POST",
       headers: { cookie: "refresh_token=token-that-does-not-exist" },
     });
@@ -347,7 +316,7 @@ describe("POST /api/auth/refresh E2E", () => {
     const session = await createAuthSession(user.id);
 
     // Peticion para renovar el refresh token con un access token viejo o expirado. Esto deberia ser un 200 OK tmb.
-    const response = await fetch(`${baseUrl}/api/auth/refresh`, {
+    const response = await fetch(`${server.baseUrl}/api/auth/refresh`, {
       method: "POST",
       headers: {
         cookie: `refresh_token=${session.refreshToken}`,
@@ -404,7 +373,7 @@ describe("POST /api/auth/refresh E2E", () => {
   // ---- Transporte nativo (sin cookies): refresh por body ----
 
   async function bodyRefreshRequest(refreshToken: string) {
-    return fetch(`${baseUrl}/api/auth/refresh`, {
+    return fetch(`${server.baseUrl}/api/auth/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ refreshToken }),
@@ -443,7 +412,7 @@ describe("POST /api/auth/refresh E2E", () => {
     // createAuthSession rota: la segunda sesión revoca los tokens de la
     // primera, así que usamos el token vivo más reciente en el body y un
     // token de cookie inválido para forzar la prioridad inversa.
-    const cookieResponse = await fetch(`${baseUrl}/api/auth/refresh`, {
+    const cookieResponse = await fetch(`${server.baseUrl}/api/auth/refresh`, {
       method: "POST",
       headers: {
         cookie: "refresh_token=invalid-cookie-token",

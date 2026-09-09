@@ -8,6 +8,8 @@ export interface CandidateFilter {
   themes: string[];
   keywords: string[];
   platforms: string[];
+  gameModes: string[];
+  perspectives: string[];
   releaseYear: number | null;
   yearFrom: number | null;
   yearTo: number | null;
@@ -75,9 +77,15 @@ export interface RecommendationRequest {
   actor: Actor;
   /*
    * Última intención que el cliente conoce (la que muestra en los chips).
-   * Para ANON (sin sesión) es la ÚNICA forma de clasificar si el mensaje es
-   * un refinamiento o un tema nuevo. Para usuarios logueados se ignora
-   * (la sesión ya tiene el contexto).
+   * Es el "intento previo" para clasificar refine-vs-new y la base del
+   * refinado. El servidor ya NO guarda sesión: la conversación vive en el
+   * cliente.
    */
   contextIntent?: GameSearchIntent | null;
+  /*
+   * IDs ya mostrados al usuario en este hilo de conversación. El cliente
+   * es el dueño del contexto; solo se usa para excluir en turnos "more"-like
+   * (more explícito o refine no-op). Una búsqueda NUEVA empieza de cero.
+   */
+  shownGameIds?: number[];
 }

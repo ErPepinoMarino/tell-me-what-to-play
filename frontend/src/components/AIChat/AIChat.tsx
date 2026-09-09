@@ -2,7 +2,11 @@
 
 import type { GameSearchIntent, NoticeCode } from "@/types/Recommendation";
 import { intentSummaryChips } from "@/lib/reasons";
-import { NOTICE_MESSAGES, visibleNotices } from "@/lib/notices";
+import {
+  NOTICE_MESSAGES,
+  relaxedFiltersMessage,
+  visibleNotices,
+} from "@/lib/notices";
 
 export type ChatStatus = "idle" | "searching" | "ready" | "error";
 
@@ -17,6 +21,7 @@ type AIChatProps = {
   intent: GameSearchIntent | null;
   notices: NoticeCode[];
   demoMode: boolean;
+  relaxedFilters?: string[];
 };
 
 /*
@@ -31,6 +36,7 @@ export default function AIChat({
   intent,
   notices,
   demoMode,
+  relaxedFilters = [],
 }: AIChatProps) {
   const shownNotices = visibleNotices(notices, demoMode).filter(
     (notice) => notice !== "EMPTY_INTENT",
@@ -87,7 +93,9 @@ export default function AIChat({
 
           {shownNotices.map((notice) => (
             <p key={notice} className="notice">
-              {NOTICE_MESSAGES[notice]}
+              {notice === "RELAXED_FILTERS"
+                ? relaxedFiltersMessage(relaxedFilters)
+                : NOTICE_MESSAGES[notice]}
             </p>
           ))}
         </div>

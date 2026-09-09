@@ -14,6 +14,8 @@ export interface PoolFilter {
   themes: string[];
   keywords: string[];
   platforms: string[];
+  gameModes: string[];
+  perspectives: string[];
   releaseYear: number | null;
   yearFrom: number | null;
   yearTo: number | null;
@@ -26,22 +28,48 @@ export function buildPoolFilter(intent: GameSearchIntent): PoolFilter {
     platforms: (intent.objective?.platforms ?? []).filter(
       (p) => p !== "UNKNOWN",
     ),
-    keywords: (intent.keywords ?? [])
-      .map((k) => k.trim().toLowerCase())
-      .filter((k) => k.length > 0),
+    gameModes: (intent.objective?.gameModes ?? []).filter(
+      (m) => m !== "UNKNOWN",
+    ),
+    perspectives: (intent.objective?.perspectives ?? []).filter(
+      (p) => p !== "UNKNOWN",
+    ),
+    keywords: [
+      ...new Set(
+        (intent.keywords ?? [])
+          .map((k) => k.trim().toLowerCase())
+          .filter((k) => k.length > 0),
+      ),
+    ],
     releaseYear: intent.releaseYear,
     yearFrom: intent.yearFrom,
     yearTo: intent.yearTo,
   };
 }
 
+// Término de búsqueda legible para cada modo de juego, usado para construir
+// queries de descubrimiento cuando no hay keywords ni géneros (p. ej. "mmo").
+const MODE_QUERY_TERMS: Record<string, string> = {
+  SINGLE_PLAYER: "single player",
+  MULTIPLAYER: "multiplayer",
+  COOPERATIVE: "cooperative",
+  COMPETITIVE: "competitive",
+  MASSIVELY_MULTIPLAYER: "mmo",
+};
+
 // Queries de descubrimiento para IGDB, ordenadas por prioridad. Cada unidad
 // de descubrimiento consume una variante; así el relleno no repite la misma
 // búsqueda cuando ya no rinde.
 export function buildQueryVariants(intent: GameSearchIntent): string[] {
-  const keywords = (intent.keywords ?? [])
-    .map((k) => k.trim().toLowerCase())
-    .filter((k) => k.length > 0);
+  // Unicidad tolerancia-cero: el mismo término con otro caso o espacios
+  // ("Cowboys ") no genera variante doble ("cowboys cowboys").
+  const keywords = [
+    ...new Set(
+      (intent.keywords ?? [])
+        .map((k) => k.trim().toLowerCase())
+        .filter((k) => k.length > 0),
+    ),
+  ];
   const genreTerms = (intent.objective?.genres ?? [])
     .filter((g) => g !== "UNKNOWN" && g in GENRE_QUERY_TERMS)
     .map((g) => GENRE_QUERY_TERMS[g as keyof typeof GENRE_QUERY_TERMS]);
@@ -75,11 +103,39 @@ export function buildQueryVariants(intent: GameSearchIntent): string[] {
     variants.push(genreTerms.slice(0, 2).join(" "));
   }
   /*
-   * Intents solo-plataforma/año (sin keywords ni géneros) generan [] aquí;
-   * el descubrimiento por atributos (filteredSearch IGDB) los cubre en el
-   * orquestador. El text-search de IGDB busca por título y no sirve para
-   * estos intents.
+   * Fallback: los intents sin keywords ni géneros (p. ej. solo tema + modo,
+   * como "mmo de fantasía") también deben llegar a IGDB. La búsqueda
+   * filtrada aplica TODOS los campos del intent en el `where`, así que
+   * cualquier texto no vacío vale como clave de la unidad de
+   * descubrimiento — se construye con el resto de señales para que las
+   * keywords sembradas sigan teniendo sentido.
    */
+  if (variants.length === 0) {
+    const themeTerms = (intent.objective?.themes ?? [])
+      .filter((t) => t !== "UNKNOWN")
+      .map((t) => t.toLowerCase().replace(/_/g, " "));
+    const modeTerms = (intent.objective?.gameModes ?? [])
+      .filter((m) => m !== "UNKNOWN")
+      .map((m) => MODE_QUERY_TERMS[m] ?? m.toLowerCase().replace(/_/g, " "));
+    const platformTerms = (intent.objective?.platforms ?? [])
+      .filter((p) => p !== "UNKNOWN")
+      .map((p) => p.toLowerCase().replace(/_/g, " "));
+    const perspectiveTerms = (intent.objective?.perspectives ?? [])
+      .filter((p) => p !== "UNKNOWN")
+      .map((p) => p.toLowerCase().replace(/_/g, " "));
+    const yearTerms =
+      intent.releaseYear != null ? [String(intent.releaseYear)] : [];
+    const fallback = [
+      ...themeTerms.slice(0, 2),
+      ...modeTerms.slice(0, 1),
+      ...platformTerms.slice(0, 1),
+      ...perspectiveTerms.slice(0, 1),
+      ...yearTerms,
+    ]
+      .join(" ")
+      .trim();
+    if (fallback.length > 0) variants.push(fallback);
+  }
 
   return [
     ...new Set(variants.map((v) => v.trim()).filter((v) => v.length > 0)),

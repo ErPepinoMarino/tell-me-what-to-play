@@ -69,6 +69,9 @@ export interface FilteredSearchOptions {
   excludePlatformIgbNames?: string[];
   excludePerspectiveIgbNames?: string[];
   limit?: number;
+  // Paginación de la lista (solo filteredSearch): segunda página y
+  // siguientes de la MISMA pregunta cuando el cursor la agota.
+  offset?: number;
   // Visibilidad: un término que NO resuelve a ID se deja fuera del where.
   // Nunca en silencio (decisión de producto tras el bug del género ACTION).
   onFilterDropped?: (details: {

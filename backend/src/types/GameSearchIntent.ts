@@ -205,8 +205,9 @@ const RefineAddSchema = z.object({
   semantic: SemanticSchema.nullable(),
 });
 /*
- * Firma identica a RefineAddSchema
- * Pero en este caso definimos que el usuario quiere quitar algo de la busqueda anterior.
+ * Firma identica a RefineAddSchema, pero además permite levantar una
+ * exclusión previa vía `excluded` ("los mods son irrelevantes" →
+ * excluded.keywords).
  */
 const RefineRemoveSchema = z.object({
   keywords: z.array(z.string()).nullable(),
@@ -220,6 +221,19 @@ const RefineRemoveSchema = z.object({
   yearFrom: z.boolean().nullable(),
   yearTo: z.boolean().nullable(),
   semantic: z.array(z.string()).nullable(),
+  excluded: z
+    .object({
+      keywords: z.array(z.string()).nullable(),
+      genres: z.array(GenreSchema).nullable(),
+      themes: z.array(ThemeSchema).nullable(),
+      platforms: z.array(PlatformSchema).nullable(),
+      gameModes: z.array(GameModeSchema).nullable(),
+      perspectives: z.array(PerspectiveSchema).nullable(),
+      releaseYear: z.boolean().nullable(),
+      yearFrom: z.boolean().nullable(),
+      yearTo: z.boolean().nullable(),
+    })
+    .nullable(),
 });
 
 export const RefineDeltaSchema = z.object({

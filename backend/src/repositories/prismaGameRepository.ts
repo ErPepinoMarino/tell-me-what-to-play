@@ -1,5 +1,11 @@
 import { prisma } from "../lib/prisma.js";
-import type { Genre, Platform, Theme } from "../generated/prisma/enums.js";
+import type {
+  GameMode,
+  Genre,
+  Perspective,
+  Platform,
+  Theme,
+} from "../generated/prisma/enums.js";
 import type { Game, GameToPersist } from "../types/Game.js";
 
 // Filtro de pre-selección de candidatos para el orquestador. Semántica
@@ -10,6 +16,8 @@ export interface CandidateFilter {
   themes: string[];
   keywords: string[];
   platforms: string[];
+  gameModes: string[];
+  perspectives: string[];
   releaseYear: number | null;
   yearFrom: number | null;
   yearTo: number | null;
@@ -122,6 +130,12 @@ export const prismaGameRepository = {
     }
     for (const platform of filter.platforms) {
       requirements.push({ platforms: { has: platform as Platform } });
+    }
+    for (const mode of filter.gameModes ?? []) {
+      requirements.push({ game_modes: { has: mode as GameMode } });
+    }
+    for (const perspective of filter.perspectives ?? []) {
+      requirements.push({ perspectives: { has: perspective as Perspective } });
     }
 
     const yearCondition: {

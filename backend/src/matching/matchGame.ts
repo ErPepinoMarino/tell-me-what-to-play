@@ -571,6 +571,32 @@ export function passesHardFilters(
   return gatesViolated.length === 0;
 }
 
+/*
+ * Diagnóstico de criba: qué requisitos duros falla un candidato (para la
+ * traza discovery-skip-must). Puro y barato: re-ejecuta solo must+red flags.
+ */
+export function hardFilterViolations(
+  intent: GameSearchIntent,
+  game: MatchableGame,
+): { must: string[]; redFlags: string[] } {
+  const gatesViolated: string[] = [];
+  const reasons: MatchReason[] = [];
+  checkRedFlags(intent, game, gatesViolated, reasons);
+  checkMust(intent, game, gatesViolated, reasons);
+  const must = new Set<string>();
+  const redFlags = new Set<string>();
+  for (const reason of reasons) {
+    if (reason.kind !== "gate") continue;
+    const label =
+      reason.block === "keywords"
+        ? reason.field
+        : `${reason.block}.${reason.field}`;
+    if (reason.note === GATE_MUST_VIOLATED) must.add(label);
+    else if (reason.note === GATE_RED_FLAG_VIOLATED) redFlags.add(label);
+  }
+  return { must: [...must], redFlags: [...redFlags] };
+}
+
 export function matchGame(input: MatchInput): MatchResult {
   const { intent, game } = input;
   const anchors = input.anchors ?? [];

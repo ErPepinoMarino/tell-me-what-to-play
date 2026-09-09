@@ -282,6 +282,9 @@ export class HttpIgdbClient implements IgdbClient {
     }
     statements.push(`where ${conditions.join(" & ")}`);
     statements.push(`limit ${options.limit ?? 30}`);
+    // Offset solo cuando se pide página >0: así las queries de primera
+    // página no cambian (tests y logs estables).
+    if (options.offset) statements.push(`offset ${options.offset}`);
 
     const body = statements.join("; ") + ";";
     return this.withRetry(() => this.request(token, body));
