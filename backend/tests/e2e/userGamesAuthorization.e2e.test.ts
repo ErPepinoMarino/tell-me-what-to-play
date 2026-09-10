@@ -197,7 +197,7 @@ describe("user library authorization E2E", () => {
 
     expect(response.status).toBe(401);
     expect(body).toEqual({
-      error: "Invalid or missing token",
+      error: "Invalid or expired token",
     });
   });
 

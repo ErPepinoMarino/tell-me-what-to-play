@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { PassThrough } from "node:stream";
-import { optionalAuthMiddleware } from "../middlewares/optionalAuthMiddleware.js";
+import { authMiddleware } from "../middlewares/authMiddleware.js";
+import { getUserIdOrNull } from "../lib/authUser.js";
 import type { RecommendationAction } from "../types/Recommendation.js";
 import { GameSearchIntentSchema } from "../types/GameSearchIntent.js";
 import {
@@ -53,7 +54,7 @@ export async function recommendationRoutes(
   fastify.post<{ Body: RecommendationBody }>(
     "/api/recommendations",
     {
-      preHandler: optionalAuthMiddleware,
+      preHandler: authMiddleware,
       schema: {
         body: recommendationBodySchema,
       },
@@ -61,10 +62,11 @@ export async function recommendationRoutes(
     async (request, reply) => {
       const action = request.body.action ?? "search";
       // El actor viene del JWT cuando existe; sin cabecera es anónimo.
-      const authSub = (request as { user?: { sub: string } }).user?.sub;
-      const actor = authSub
-        ? ({ kind: "user", userId: Number(authSub) } as const)
-        : ({ kind: "anon" } as const);
+      const userId = getUserIdOrNull(request);
+      const actor =
+        userId !== null
+          ? ({ kind: "user", userId } as const)
+          : ({ kind: "anon" } as const);
 
       let orchestrator;
       try {
@@ -122,17 +124,18 @@ export async function recommendationStreamRoutes(
   fastify.post<{ Body: RecommendationBody }>(
     "/api/recommendations/stream",
     {
-      preHandler: optionalAuthMiddleware,
+      preHandler: authMiddleware,
       schema: {
         body: recommendationBodySchema,
       },
     },
     async (request, reply) => {
       const action = request.body.action ?? "search";
-      const authSub = (request as { user?: { sub: string } }).user?.sub;
-      const actor = authSub
-        ? ({ kind: "user", userId: Number(authSub) } as const)
-        : ({ kind: "anon" } as const);
+      const userId = getUserIdOrNull(request);
+      const actor =
+        userId !== null
+          ? ({ kind: "user", userId } as const)
+          : ({ kind: "anon" } as const);
 
       let orchestrator;
       try {
