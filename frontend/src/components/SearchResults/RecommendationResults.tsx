@@ -6,8 +6,10 @@ import RecommendationCard from "./RecommendationCard/RecommendationCard";
 
 type RecommendationResultsProps = {
   results: RecommendationResultItem[];
+  requestedKeywords: string[];
   demoMode: boolean;
   searching: boolean;
+  onSelectGame: (item: RecommendationResultItem) => void;
 };
 
 /*
@@ -17,8 +19,10 @@ type RecommendationResultsProps = {
  */
 export default function RecommendationResults({
   results,
+  requestedKeywords,
   demoMode,
   searching,
+  onSelectGame,
 }: RecommendationResultsProps) {
   // Capa 3/3 de traza de streaming (pintado real): distingue "el estado se
   // actualizó pero React no pintó" de "los eventos llegaron tarde".
@@ -34,13 +38,19 @@ export default function RecommendationResults({
 
   return (
     <section className="recommendation-results">
-      <h2>Search Results</h2>
+      {" "}
       {results.length === 0 ? (
         <p className="muted">Sin resultados de calidad todavía...</p>
       ) : (
         <div className="results-grid">
           {results.map((item) => (
-            <RecommendationCard key={item.game.id} item={item} demoMode={demoMode} />
+            <RecommendationCard
+              key={item.game.id}
+              item={item}
+              requestedKeywords={requestedKeywords}
+              demoMode={demoMode}
+              onSelectGame={onSelectGame}
+            />
           ))}
         </div>
       )}

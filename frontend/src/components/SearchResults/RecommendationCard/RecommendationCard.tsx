@@ -1,34 +1,42 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import type { RecommendationResultItem } from "@/types/Recommendation";
-import { reasonsToChips, TIER_LABELS } from "@/lib/reasons";
+import { resultChipsWithKeywords, TIER_LABELS } from "@/lib/reasons";
 
 type RecommendationCardProps = {
   item: RecommendationResultItem;
+  requestedKeywords: string[];
   demoMode: boolean;
+  onSelectGame: (item: RecommendationResultItem) => void;
 };
 
 const PLACEHOLDER = "/images/ImagePlaceHolder.webp";
 
 /*
- * Mini ficha explicativa: el objetivo del producto es demostrar que las
- * recomendaciones no son "juegos que un LLM ha sugerido". Los chips vienen
- * del matching determinista (block+kind+note); en modo demo se abre el
- * detalle técnico (score, tier, coverage y contributions).
+ * Card vertical (A3): badge de tier → título → año → imagen → chips.
+ * Las chips combinan las razones del matcher y las keywords comunes con
+ * lo pedido; la descripción completa vive en la ficha (GameInfo).
  */
 export default function RecommendationCard({
   item,
+  requestedKeywords,
   demoMode,
+  onSelectGame,
 }: RecommendationCardProps) {
   const { game, score, tier, coverage, reasons } = item;
-  const chips = reasonsToChips(reasons);
-  const description = game.description_es || game.description_en || null;
+  const chips = resultChipsWithKeywords(reasons, game.keywords, requestedKeywords);
 
   return (
     <article className={`game-card tier-${tier}`}>
-      <Link href={`/?game=${encodeURIComponent(game.slug)}`} className="game-card-link">
+      <button
+        type="button"
+        className="game-card-link"
+        onClick={() => onSelectGame(item)}
+      >
+        <span className={`badge badge-${tier}`}>{TIER_LABELS[tier]}</span>
+        <h3>{game.title}</h3>
+        {game.releaseYear ? <p className="muted">{game.releaseYear}</p> : null}
         <div className="game-card-media">
           <Image
             src={game.coverUrl || PLACEHOLDER}
@@ -37,23 +45,17 @@ export default function RecommendationCard({
             height={225}
           />
         </div>
-        <div className="game-card-body">
-          <span className={`badge badge-${tier}`}>{TIER_LABELS[tier]}</span>
-          <h3>{game.title}</h3>
-          {game.releaseYear ? <p className="muted">{game.releaseYear}</p> : null}
-          {description ? <p className="description">{description}</p> : null}
-          <ul className="reason-chips">
-            {chips.map((chip, index) => (
-              <li key={index} className={`reason-chip chip-${chip.icon}`}>
-                <span className="chip-icon" aria-hidden>
-                  {chip.icon === "check" ? "✓" : chip.icon === "partial" ? "~" : "✗"}
-                </span>
-                {chip.label}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </Link>
+        <ul className="reason-chips">
+          {chips.map((chip, index) => (
+            <li key={index} className={`reason-chip chip-${chip.icon}`}>
+              <span className="chip-icon" aria-hidden>
+                {chip.icon === "check" ? "✓" : chip.icon === "partial" ? "~" : "✗"}
+              </span>
+              {chip.label}
+            </li>
+          ))}
+        </ul>
+      </button>
 
       {demoMode ? (
         <div className="demo-panel">

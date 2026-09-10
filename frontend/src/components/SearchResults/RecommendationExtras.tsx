@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import type { RecommendedGame, RecommendationMeta } from "@/types/Recommendation";
 
 const PLACEHOLDER = "/images/ImagePlaceHolder.webp";
@@ -11,7 +10,13 @@ const PLACEHOLDER = "/images/ImagePlaceHolder.webp";
  * referencia para buscar similares, nunca se mezclan con los
  * descubrimientos. El copy de producto llega por notice en el chat.
  */
-export function RequestedGamesRow({ games }: { games: RecommendedGame[] }) {
+export function RequestedGamesRow({
+  games,
+  onSelectGame,
+}: {
+  games: RecommendedGame[];
+  onSelectGame: (game: RecommendedGame) => void;
+}) {
   if (games.length === 0) return null;
 
   return (
@@ -19,10 +24,11 @@ export function RequestedGamesRow({ games }: { games: RecommendedGame[] }) {
       <h3>Lo que pediste (referencia)</h3>
       <div className="requested-cards">
         {games.map((game) => (
-          <Link
+          <button
             key={game.id}
-            href={`/?game=${encodeURIComponent(game.slug)}`}
+            type="button"
             className="requested-card"
+            onClick={() => onSelectGame(game)}
           >
             <Image
               src={game.coverUrl || PLACEHOLDER}
@@ -31,7 +37,7 @@ export function RequestedGamesRow({ games }: { games: RecommendedGame[] }) {
               height={135}
             />
             <span>{game.title}</span>
-          </Link>
+          </button>
         ))}
       </div>
     </div>

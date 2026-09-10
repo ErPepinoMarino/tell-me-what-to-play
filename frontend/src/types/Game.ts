@@ -11,6 +11,7 @@ export interface Game {
   platforms: string[];
   gameModes: string[];
   perspectives: string[];
+  keywords: string[];
   developers: string[];
   publishers: string[];
   searchCount: number;

@@ -31,10 +31,24 @@ export async function postJson<T>(
   token: string | null,
   retried = false
 ): Promise<ApiResult<T>> {
+  return sendJson("POST", path, body, token, retried);
+}
+
+/*
+ * Variante POST/PUT con la misma política de refresh 401 que postStream:
+ * en 401 con token refresca y repite una sola vez.
+ */
+export async function sendJson<T>(
+  method: "POST" | "PUT",
+  path: string,
+  body: unknown,
+  token: string | null,
+  retried = false
+): Promise<ApiResult<T>> {
   let response: Response;
   try {
     response = await fetch(path, {
-      method: "POST",
+      method,
       headers: {
         "content-type": "application/json",
         ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -52,7 +66,7 @@ export async function postJson<T>(
         accessToken?: string;
       };
       if (refreshedBody.accessToken) {
-        return postJson<T>(path, body, refreshedBody.accessToken, true);
+        return sendJson<T>(method, path, body, refreshedBody.accessToken, true);
       }
     }
   }

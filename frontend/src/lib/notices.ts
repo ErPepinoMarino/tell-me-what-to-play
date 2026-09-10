@@ -4,8 +4,7 @@ import type { NoticeCode } from "@/types/Recommendation";
  * Textos ES de los avisos del orquestador. Los notices internos
  * (PARTIAL_RESULTS, SEARCH_EXHAUSTED, DISCOVERY_*, CATALOG_FULL, PG_DEGRADED)
  * no se muestran al usuario normal: solo aparecen en el modo demo/técnico.
- * La información útil para el usuario va en el mensaje de ayuda para
- * anónimos (ver mensaje de ayuda en RecommendationSection).
+ * La información útil para el usuario va en los avisos visibles del chat.
  */
 
 export const NOTICE_MESSAGES: Record<NoticeCode, string> = {

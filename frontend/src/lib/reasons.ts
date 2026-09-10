@@ -22,7 +22,7 @@ const SEMANTIC_LABELS: Record<string, string> = {
   isolation: "Aislamiento",
 };
 
-const GENRE_LABELS: Record<string, string> = {
+export const GENRE_LABELS: Record<string, string> = {
   ADVENTURE: "Aventura",
   ARCADE: "Arcade",
   CARD_AND_BOARD_GAME: "Cartas y tablero",
@@ -50,7 +50,7 @@ const GENRE_LABELS: Record<string, string> = {
 };
 
 // Themes de IGDB: mundo/tono/ambientación (capa MUST del intent).
-const THEME_LABELS: Record<string, string> = {
+export const THEME_LABELS: Record<string, string> = {
   ACTION: "Acción",
   BUSINESS: "Negocios",
   COMEDY: "Comedia",
@@ -76,7 +76,7 @@ const THEME_LABELS: Record<string, string> = {
   UNKNOWN: "Sin clasificar",
 };
 
-const MODE_LABELS: Record<string, string> = {
+export const MODE_LABELS: Record<string, string> = {
   SINGLE_PLAYER: "Un jugador",
   MULTIPLAYER: "Multijugador",
   COOPERATIVE: "Cooperativo",
@@ -85,7 +85,7 @@ const MODE_LABELS: Record<string, string> = {
   UNKNOWN: "Sin clasificar",
 };
 
-const PERSPECTIVE_LABELS: Record<string, string> = {
+export const PERSPECTIVE_LABELS: Record<string, string> = {
   FIRST_PERSON: "Primera persona",
   THIRD_PERSON: "Tercera persona",
   TOP_DOWN: "Vista cenital",
@@ -159,6 +159,34 @@ export function reasonsToChips(reasons: MatchReason[]): ReasonChip[] {
   return reasons
     .map(reasonToChip)
     .filter((chip): chip is ReasonChip => chip !== null);
+}
+
+/*
+ * Chips completas del card: razones del matcher + las keywords EN COMÚN
+ * entre lo pedido (intent) y el juego. Las keywords que el matcher ya
+ * aplicó como razón no se duplican (dedupe por etiqueta).
+ */
+export function resultChipsWithKeywords(
+  reasons: MatchReason[],
+  gameKeywords: string[],
+  requestedKeywords: string[],
+): ReasonChip[] {
+  const reasonChips = reasonsToChips(reasons);
+  const known = new Set(
+    reasonChips.map((chip) => chip.label.trim().toLowerCase()),
+  );
+  const keywordChips = gameKeywords
+    .filter((gameKeyword) =>
+      requestedKeywords.some(
+        (requested) => requested.toLowerCase() === gameKeyword.toLowerCase(),
+      ),
+    )
+    .filter(
+      (gameKeyword) =>
+        !known.has(`temática: ${gameKeyword.toLowerCase()}`),
+    )
+    .map((keyword): ReasonChip => ({ icon: "check", label: `Temática: ${keyword}` }));
+  return [...reasonChips, ...keywordChips];
 }
 
 /*

@@ -30,7 +30,7 @@ export default function Login() {
         Inicia sesión para afinar tus búsquedas, pedir más resultados y
         cambiar de tema sin perder el contexto.
       </p>
-      <button type="button" onClick={login} className="button-primary">
+      <button type="button" onClick={login} className="button-google">
         Continuar con Google
       </button>
     </section>

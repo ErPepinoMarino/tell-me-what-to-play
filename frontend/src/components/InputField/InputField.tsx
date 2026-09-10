@@ -2,27 +2,31 @@
 
 import { useState, type SyntheticEvent } from "react";
 
-type SearchBarProps = {
+type InputFieldProps = {
   onSubmit: (message: string) => void;
   onMore: () => void;
   canMore: boolean;
-  authenticated: boolean;
   busy: boolean;
 };
 
 /*
  * USER INPUT: texto libre + dos acciones. El backend (LLM) decide con el
  * contexto de sesión si el mensaje extiende la búsqueda anterior o empieza
- * otra: afinar o cambiar de tema no es decisión del cliente. "Más así"
- * repite la intención de sesión excluyendo lo ya mostrado (requiere sesión).
+ * otra: afinar o cambiar de tema no es decisión del cliente. "Mostrar más
+ * resultados" repite la intención de sesión excluyendo lo ya mostrado.
+ *
+ * Reglas de producto:
+ * - "more" deshabilitado hasta que una búsqueda devuelva ≥1 resultado
+ *   (canMore lo refleja: results > 0, meta presente y pool no agotado).
+ * - Decisión de producto: "more" también para anónimos — no exige login.
+ * - No presenta resultados ni chat: solo entrada y envío.
  */
-export default function SearchBar({
+export default function InputField({
   onSubmit,
   onMore,
   canMore,
-  authenticated,
   busy,
-}: SearchBarProps) {
+}: InputFieldProps) {
   const [value, setValue] = useState("");
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
@@ -35,20 +39,6 @@ export default function SearchBar({
 
   return (
     <section className="search-bar">
-      <button
-        type="button"
-        disabled={!canMore || !authenticated || busy}
-        title={
-          authenticated
-            ? "Más resultados con la misma intención"
-            : "Inicia sesión para pedir más resultados"
-        }
-        className="button-secondary"
-        onClick={onMore}
-      >
-        Mostrar más juegos
-      </button>
-
       <form onSubmit={handleSubmit}>
         <input
           type="text"
@@ -66,6 +56,18 @@ export default function SearchBar({
           Buscar
         </button>
       </form>
+
+      {/* En línea, a la derecha de Buscar. Con el glow de borde giratorio
+          cuando está habilitado (hay resultados y pool no agotado). */}
+      <button
+        type="button"
+        disabled={!canMore || busy}
+        title="Más resultados con la misma intención"
+        className={`search-more${!canMore || busy ? "" : " border-glow-active"}`}
+        onClick={onMore}
+      >
+        Mostrar más juegos
+      </button>
     </section>
   );
 }

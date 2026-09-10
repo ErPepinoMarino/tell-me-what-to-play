@@ -167,8 +167,8 @@
       "title": "Arquitectura de Software",
       "completed": false,
       "competencies": [
-        { "title": "SOLID", "completed": false },
-        { "title": "Clean Architecture", "completed": false },
+        { "title": "SOLID", "completed": true },
+        { "title": "Clean Architecture", "completed": true },
         { "title": "Patrones de diseño", "completed": false },
         { "title": "Escalabilidad", "completed": false }
       ],

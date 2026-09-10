@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export default function Header() {
   return (
-    <section>
+    <section className="app-header">
       <Link href={"/"}>
         <Image
           src={"/images/LogoTMWTP.svg"}

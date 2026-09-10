@@ -1,15 +1,9 @@
-import Header from "@/components/Header/Header";
-import RecommendationSection from "@/components/Recommendation/RecommendationSection";
-import SearchResults from "@/components/SearchResults/SearchResults";
-import GameInfo from "@/components/GameInfo/GameInfo";
-import MyLibrary from "@/components/MyLibrary/MyLibrary";
-import Footer from "@/components/Footer/Footer";
+import HomeClient from "@/components/HomeClient";
 import type { Game } from "@/types/Game";
 
 //Más limpio sacar las props de la declaración de la función home, sino queda una guarrada verbosa.
 type HomeProps = {
   searchParams: Promise<{
-    q?: string;
     game?: string;
   }>;
 };
@@ -19,22 +13,16 @@ type HomeProps = {
 //Basta solo con declarar la variable para que Next.js lo entienda.
 export const dynamic = "force-dynamic";
 
+/*
+ * Server shell: solo precarga el deep-link ?game= (ficha compartible e
+ * indexable). El layout y el estado compartido viven en HomeClient; la
+ * búsqueda legacy ?q= pasó a la conversación (search/more/refine).
+ */
 export default async function Home({ searchParams }: HomeProps) {
   //ves.
-  const { q, game } = await searchParams;
+  const { game } = await searchParams;
 
   const apiUrl = process.env.API_URL ?? "http://localhost:3001";
-
-  async function fetchGames(path: string): Promise<Game[]> {
-    try {
-      const res = await fetch(`${apiUrl}${path}`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
-    } catch {
-      return [];
-    }
-  }
 
   async function fetchGame(path: string): Promise<Game | undefined> {
     try {
@@ -46,27 +34,13 @@ export default async function Home({ searchParams }: HomeProps) {
     }
   }
 
-  // Búsqueda de catálogo por deep-link (?q=): sigue funcionando para URLs
-  // compartidas e indexación. La interacción principal es el flujo de
-  // recomendación (RecommendationSection), que es conversacional.
-  const games: Game[] = q
-    ? await fetchGames(`/api/games?q=${encodeURIComponent(q)}`)
-    : [];
-
-  const selectedGame: Game | undefined = game
-    ? await fetchGame(`/api/games/${encodeURIComponent(game)}`)
-    : undefined;
+  const initialGame: Game | null = game
+    ? ((await fetchGame(`/api/games/${encodeURIComponent(game)}`)) ?? null)
+    : null;
 
   return (
     <main>
-      <div>
-        <Header />
-        <RecommendationSection />
-        {q ? <SearchResults games={games} query={q} /> : null}
-        <GameInfo game={selectedGame} />
-        <MyLibrary />
-        <Footer />
-      </div>
+      <HomeClient initialGame={initialGame} />
     </main>
   );
 }

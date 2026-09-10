@@ -1,43 +1,52 @@
-import type { Game } from "@/types/Game";
-import GameCard from "./GameCard/GameCard";
+"use client";
+
+import type {
+  RecommendedGame,
+  RecommendationMeta,
+  RecommendationResultItem,
+} from "@/types/Recommendation";
+import {
+  DemoMetaPanel,
+  RequestedGamesRow,
+} from "@/components/SearchResults/RecommendationExtras";
+import RecommendationResults from "./RecommendationResults";
 
 type SearchResultsProps = {
-  games: Game[];
-  query?: string;
-  selectedSlug?: string;
+  results: RecommendationResultItem[];
+  requestedGames: RecommendedGame[];
+  requestedKeywords: string[];
+  demoMode: boolean;
+  searching: boolean;
+  meta: RecommendationMeta | null;
+  onSelectGame: (game: RecommendedGame) => void;
 };
 
+/*
+ * SEARCH RESULTS del flujo conversacional: zona de "lo que pediste"
+ * (referencia) + tandas rankeadas por el matcher. La reestructuración
+ * con grid 3+3+2 y cards simplificados llega en A3; este es el skeleton
+ * estructural (misma composición, sin ?q= legacy).
+ */
 export default function SearchResults({
-  games,
-  query,
-  selectedSlug,
+  results,
+  requestedGames,
+  requestedKeywords,
+  demoMode,
+  searching,
+  meta,
+  onSelectGame,
 }: SearchResultsProps) {
-  if (!query) {
-    return null;
-  }
-  if (games.length === 0) {
-    return (
-      <section>
-        <h2>Search Results</h2>
-        <p>No games found.</p>
-      </section>
-    );
-  }
   return (
-    <section>
-      <h2>SearchResults</h2>
-      {games.map((game) => (
-        <GameCard
-          key={game.slug}
-          title={game.title}
-          coverUrl={game.coverUrl}
-          releaseYear={game.releaseYear}
-          genres={game.genres}
-          slug={game.slug}
-          query={query}
-          selected={selectedSlug === game.slug}
-        />
-      ))}
-    </section>
+    <>
+      <RequestedGamesRow games={requestedGames} onSelectGame={onSelectGame} />
+      <RecommendationResults
+        results={results}
+        requestedKeywords={requestedKeywords}
+        demoMode={demoMode}
+        searching={searching}
+        onSelectGame={(item) => onSelectGame(item.game)}
+      />
+      {demoMode && meta ? <DemoMetaPanel meta={meta} /> : null}
+    </>
   );
 }
