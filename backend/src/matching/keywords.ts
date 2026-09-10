@@ -51,14 +51,9 @@ export const KEYWORD_STOPWORDS = new Set([
 /*
  * Torniquete de género (diseño: específico del español, idioma de la UI).
  * El modelo a veces "expande inclusivamente" lo que el usuario pide
- * ("vaqueros" → cowboys + cowgirls) aunque el prompt lo prohíbe. Como el
- * prompt ha fallado, se ata en código — pero con alcance quirúrgico: SOLO
- * keywords AÑADIDAS por un delta (nunca extracción fresca ni lo ya
- * guardado en sesión). El peor caso es perder un añadido recuperable
- * con un "con X".
- * Principio: se respeta el género gramatical de la palabra de entrada,
- * literalmente (vaqueros→cowboys, vaqueras→cowgirls). Sin evidencia en
- * contra se conserva (conservador).
+ * ("vaqueros" → cowboys + cowgirls) aunque el prompt lo prohíbe.
+ * Esto ha pasado tantas veces testeando que ha hecho necesario especificarlo.
+ * Supongo que sera cosa del gpt 4, es lo que hay.
  */
 
 // Parejas de género en inglés [masculino, femenino], en singular.
@@ -88,7 +83,16 @@ function stripAccents(text: string): string {
 }
 
 const MASCULINE_ENDINGS = ["o", "os", "or", "ores", "on", "ones"];
-const FEMININE_ENDINGS = ["a", "as", "ora", "oras", "esa", "esas", "ona", "onas"];
+const FEMININE_ENDINGS = [
+  "a",
+  "as",
+  "ora",
+  "oras",
+  "esa",
+  "esas",
+  "ona",
+  "onas",
+];
 
 // Tokens del mensaje con género gramatical evidente (sin tildes, >3
 // letras, fuera de stopwords: así "más"→"mas" no cuenta como femenino).

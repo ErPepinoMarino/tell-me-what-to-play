@@ -56,8 +56,7 @@ function gameKeywordStems(game: MatchableGame): Set<string> {
 }
 
 // Talos de las palabras del título ("Grand Theft Auto: San Andreas" →
-// grand/theft/auto/san/andreas). El split es unicode-aware para que la
-// puntuación ("Batman:", "pokémon") no rompa las palabras.
+// grand/theft/auto/san/andreas). Al contrario que antes.
 function titleWordStems(title: string): Set<string> {
   return new Set(
     title
@@ -161,8 +160,16 @@ function checkRedFlags(
   }[] = [
     { field: "genres", excluded: excluded.genres, values: game.genres },
     { field: "themes", excluded: excluded.themes, values: game.themes },
-    { field: "platforms", excluded: excluded.platforms, values: game.platforms },
-    { field: "gameModes", excluded: excluded.gameModes, values: game.gameModes },
+    {
+      field: "platforms",
+      excluded: excluded.platforms,
+      values: game.platforms,
+    },
+    {
+      field: "gameModes",
+      excluded: excluded.gameModes,
+      values: game.gameModes,
+    },
     {
       field: "perspectives",
       excluded: excluded.perspectives,
@@ -267,8 +274,16 @@ function checkMust(
     requested: string[];
     values: string[];
   }[] = [
-    { field: "genres", requested: intent.objective?.genres ?? [], values: game.genres },
-    { field: "themes", requested: intent.objective?.themes ?? [], values: game.themes },
+    {
+      field: "genres",
+      requested: intent.objective?.genres ?? [],
+      values: game.genres,
+    },
+    {
+      field: "themes",
+      requested: intent.objective?.themes ?? [],
+      values: game.themes,
+    },
     {
       field: "platforms",
       requested: intent.objective?.platforms ?? [],
@@ -367,7 +382,8 @@ function checkPresenceGate(
 
   for (const field of SEMANTIC_FIELDS) {
     const intentValue = semantic[field];
-    if (intentValue === null || intentValue < SEMANTIC_DEMAND_GATE_MIN) continue;
+    if (intentValue === null || intentValue < SEMANTIC_DEMAND_GATE_MIN)
+      continue;
     const gameValue = game[field];
     if (gameValue !== null && gameValue >= SEMANTIC_PASS_MIN) continue;
 
@@ -402,9 +418,7 @@ function checkAnchorOverlapGate(
   );
   if (anchorStems.size === 0) return;
 
-  const gameStems = new Set(
-    game.keywords.map((k) => keywordStem(k)),
-  );
+  const gameStems = new Set(game.keywords.map((k) => keywordStem(k)));
   const overlaps = [...gameStems].some((stem) => anchorStems.has(stem));
   if (overlaps) return;
 
@@ -481,7 +495,11 @@ function computeSemanticRanking(
   for (const field of SEMANTIC_FIELDS) {
     const intentValue = intent.semantic?.[field];
     const gameValue = game[field];
-    if (intentValue === null || intentValue === undefined || gameValue === null) {
+    if (
+      intentValue === null ||
+      intentValue === undefined ||
+      gameValue === null
+    ) {
       continue;
     }
     comparable++;
@@ -533,7 +551,11 @@ function sortReasons(reasons: MatchReason[]): void {
   });
 }
 
-function assignTier(gatesViolated: number, score: number, covSem: number): MatchTier {
+function assignTier(
+  gatesViolated: number,
+  score: number,
+  covSem: number,
+): MatchTier {
   if (gatesViolated > 0) return "invalid";
   if (score >= MATCH_THRESHOLDS.excellent && covSem >= COV_MIN.excellent) {
     return "excellent";

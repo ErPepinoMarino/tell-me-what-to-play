@@ -24,7 +24,7 @@ export interface CandidateFilter {
   limit: number;
 }
 
-function toGame(
+export function toGame(
   game: Awaited<ReturnType<typeof prisma.games.findUnique>> & {},
 ): Game {
   return {
