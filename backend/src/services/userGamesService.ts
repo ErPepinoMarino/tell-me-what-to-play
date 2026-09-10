@@ -1,14 +1,29 @@
-import { Role } from "../generated/prisma/enums.js";
-import { prisma } from "../lib/prisma.js";
+import { prismaGameRepository } from "../repositories/prismaGameRepository.js";
+import { prismaUserRepository } from "../repositories/prismaUserRepository.js";
 import { prismaUserGamesRepository } from "../repositories/prismaUserGamesRepository.js";
+import type { Role } from "../generated/prisma/enums.js";
+import {
+  UserNotFoundError,
+  GameNotFoundError,
+  GameNotInLibraryError,
+  GameAlreadyInLibraryError,
+} from "../errors/userGamesErrors.js";
+
+async function getUserRole(userId: number): Promise<Role> {
+  const role = await prismaUserRepository.getRoleById(userId);
+
+  if (!role) {
+    throw new UserNotFoundError();
+  }
+
+  return role;
+}
 
 const ensureGameExists = async (gameId: number) => {
-  const game = await prisma.games.findUnique({
-    where: { id: gameId },
-  });
+  const game = await prismaGameRepository.getById(gameId);
 
   if (!game) {
-    throw new Error("game not found");
+    throw new GameNotFoundError();
   }
 
   return game;
@@ -24,12 +39,13 @@ const ensureLibraryAccess = (
   }
 
   if (actorUserId !== targetUserId) {
-    throw new Error("not found");
+    throw new UserNotFoundError();
   }
 };
 
 export const userGamesService = {
-  async getLibrary(actorUserId: number, actorRole: Role, targetUserId: number) {
+  async getLibrary(actorUserId: number, targetUserId: number) {
+    const actorRole = await getUserRole(actorUserId);
     ensureLibraryAccess(actorRole, actorUserId, targetUserId);
 
     return prismaUserGamesRepository.getByUserId(targetUserId);
@@ -37,11 +53,13 @@ export const userGamesService = {
 
   async addToLibrary(
     actorUserId: number,
-    actorRole: Role,
     targetUserId: number,
     gameId: number,
   ) {
-    await ensureGameExists(gameId);
+    const [actorRole] = await Promise.all([
+      getUserRole(actorUserId),
+      ensureGameExists(gameId),
+    ]);
     ensureLibraryAccess(actorRole, actorUserId, targetUserId);
 
     const existing = await prismaUserGamesRepository.getByUserAndGame(
@@ -50,7 +68,7 @@ export const userGamesService = {
     );
 
     if (existing) {
-      throw new Error("game already in library");
+      throw new GameAlreadyInLibraryError();
     }
 
     return prismaUserGamesRepository.add(targetUserId, gameId, {
@@ -60,7 +78,6 @@ export const userGamesService = {
 
   async updateLibraryEntry(
     actorUserId: number,
-    actorRole: Role,
     targetUserId: number,
     gameId: number,
     input: {
@@ -70,7 +87,10 @@ export const userGamesService = {
       review?: string | null;
     },
   ) {
-    await ensureGameExists(gameId);
+    const [actorRole] = await Promise.all([
+      getUserRole(actorUserId),
+      ensureGameExists(gameId),
+    ]);
     ensureLibraryAccess(actorRole, actorUserId, targetUserId);
 
     const entry = await prismaUserGamesRepository.getByUserAndGame(
@@ -79,7 +99,7 @@ export const userGamesService = {
     );
 
     if (!entry) {
-      throw new Error("game not in library");
+      throw new GameNotInLibraryError();
     }
 
     return prismaUserGamesRepository.update(targetUserId, gameId, input);
@@ -87,11 +107,13 @@ export const userGamesService = {
 
   async removeFromLibrary(
     actorUserId: number,
-    actorRole: Role,
     targetUserId: number,
     gameId: number,
   ) {
-    await ensureGameExists(gameId);
+    const [actorRole] = await Promise.all([
+      getUserRole(actorUserId),
+      ensureGameExists(gameId),
+    ]);
     ensureLibraryAccess(actorRole, actorUserId, targetUserId);
 
     const entry = await prismaUserGamesRepository.getByUserAndGame(
@@ -100,7 +122,7 @@ export const userGamesService = {
     );
 
     if (!entry) {
-      throw new Error("game not in library");
+      throw new GameNotInLibraryError();
     }
 
     return prismaUserGamesRepository.remove(targetUserId, gameId);

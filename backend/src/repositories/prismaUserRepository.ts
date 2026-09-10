@@ -1,6 +1,16 @@
 import { prisma } from "../lib/prisma.js";
+import type { Role } from "../generated/prisma/enums.js";
 
 export const prismaUserRepository = {
+  async getRoleById(id: number): Promise<Role | undefined> {
+    const user = await prisma.users.findUnique({
+      where: { id },
+      select: { role: true },
+    });
+
+    return user?.role;
+  },
+
   async findByIdentity(provider: string, providerSub: string) {
     const identity = await prisma.user_identities.findUnique({
       where: {

@@ -10,7 +10,7 @@ import { prisma } from "../src/lib/prisma.js";
 import { prismaGameRepository } from "../src/repositories/prismaGameRepository.js";
 import { createIgdbClient } from "../src/igdb/index.js";
 import { normalizeThemes } from "../src/igdb/normalizers.js";
-import type { Theme } from "../src/generated/prisma/enums.js";
+import type { Theme } from "../src/types/enums.js";
 
 const CHUNK = 500;
 

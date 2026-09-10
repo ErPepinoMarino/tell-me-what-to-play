@@ -4,7 +4,7 @@ import type {
   Perspective,
   Platform,
   Theme,
-} from "../generated/prisma/enums.js";
+} from "../types/enums.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 // Los bloques que se comparan.

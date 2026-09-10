@@ -5,7 +5,7 @@ import type {
   Perspective,
   Platform,
   Theme,
-} from "../generated/prisma/enums.js";
+} from "../types/enums.js";
 import type { Game, GameToPersist } from "../types/Game.js";
 
 // Filtro de pre-selección de candidatos para el orquestador. Semántica
@@ -66,6 +66,16 @@ export const prismaGameRepository = {
     const games = await prisma.games.findMany();
 
     return games.map(toGame);
+  },
+
+  async getById(id: number): Promise<Game | undefined> {
+    const game = await prisma.games.findUnique({
+      where: { id },
+    });
+
+    if (!game) return undefined;
+
+    return toGame(game);
   },
 
   async getBySlug(slug: string): Promise<Game | undefined> {

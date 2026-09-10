@@ -6,7 +6,7 @@ import type { Game, GameToPersist } from "../../src/types/Game.js";
 import type {
   GameMode,
   Perspective,
-} from "../../src/generated/prisma/enums.js";
+} from "../../src/types/enums.js";
 
 const defaults = {
   game_modes: ["UNKNOWN"] as GameMode[],

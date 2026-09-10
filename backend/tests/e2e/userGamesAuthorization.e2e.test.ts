@@ -212,7 +212,7 @@ describe("user library authorization E2E", () => {
     const body = await response.json();
 
     expect(response.status).toBe(404);
-    expect(body).toEqual({ message: "not found" });
+    expect(body).toEqual({ message: "User not found" });
   });
 
   it("adds a game to the authenticated user's library", async () => {

@@ -3,7 +3,7 @@ import type { BaseLanguageModelInput } from "@langchain/core/language_models/bas
 import type { Candidate, GameToPersist } from "../types/Game.js";
 import type { GameEnrichment } from "../types/GameEnrichment.js";
 import type { Evidence, ResearchProvider } from "./research.js";
-import type { Genre } from "../generated/prisma/enums.js";
+import type { Genre } from "../types/enums.js";
 
 export interface EnrichmentService {
   enrich(candidate: Candidate): Promise<GameToPersist>;

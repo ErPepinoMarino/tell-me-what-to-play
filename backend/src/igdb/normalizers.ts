@@ -22,7 +22,7 @@ import {
   Perspective,
   Platform,
   Theme,
-} from "../generated/prisma/enums.js";
+} from "../types/enums.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 // Mapa de equivalencias IGDB -> TMWTP

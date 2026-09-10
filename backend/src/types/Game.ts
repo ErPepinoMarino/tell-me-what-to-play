@@ -4,7 +4,7 @@
   Perspective,
   Platform,
   Theme,
-} from "../generated/prisma/enums.js";
+} from "./enums.js";
 import type { IgdbGameRaw } from "../igdb/types.js";
 
 export interface Game {

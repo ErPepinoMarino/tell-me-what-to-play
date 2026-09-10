@@ -1,7 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { authMiddleware } from "../middlewares/authMiddleware.js";
-import { prisma } from "../lib/prisma.js";
+import { getUser } from "../lib/authUser.js";
 import { userGamesService } from "../services/userGamesService.js";
+import {
+  UserNotFoundError,
+  GameNotFoundError,
+  GameNotInLibraryError,
+  GameAlreadyInLibraryError,
+} from "../errors/userGamesErrors.js";
 
 const userLibraryParamsSchema = {
   type: "object",
@@ -64,19 +70,6 @@ const updateLibraryEntryBodySchema = {
 };
 
 export async function userGamesRoutes(fastify: FastifyInstance): Promise<void> {
-  const getActorRole = async (userId: number) => {
-    const user = await prisma.users.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    });
-
-    if (!user) {
-      throw new Error("not found");
-    }
-
-    return user.role;
-  };
-
   fastify.get<{ Params: { targetUserId: number } }>(
     "/api/users/:targetUserId/library",
     {
@@ -89,25 +82,24 @@ export async function userGamesRoutes(fastify: FastifyInstance): Promise<void> {
       try {
         //Sacamos el id del JWT, importante.
         //El id bueno es el que viene en JWT, no el que viene en la URL.
-        const actorUserId = Number(request.user.sub);
-        const actorRole = await getActorRole(actorUserId);
+        const user = getUser(request);
+        if (user === undefined) {
+          return reply.code(401).send({ error: "Invalid or missing token" });
+        }
+        const actorUserId = Number(user.sub);
         const targetUserId = Number(request.params.targetUserId);
 
         return await userGamesService.getLibrary(
           actorUserId,
-          actorRole,
           targetUserId,
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Internal server error";
-
         if (
-          message === "not found" ||
-          message === "game not found" ||
-          message === "game not in library"
+          error instanceof UserNotFoundError ||
+          error instanceof GameNotFoundError ||
+          error instanceof GameNotInLibraryError
         ) {
-          return reply.code(404).send({ message });
+          return reply.code(404).send({ message: error.message });
         }
 
         return reply.code(500).send({ message: "Internal server error" });
@@ -129,30 +121,29 @@ export async function userGamesRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       try {
-        const actorUserId = Number(request.user.sub);
-        const actorRole = await getActorRole(actorUserId);
+        const user = getUser(request);
+        if (user === undefined) {
+          return reply.code(401).send({ error: "Invalid or missing token" });
+        }
+        const actorUserId = Number(user.sub);
         const targetUserId = Number(request.params.targetUserId);
 
         return await userGamesService.addToLibrary(
           actorUserId,
-          actorRole,
           targetUserId,
           request.body.gameId,
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Internal server error";
-
-        if (
-          message === "not found" ||
-          message === "game not found" ||
-          message === "game not in library"
-        ) {
-          return reply.code(404).send({ message });
+        if (error instanceof GameAlreadyInLibraryError) {
+          return reply.code(409).send({ message: error.message });
         }
 
-        if (message === "game already in library") {
-          return reply.code(409).send({ message });
+        if (
+          error instanceof UserNotFoundError ||
+          error instanceof GameNotFoundError ||
+          error instanceof GameNotInLibraryError
+        ) {
+          return reply.code(404).send({ message: error.message });
         }
 
         return reply.code(500).send({ message: "Internal server error" });
@@ -179,28 +170,27 @@ export async function userGamesRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       try {
-        const actorUserId = Number(request.user.sub);
-        const actorRole = await getActorRole(actorUserId);
+        const user = getUser(request);
+        if (user === undefined) {
+          return reply.code(401).send({ error: "Invalid or missing token" });
+        }
+        const actorUserId = Number(user.sub);
         const targetUserId = Number(request.params.targetUserId);
         const gameId = Number(request.params.gameId);
 
         return await userGamesService.updateLibraryEntry(
           actorUserId,
-          actorRole,
           targetUserId,
           gameId,
           request.body,
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Internal server error";
-
         if (
-          message === "not found" ||
-          message === "game not found" ||
-          message === "game not in library"
+          error instanceof UserNotFoundError ||
+          error instanceof GameNotFoundError ||
+          error instanceof GameNotInLibraryError
         ) {
-          return reply.code(404).send({ message });
+          return reply.code(404).send({ message: error.message });
         }
 
         return reply.code(500).send({ message: "Internal server error" });
@@ -218,27 +208,26 @@ export async function userGamesRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       try {
-        const actorUserId = Number(request.user.sub);
-        const actorRole = await getActorRole(actorUserId);
+        const user = getUser(request);
+        if (user === undefined) {
+          return reply.code(401).send({ error: "Invalid or missing token" });
+        }
+        const actorUserId = Number(user.sub);
         const targetUserId = Number(request.params.targetUserId);
         const gameId = Number(request.params.gameId);
 
         return await userGamesService.removeFromLibrary(
           actorUserId,
-          actorRole,
           targetUserId,
           gameId,
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Internal server error";
-
         if (
-          message === "not found" ||
-          message === "game not found" ||
-          message === "game not in library"
+          error instanceof UserNotFoundError ||
+          error instanceof GameNotFoundError ||
+          error instanceof GameNotInLibraryError
         ) {
-          return reply.code(404).send({ message });
+          return reply.code(404).send({ message: error.message });
         }
 
         return reply.code(500).send({ message: "Internal server error" });
