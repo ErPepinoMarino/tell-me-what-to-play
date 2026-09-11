@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { toGame } from "./prismaGameRepository.js";
 import type { Game } from "../types/Game.js";
+import { GameAlreadyInLibraryError } from "../errors/userGamesErrors.js";
 
 type UserGameStatus = "PENDING" | "PLAYED" | "COMPLETED";
 type UserGameRecommendation =
@@ -90,7 +91,7 @@ export const prismaUserGamesRepository = {
     });
     //miramos si el juego existe en la librería del usuario.
     if (existing) {
-      throw new Error("game already in library");
+      throw new GameAlreadyInLibraryError();
     }
     //Esto puede parecer raro pero es para manejar una race condition.
     //Primero metemos el juego en la libreroia (o lo intentamos con un try)
@@ -118,7 +119,7 @@ export const prismaUserGamesRepository = {
         "code" in error &&
         error.code === "P2002"
       ) {
-        throw new Error("game already in library", { cause: error });
+        throw new GameAlreadyInLibraryError(error);
       }
 
       throw error;

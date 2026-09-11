@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prismaUserGamesRepository } from "../../src/repositories/prismaUserGamesRepository.js";
 import { prisma } from "../../src/lib/prisma.js";
+import { GameAlreadyInLibraryError } from "../../src/errors/userGamesErrors.js";
 import { resetTestDatabase } from "../helpers/resetTestDatabase.js";
 
 async function createUserAndGame() {
@@ -103,7 +104,31 @@ describe("prismaUserGamesRepository integration", () => {
 
     await expect(
       prismaUserGamesRepository.add(user.id, game.id),
-    ).rejects.toThrow("game already in library");
+    ).rejects.toBeInstanceOf(GameAlreadyInLibraryError);
+  });
+
+  it("races two concurrent adds and keeps a single entry", async () => {
+    const { user, game } = await createUserAndGame();
+
+    // Simulamos dos requests simultáneas: la clave única (user_id, game_id)
+    // decide el ganador y el perdedor debe recibir el error tipado (bien por
+    // el pre-check, bien por la violación P2002 en la carrera).
+    const results = await Promise.allSettled([
+      prismaUserGamesRepository.add(user.id, game.id),
+      prismaUserGamesRepository.add(user.id, game.id),
+    ]);
+
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toBeInstanceOf(GameAlreadyInLibraryError);
+
+    const rows = await prisma.user_games.findMany({
+      where: { user_id: user.id, game_id: game.id },
+    });
+    expect(rows).toHaveLength(1);
   });
 
   it("updates a user's game entry", async () => {

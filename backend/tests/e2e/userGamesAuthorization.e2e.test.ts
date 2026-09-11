@@ -355,6 +355,44 @@ describe("user library authorization E2E", () => {
     expect(entries).toHaveLength(1);
   });
 
+  it("returns 409, never 500, when concurrent adds race for the same game", async () => {
+    const concha = await prisma.users.create({
+      data: { email: "concha-race@example.com" },
+    });
+    const game = await prisma.games.create({
+      data: {
+        slug: "game-race",
+        title: "Game Race",
+        genres: ["SHOOTER"],
+        themes: ["UNKNOWN"],
+        platforms: ["PC"],
+      },
+    });
+    const accessToken = await createAccessToken(concha.id);
+
+    const url = `${server.baseUrl}/api/users/${concha.id}/library`;
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+    const body = JSON.stringify({ gameId: game.id });
+
+    // Dos POST simultáneos al mismo juego: uno gana, el otro debe recibir 409
+    // (por el pre-check o por la violación única P2002), nunca un 500.
+    const responses = await Promise.all([
+      fetch(url, { method: "POST", headers, body }),
+      fetch(url, { method: "POST", headers, body }),
+    ]);
+    const statuses = responses.map((response) => response.status).sort();
+
+    expect(statuses).toEqual([200, 409]);
+
+    const entries = await prisma.user_games.findMany({
+      where: { user_id: concha.id, game_id: game.id },
+    });
+    expect(entries).toHaveLength(1);
+  });
+
   it("returns 400 when the add-library body is invalid", async () => {
     const concha = await prisma.users.create({
       //Body invalido, no tiene gameId. 400 Bad Request.

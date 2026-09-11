@@ -29,10 +29,13 @@ import {
   gatherCandidates,
   findAnchorByTitle,
 } from "./candidates.js";
-import { DiscoveryManager, knownSemanticsCount } from "./discovery.js";
 import {
-  InterpretationError,
-} from "./errors.js";
+  createDiscoveryRun,
+  DiscoveryManager,
+  knownSemanticsCount,
+  type DiscoveryRun,
+} from "./discovery.js";
+import { InterpretationError } from "./errors.js";
 import {
   fallbackExplanation,
   type ExplanationComposer,
@@ -111,6 +114,10 @@ export class RecommendationOrchestrator {
     const startedAt = Date.now();
     const notices = new Set<NoticeCode>();
     let discoveryUnitsUsed = 0;
+    // Estado de descubrimiento de ESTA petición: cada ejecución tiene la
+    // suya para que dos requests concurrentes no se entrelacen el cursor
+    // ni se pisen la lista IGDB a través de los awaits.
+    const discoveryRun = createDiscoveryRun();
 
     trace("request", {
       action: request.action,
@@ -393,8 +400,7 @@ export class RecommendationOrchestrator {
         event: "results",
         results: current
           .filter(
-            (item) =>
-              TIER_RANK[item.tier] >= TIER_RANK[this.config.minTier],
+            (item) => TIER_RANK[item.tier] >= TIER_RANK[this.config.minTier],
           )
           .slice(0, slots)
           .map((item) => toResultItem(item)),
@@ -457,6 +463,7 @@ export class RecommendationOrchestrator {
                 excludeGameIds: excludeIds,
               }).ranked,
             ),
+          discoveryRun,
         );
         if (attempt.outcome === "budget-exhausted") {
           // Un intento bloqueado por presupuesto no consume nada: no cuenta
@@ -628,6 +635,7 @@ export class RecommendationOrchestrator {
         traceId,
         base.intent,
         anchors,
+        discoveryRun,
       );
     }
 
@@ -755,8 +763,7 @@ export class RecommendationOrchestrator {
       // es idéntico al previo) equivale a pulsar "dame más": se excluye lo
       // mostrado en vez de re-competir y re-mostrar lo mismo.
       const excludeShown =
-        isDeltaEmpty(sanitizedDelta) ||
-        isSameIntent(intent, previousIntent!);
+        isDeltaEmpty(sanitizedDelta) || isSameIntent(intent, previousIntent!);
       return {
         intent,
         lifecycle: "continue",
@@ -864,6 +871,7 @@ export class RecommendationOrchestrator {
     traceId: string,
     intent: GameSearchIntent,
     anchors: Game[],
+    discoveryRun: DiscoveryRun,
   ): Promise<void> {
     return (async () => {
       let units = 0;
@@ -893,6 +901,8 @@ export class RecommendationOrchestrator {
           traceId,
           intent,
           anchors,
+          undefined,
+          discoveryRun,
         );
         units++;
       }
@@ -1100,7 +1110,8 @@ export function isSameIntent(
     (a.yearTo ?? null) === (b.yearTo ?? null) &&
     sameExcluded(a.excluded, b.excluded) &&
     SEMANTIC_FIELDS.every(
-      (field) => (a.semantic?.[field] ?? null) === (b.semantic?.[field] ?? null),
+      (field) =>
+        (a.semantic?.[field] ?? null) === (b.semantic?.[field] ?? null),
     )
   );
 }

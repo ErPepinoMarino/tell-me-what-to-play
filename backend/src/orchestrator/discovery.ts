@@ -26,6 +26,7 @@ import { SEMANTIC_FIELDS } from "../matching/constants.js";
 import { withTimeout } from "../lib/withTimeout.js";
 import { createTrace, type Trace } from "../lib/logger.js";
 import type { CatalogLayer } from "./types.js";
+import type { DiscoveryCacheRepository } from "./discoveryCache.js";
 
 export type DiscoveryAttemptOutcome = "ok" | "budget-exhausted" | "error";
 
@@ -175,25 +176,45 @@ export interface RelaxedAttempt {
   enrichmentErrors: number;
 }
 
-export class DiscoveryManager {
-  /*
-   * Memoria de la última búsqueda IGDB: una query suele devolver ~10
-   * candidatos y cada unidad solo enriquece 2. En lugar de repetir la
-   * llamada (mismos resultados) o rendirnos al agotar las variantes, las
-   * unidades siguientes CONSUMEN la lista guardada sin gastar IGDB.
-   * La caché se clavea por (query, intent): la lista devuelta depende del
-   * `where` (filtros del intent), así que un intent estricto que agota la
-   * suya no bloquea el refetch de otro más laxo con el mismo texto.
-   * V1: un solo proceso; peticiones concurrentes pueden entrelazar el
-   * cursor (mismo criterio que la sesión en memoria).
-   */
-  private lastQuery: string | null = null;
-  private lastIntentKey: string | null = null;
-  private lastRaws: IgdbGameRaw[] = [];
-  private lastCursor = 0;
-  private lastOffset = 0;
-  private lastLimit = 0;
+/*
+ * Estado de UNA ejecución de descubrimiento (la petición que atiende
+ * handle()): la última búsqueda IGDB y por dónde va su consumo. Una query
+ * suele devolver ~10 candidatos y cada unidad solo enriquece 2. En lugar de
+ * repetir la llamada (mismos resultados) o rendirnos al agotar las
+ * variantes, las unidades siguientes CONSUMEN la lista guardada sin gastar
+ * IGDB. La lista se clavea por (query, intent): la devuelta depende del
+ * `where` (filtros del intent), así que un intent estricto que agota la
+ * suya no bloquea el refetch de otro más laxo con el mismo texto.
+ *
+ * Vive en el contexto de la ejecución, NO en el gestor: dos peticiones
+ * concurrentes tienen cada una la suya y no pueden entrelazarse el cursor
+ * ni pisarse la lista a través de un `await`.
+ */
+export interface DiscoveryRun {
+  // Query e intent de la lista en curso (null = aún no hay lista).
+  query: string | null;
+  intentKey: string | null;
+  // Raws de IGDB de la lista en curso (consumidos y pendientes).
+  raws: IgdbGameRaw[];
+  // Cuántos raws de la lista se han consumido ya en esta ejecución.
+  cursor: number;
+  // Paginación de la lista: offset ya pedido y tamaño de página.
+  offset: number;
+  limit: number;
+}
 
+export function createDiscoveryRun(): DiscoveryRun {
+  return {
+    query: null,
+    intentKey: null,
+    raws: [],
+    cursor: 0,
+    offset: 0,
+    limit: 0,
+  };
+}
+
+export class DiscoveryManager {
   /*
    * Clave estable de los campos del intent que determinan el `where` de
    * filteredSearch (null cuando no hay intent: text-search clásico).
@@ -218,6 +239,8 @@ export class DiscoveryManager {
     private igdb: IgdbClient,
     private enrichment: EnrichmentService & Partial<EnrichmentUpdater>,
     private catalog: CatalogLayer,
+    // Pool global de raws descubiertos y reutilizables entre peticiones.
+    private cache: DiscoveryCacheRepository,
     private budget: BudgetLedger,
     private config: RecommendationConfig = RECOMMENDATION_CONFIG,
     // Opcional (FASE 4): canonicalización + resolución canónico → id IGDB
@@ -325,10 +348,11 @@ export class DiscoveryManager {
   async discoverByQuery(
     query: string,
     maxNew: number,
-    traceId?: string,
-    intent?: GameSearchIntent,
-    anchors?: Game[],
-    onProgress?: DiscoveryProgress,
+    traceId: string | undefined,
+    intent: GameSearchIntent | undefined,
+    anchors: Game[],
+    onProgress: DiscoveryProgress | undefined,
+    run: DiscoveryRun,
   ): Promise<DiscoveryAttempt> {
     const trace = traceId ? createTrace(traceId) : null;
 
@@ -350,8 +374,8 @@ export class DiscoveryManager {
         : [];
     const intentKey = DiscoveryManager.intentFilterKey(intent);
     const sameQuery =
-      this.lastQuery === query && this.lastIntentKey === intentKey;
-    if (sameQuery && this.lastCursor >= this.lastRaws.length) {
+      run.query === query && run.intentKey === intentKey;
+    if (sameQuery && run.cursor >= run.raws.length) {
       /*
        * Paginación: la misma pregunta agotada pide la página siguiente
        * (hasta MAX_IGDB_LIST_RESULTS en total) en vez de rendirse para
@@ -359,10 +383,10 @@ export class DiscoveryManager {
        * Sin presupuesto para la página, agotado sin ruido (no es un error
        * de descubrimiento, es fin de lista por hoy).
        */
-      const nextOffset = this.lastOffset + this.lastRaws.length;
+      const nextOffset = run.offset + run.raws.length;
       const canPage =
         intent !== undefined &&
-        this.lastRaws.length >= this.lastLimit &&
+        run.raws.length >= run.limit &&
         nextOffset < MAX_IGDB_LIST_RESULTS &&
         this.budget.tryReserve("igdb", 1);
       if (!canPage) {
@@ -403,8 +427,9 @@ export class DiscoveryManager {
           enrichmentErrors: 0,
         };
       }
-      this.lastRaws = [...this.lastRaws, ...page];
-      this.lastOffset = nextOffset;
+      run.raws = [...run.raws, ...page];
+      run.offset = nextOffset;
+      await this.cache.addMany(page);
       trace?.("igdb-list-next-page", {
         query,
         offset: nextOffset,
@@ -414,70 +439,117 @@ export class DiscoveryManager {
     }
 
     if (!sameQuery) {
-      if (!this.budget.tryReserve("igdb", 1)) {
-        return {
-          outcome: "budget-exhausted",
-          newGames: [],
-          budgetExhausted: true,
-          variantExhausted: false,
-          enrichmentErrors: 0,
-        };
+      /*
+       * Pool-first: antes de gastar una llamada IGDB, escaneamos el pool
+       * global de raws descubiertos por peticiones anteriores. Los raws
+       * compatibles (pasan las puertas duras del intent si hay uno y no son
+       * DLC/baja calidad) se reutilizan directamente sin costo.
+       */
+      const poolRaws = await this.cache.readAll();
+      const poolCompatibles: IgdbGameRaw[] = [];
+      for (const poolRaw of poolRaws) {
+        if (shouldSkipNonIndependentGame(poolRaw)) continue;
+        if (this.isLowQualityRaw(poolRaw)) continue;
+        if (!intent) {
+          poolCompatibles.push(poolRaw);
+          continue;
+        }
+        const poolCandidate = this.seedQueryKeywords(
+          mapToCandidate(poolRaw),
+          seedTerms,
+        );
+        if (
+          passesHardFilters(
+            intent,
+            candidateAsMatchable(poolCandidate),
+            { semanticGates: false, anchors },
+          )
+        ) {
+          poolCompatibles.push(poolRaw);
+        }
       }
 
-      let raws: IgdbGameRaw[];
-      try {
-        raws = await withTimeout(
-          intent ? this.filteredSearch(intent, trace) : this.igdb.searchGames(
+      if (poolCompatibles.length > 0) {
+        run.query = query;
+        run.intentKey = intentKey;
+        run.raws = poolCompatibles;
+        run.cursor = 0;
+        run.offset = 0;
+        // Sentinel: raws.length < limit impide que el branch de paginación
+        // dispare incoherentemente sobre listas reconstruidas del pool.
+        run.limit = poolCompatibles.length + 1;
+        trace?.("pool-reuse", { query, results: poolCompatibles.length });
+      } else {
+        if (!this.budget.tryReserve("igdb", 1)) {
+          return {
+            outcome: "budget-exhausted",
+            newGames: [],
+            budgetExhausted: true,
+            variantExhausted: false,
+            enrichmentErrors: 0,
+          };
+        }
+
+        let raws: IgdbGameRaw[];
+        try {
+          raws = await withTimeout(
+            intent
+              ? this.filteredSearch(intent, trace)
+              : this.igdb.searchGames(
+                  query,
+                  this.config.igdbSearchLimit,
+                ),
+            this.config.unitTimeoutMs,
+            "IGDB search",
+          );
+        } catch {
+          this.budget.release("igdb", 1);
+          return {
+            outcome: "error",
+            newGames: [],
+            budgetExhausted: false,
+            variantExhausted: false,
+            enrichmentErrors: 0,
+          };
+        }
+        this.budget.commit("igdb", 1);
+        if (raws.length > 0) {
+          await this.cache.addMany(raws);
+        }
+        /*
+         * Una lista VACÍA no se cachea como cursor agotado: la query volvería
+         * a "agotada" para siempre sin reintentar (falla transitoria de IGDB
+         * o búsqueda sin resultados todavía). Solo las listas con resultados
+         * son reutilizables entre unidades.
+         */
+        run.query = raws.length > 0 ? query : null;
+        run.intentKey = raws.length > 0 ? intentKey : null;
+        run.raws = raws;
+        run.cursor = 0;
+        run.offset = 0;
+        run.limit = this.config.igdbSearchLimit;
+        if (intent) {
+          // Traza de la consulta filtrada: qué atributos fueron al `where`.
+          trace?.("igdb-filtered", {
             query,
-            this.config.igdbSearchLimit,
-          ),
-          this.config.unitTimeoutMs,
-          "IGDB search",
-        );
-      } catch {
-        this.budget.release("igdb", 1);
-        return {
-          outcome: "error",
-          newGames: [],
-          budgetExhausted: false,
-          variantExhausted: false,
-          enrichmentErrors: 0,
-        };
+            keywords: intent.keywords ?? null,
+            genres: intent.objective?.genres ?? null,
+            themes: intent.objective?.themes ?? null,
+            gameModes: intent.objective?.gameModes ?? null,
+            platforms: intent.objective?.platforms ?? null,
+            perspectives: intent.objective?.perspectives ?? null,
+            releaseYear: intent.releaseYear,
+            yearFrom: intent.yearFrom,
+            yearTo: intent.yearTo,
+            results: raws.length,
+          });
+        }
+        trace?.("igdb-search", { query, results: raws.length });
       }
-      this.budget.commit("igdb", 1);
-      /*
-       * Una lista VACÍA no se cachea como cursor agotado: la query volvería
-       * a "agotada" para siempre sin reintentar (falla transitoria de IGDB
-       * o búsqueda sin resultados todavía). Solo las listas con resultados
-       * son reutilizables entre unidades.
-       */
-      this.lastQuery = raws.length > 0 ? query : null;
-      this.lastIntentKey = raws.length > 0 ? intentKey : null;
-      this.lastRaws = raws;
-      this.lastCursor = 0;
-      this.lastOffset = 0;
-      this.lastLimit = this.config.igdbSearchLimit;
-      if (intent) {
-        // Traza de la consulta filtrada: qué atributos fueron al `where`.
-        trace?.("igdb-filtered", {
-          query,
-          keywords: intent.keywords ?? null,
-          genres: intent.objective?.genres ?? null,
-          themes: intent.objective?.themes ?? null,
-          gameModes: intent.objective?.gameModes ?? null,
-          platforms: intent.objective?.platforms ?? null,
-          perspectives: intent.objective?.perspectives ?? null,
-          releaseYear: intent.releaseYear,
-          yearFrom: intent.yearFrom,
-          yearTo: intent.yearTo,
-          results: raws.length,
-        });
-      }
-      trace?.("igdb-search", { query, results: raws.length });
     } else {
       trace?.("igdb-list-reuse", {
         query,
-        remaining: this.lastRaws.length - this.lastCursor,
+        remaining: run.raws.length - run.cursor,
       });
     }
 
@@ -485,9 +557,9 @@ export class DiscoveryManager {
     let budgetExhausted = false;
     let enrichmentErrors = 0;
 
-    while (this.lastCursor < this.lastRaws.length && newGames.length < maxNew) {
-      const raw = this.lastRaws[this.lastCursor];
-      this.lastCursor++;
+    while (run.cursor < run.raws.length && newGames.length < maxNew) {
+      const raw = run.raws[run.cursor];
+      run.cursor++;
       if (shouldSkipNonIndependentGame(raw)) continue;
       if (this.isLowQualityRaw(raw)) continue;
 
@@ -521,12 +593,16 @@ export class DiscoveryManager {
         continue;
       }
 
-      if (await this.existsInCatalog(candidate.sourceId, candidate.slug))
+      if (await this.existsInCatalog(candidate.sourceId, candidate.slug)) {
+        // El raw ya está en PostgreSQL: se retira del pool para no volver a
+        // evaluarlo en futuras peticiones.
+        await this.cache.remove(candidate.sourceId);
         continue;
+      }
 
       if (!this.reserveEnrichmentBudget()) {
         // La ficha no se procesó: vuelve a la lista para la siguiente unidad.
-        this.lastCursor--;
+        run.cursor--;
         budgetExhausted = true;
         break;
       }
@@ -569,6 +645,9 @@ export class DiscoveryManager {
           continue;
         }
         newGames.push(await this.catalog.create(enriched));
+        // Promoción completada: el raw ya tiene dueño en PostgreSQL, sale
+        // del pool (regla de borrado: solo tras existe-en-PG o promoción).
+        await this.cache.remove(candidate.sourceId);
         onProgress?.([...newGames], intent);
       } catch (error) {
         // El intento pudo haber consumido llamadas de Brave a mitad: se
@@ -594,7 +673,7 @@ export class DiscoveryManager {
       outcome: "ok",
       newGames,
       budgetExhausted,
-      variantExhausted: this.lastCursor >= this.lastRaws.length,
+      variantExhausted: run.cursor >= run.raws.length,
       enrichmentErrors,
     };
   }
@@ -603,8 +682,9 @@ export class DiscoveryManager {
    * Rescate relajado (rama "more"): criba local en cascada — pasada 0 con
    * must completo, luego soltando un grupo por pasada (RELAX_ORDER) hasta
    * llenar maxNew o agotar grupos. Solo se enriquece a los ≤maxNew
-   * supervivientes. Recicla la lista estricta del turno (mismo intent:
-   * 0 llamadas); solo si no hay caché útil hace UNA llamada amplia.
+   * supervivientes. Reutiliza raws del pool global (gratis); solo si no hay
+   * raws compatibles hace UNA o DOS llamadas de pago (amplia + where
+   * relajado).
    */
   async discoverRelaxed(
     query: string,
@@ -633,14 +713,13 @@ export class DiscoveryManager {
     if (!hasObjectiveSignal(intent)) return empty;
 
     // Fases de fetch (tope: 2 llamadas de pago por rescate):
-    //  1. reciclar la lista estricta del turno (gratis);
+    //  1. reutilizar raws compatibles del pool global (gratis);
     //  2. amplia de texto (trae títulos que el where no ve);
     //  3. where relajado en el primer grupo con señal (trae lo que el
     //     estricto excluye por un filtro de más).
     // Un fallo de fase no tumba el rescate: se sigue con lo reunido (la
     // criba honesta dirá si basta). Sin ninguna llamada por presupuesto,
     // budget-exhausted como antes.
-    const intentKey = DiscoveryManager.intentFilterKey(intent);
     const allRaws: IgdbGameRaw[] = [];
     const seenRawIds = new Set<number>();
     const collectUnique = (list: IgdbGameRaw[]): void => {
@@ -651,11 +730,16 @@ export class DiscoveryManager {
         }
       }
     };
-    if (this.lastIntentKey === intentKey && this.lastRaws.length > 0) {
-      collectUnique(this.lastRaws);
-      trace?.("igdb-list-reuse-relaxed", {
+    // Fase 1: raws del pool global (gratis). Las puertas baratas (no DLC, no
+    // low-quality) y los filtros duros del intent las aplica la cascada de
+    // criba; los raws que no pasen se descartan allí sin coste.
+    const poolRaws = await this.cache.readAll();
+    const poolCount = allRaws.length;
+    collectUnique(poolRaws);
+    if (allRaws.length > poolCount) {
+      trace?.("pool-reuse-relaxed", {
         query,
-        available: this.lastRaws.length,
+        available: allRaws.length,
       });
     }
 
@@ -678,6 +762,7 @@ export class DiscoveryManager {
           fetchedAny = true;
           trace?.("igdb-broad", { query, results: broad.length });
           collectUnique(broad);
+          await this.cache.addMany(broad);
         } catch {
           this.budget.release("igdb", 1);
           trace?.("igdb-phase-error", { phase: "broad", query });
@@ -706,6 +791,7 @@ export class DiscoveryManager {
             results: relaxed.length,
           });
           collectUnique(relaxed);
+          await this.cache.addMany(relaxed);
         } catch {
           this.budget.release("igdb", 1);
           trace?.("igdb-phase-error", { phase: "relaxed-where", query });
@@ -783,6 +869,7 @@ export class DiscoveryManager {
         }
         if (await this.existsInCatalog(candidate.sourceId, candidate.slug)) {
           seen.add(candidate.slug);
+          await this.cache.remove(candidate.sourceId);
           continue;
         }
         if (!this.reserveEnrichmentBudget()) {
@@ -806,6 +893,7 @@ export class DiscoveryManager {
             continue;
           }
           newGames.push(await this.catalog.create(enriched));
+          await this.cache.remove(candidate.sourceId);
           lastCreationPass = pass;
           // El intent efectivo es el que filtraba cuando se creó el último
           // juego: lo anunciado (droppedGroups) y lo rankeado coinciden.

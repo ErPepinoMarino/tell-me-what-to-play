@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDiscoveryRun,
   DiscoveryManager,
   dropRelaxGroup,
   knownSemanticsCount,
   RELAX_ORDER,
 } from "../../src/orchestrator/discovery.js";
+import {
+  InMemoryDiscoveryCacheRepository,
+  type DiscoveryCacheRepository,
+} from "../../src/orchestrator/discoveryCache.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import { RECOMMENDATION_CONFIG } from "../../src/recommendation/constants.js";
 import type { IgdbGameRaw } from "../../src/igdb/types.js";
@@ -27,12 +32,14 @@ function makeSetup(
     filteredResults?: IgdbGameRaw[];
     enrichment?: FakeEnrichment;
     catalog?: FakeCatalogLayer;
+    cache?: DiscoveryCacheRepository;
   } = {},
 ) {
   const catalog = opts.catalog ?? new FakeCatalogLayer();
   const igdb = new FakeIgdbClient(opts.igdbResults ?? {}, opts.igdbError);
   igdb.filteredResults = opts.filteredResults ?? [];
   const enrichment = opts.enrichment ?? new FakeEnrichment();
+  const cache = opts.cache ?? new InMemoryDiscoveryCacheRepository();
   const budget = new InMemoryBudgetLedger({
     igdb: opts.limits?.igdb ?? 100,
     brave: opts.limits?.brave ?? 100,
@@ -42,10 +49,22 @@ function makeSetup(
     igdb,
     enrichment,
     catalog,
+    cache,
     budget,
     RECOMMENDATION_CONFIG,
   );
-  return { discovery, catalog, igdb, enrichment, budget };
+  return {
+    discovery,
+    catalog,
+    igdb,
+    enrichment,
+    budget,
+    cache,
+    // Estado de UNA ejecución: cada petición crea el suyo; los tests de
+    // llamadas consecutivas reutilizan el mismo (y los de concurrencia,
+    // no).
+    run: createDiscoveryRun(),
+  };
 }
 
 describe("DiscoveryManager.discoverByQuery", () => {
@@ -65,7 +84,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
       },
     });
 
-    const attempt = await discovery.discoverByQuery("pirates", 2);
+    const attempt = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, createDiscoveryRun());
 
     expect(attempt.outcome).toBe("ok");
     expect(attempt.newGames.map((game) => game.sourceId)).toEqual(["2", "3"]);
@@ -81,7 +100,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
   it("devuelve budget-exhausted sin llamar a IGDB si no hay presupuesto", async () => {
     const { discovery, igdb } = makeSetup({ limits: { igdb: 0 } });
 
-    const attempt = await discovery.discoverByQuery("pirates", 2);
+    const attempt = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, createDiscoveryRun());
 
     expect(attempt).toEqual({
       outcome: "budget-exhausted",
@@ -98,7 +117,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
       igdbError: new Error("boom"),
     });
 
-    const attempt = await discovery.discoverByQuery("pirates", 2);
+    const attempt = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, createDiscoveryRun());
 
     expect(attempt.outcome).toBe("error");
     expect(attempt.newGames).toHaveLength(0);
@@ -113,7 +132,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
       },
     });
 
-    const attempt = await discovery.discoverByQuery("pirates", 2);
+    const attempt = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, createDiscoveryRun());
 
     expect(attempt.outcome).toBe("ok");
     expect(attempt.newGames).toHaveLength(1);
@@ -121,7 +140,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
   });
 
   it("reutiliza la lista de la misma query sin repetir la llamada IGDB", async () => {
-    const { discovery, igdb, catalog } = makeSetup({
+    const { discovery, igdb, catalog, run } = makeSetup({
       igdbResults: {
         pirates: [
           makeRaw(2, "A"),
@@ -132,8 +151,8 @@ describe("DiscoveryManager.discoverByQuery", () => {
       },
     });
 
-    const first = await discovery.discoverByQuery("pirates", 2);
-    const second = await discovery.discoverByQuery("pirates", 2);
+    const first = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, run);
+    const second = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, run);
 
     // Una sola llamada IGDB para las dos unidades
     expect(igdb.calls).toHaveLength(1);
@@ -144,13 +163,77 @@ describe("DiscoveryManager.discoverByQuery", () => {
     expect(catalog.createCalls).toBe(3);
   });
 
+  it("ejecuciones concurrentes comparten el pool sin duplicar raws ni llamadas", async () => {
+    // Pool precargado con raws compatibles disjuntos por intent: cada
+    // ejecución reutiliza SOLO los suyos (el pool es global entre
+    // peticiones, pero el run de cada una sigue siendo independiente).
+    const cache = new InMemoryDiscoveryCacheRepository();
+    await cache.addMany([
+      makeRaw(11, "Alpha A1", { keywords: [{ id: 1, name: "a" }] }),
+      makeRaw(12, "Alpha A2", { keywords: [{ id: 1, name: "a" }] }),
+      makeRaw(21, "Beta B1", { keywords: [{ id: 2, name: "b" }] }),
+      makeRaw(22, "Beta B2", { keywords: [{ id: 2, name: "b" }] }),
+      makeRaw(99, "Noise", { keywords: [] }),
+    ]);
+    const { discovery, igdb, catalog } = makeSetup({
+      cache,
+      igdbResults: {},
+      limits: { igdb: 10, brave: 300, llm: 300 },
+    });
+
+    const runA = createDiscoveryRun();
+    const runB = createDiscoveryRun();
+    const intentA = makeIntent({ keywords: ["a"] });
+    const intentB = makeIntent({ keywords: ["b"] });
+
+    const [countsA, countsB] = await Promise.all([
+      (async () => {
+        const attempt = await discovery.discoverByQuery(
+          "qa",
+          2,
+          undefined,
+          intentA,
+          [],
+          undefined,
+          runA,
+        );
+        return { ids: attempt.newGames.map((g) => g.sourceId), attempt };
+      })(),
+      (async () => {
+        const attempt = await discovery.discoverByQuery(
+          "qb",
+          2,
+          undefined,
+          intentB,
+          [],
+          undefined,
+          runB,
+        );
+        return { ids: attempt.newGames.map((g) => g.sourceId), attempt };
+      })(),
+    ]);
+
+    // Cada una consumió SUS raws compatibles del pool, sin robarse el run
+    // ni los candidatos de la otra: el run sigue siendo estado por
+    // ejecución, solo el pool (raws) es compartido.
+    expect(countsA.ids).toEqual(["11", "12"]);
+    expect(countsB.ids).toEqual(["21", "22"]);
+    expect(countsA.attempt.variantExhausted).toBe(true);
+    expect(countsB.attempt.variantExhausted).toBe(true);
+    // El pool absorbió ambas ejecuciones: cero llamadas IGDB nuevas.
+    expect(igdb.calls).toHaveLength(0);
+    expect(catalog.createCalls).toBe(4);
+    // Los promovidos salieron del pool; solo queda el raw incompatible.
+    expect((await cache.readAll()).map((raw) => String(raw.id))).toEqual(["99"]);
+  });
+
   it("marca variantExhausted y no llama a IGDB cuando la lista ya está consumida", async () => {
-    const { discovery, igdb } = makeSetup({
+    const { discovery, igdb, run } = makeSetup({
       igdbResults: { pirates: [makeRaw(2, "A")] },
     });
 
-    await discovery.discoverByQuery("pirates", 2);
-    const exhausted = await discovery.discoverByQuery("pirates", 2);
+    await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, run);
+    const exhausted = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, run);
 
     expect(igdb.calls).toHaveLength(1);
     expect(exhausted).toEqual({
@@ -163,45 +246,111 @@ describe("DiscoveryManager.discoverByQuery", () => {
   });
 
   it("una query distinta fuerza una nueva búsqueda IGDB", async () => {
-    const { discovery, igdb } = makeSetup({
+    const { discovery, igdb, run } = makeSetup({
       igdbResults: {
         pirates: [makeRaw(2, "A")],
         "pirates action": [makeRaw(3, "B")],
       },
     });
 
-    await discovery.discoverByQuery("pirates", 2);
-    const second = await discovery.discoverByQuery("pirates action", 2);
+    await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, run);
+    const second = await discovery.discoverByQuery("pirates action", 2, undefined, undefined, [], undefined, run);
 
     expect(igdb.calls).toHaveLength(2);
     expect(second.newGames.map((g) => g.sourceId)).toEqual(["3"]);
     expect(second.variantExhausted).toBe(true);
   });
 
-  it("misma query con distinto intent refetchea: la caché se clavea por (query, intent)", async () => {
+  it("una segunda petición (run nuevo) reutiliza el pool y no repite IGDB", async () => {
+    const { discovery, igdb, catalog, cache } = makeSetup({
+      igdbResults: {
+        pirates: [makeRaw(2, "A"), makeRaw(3, "B"), makeRaw(4, "C"), makeRaw(5, "D")],
+      },
+    });
+
+    const firstRun = createDiscoveryRun();
+    const first = await discovery.discoverByQuery(
+      "pirates",
+      2,
+      undefined,
+      undefined,
+      [],
+      undefined,
+      firstRun,
+    );
+    expect(first.newGames.map((g) => g.sourceId)).toEqual(["2", "3"]);
+    expect(igdb.calls).toHaveLength(1);
+
+    // Segunda petición: mismo query, run nuevo. El pool ahorra la llamada.
+    const secondRun = createDiscoveryRun();
+    const second = await discovery.discoverByQuery(
+      "pirates",
+      2,
+      undefined,
+      undefined,
+      [],
+      undefined,
+      secondRun,
+    );
+    expect(second.newGames.map((g) => g.sourceId)).toEqual(["4", "5"]);
+    expect(igdb.calls).toHaveLength(1);
+    expect(catalog.createCalls).toBe(4);
+    // Los promovidos salieron del pool: no queda nada reutilizable.
+    expect(await cache.readAll()).toHaveLength(0);
+  });
+
+  it("retira del pool los raws que detecta ya existentes en el catálogo", async () => {
+    const catalog = new FakeCatalogLayer();
+    catalog.seed([makeGame({ id: 1, sourceId: "2" })]);
+    const cache = new InMemoryDiscoveryCacheRepository();
+    await cache.addMany([makeRaw(2, "Already Exists"), makeRaw(3, "Brand New")]);
     const { discovery, igdb } = makeSetup({
+      catalog,
+      cache,
+      igdbResults: {},
+    });
+
+    const attempt = await discovery.discoverByQuery(
+      "pirates",
+      2,
+      undefined,
+      undefined,
+      [],
+      undefined,
+      createDiscoveryRun(),
+    );
+
+    // El raw 2 ya estaba en PG: se detecta y se retira del pool sin gastar
+    // enrichment; el 3 se promueve y también sale del pool.
+    expect(attempt.newGames.map((g) => g.sourceId)).toEqual(["3"]);
+    expect(igdb.calls).toHaveLength(0);
+    expect(await cache.readAll()).toHaveLength(0);
+  });
+
+  it("misma query con distinto intent refetchea: el pool no tiene raws del intent nuevo", async () => {
+    const { discovery, igdb, run } = makeSetup({
       filteredResults: [makeRaw(2, "A")],
     });
     const intentA = makeIntent({ keywords: ["x"] });
     const intentB = makeIntent({ keywords: ["y"] });
 
-    await discovery.discoverByQuery("q", 2, undefined, intentA);
-    const second = await discovery.discoverByQuery("q", 2, undefined, intentB);
+    await discovery.discoverByQuery("q", 2, undefined, intentA, [], undefined, run);
+    const second = await discovery.discoverByQuery("q", 2, undefined, intentB, [], undefined, run);
 
-    // Intent distinto → nueva llamada IGDB aunque el texto coincida: un
-    // intent estricto que agota la suya no bloquea el refetch de otro.
+    // Intent distinto → nueva llamada IGDB aunque el texto coincida: el raw
+    // del pool no pasa las puertas duras del intent nuevo y se re-busca.
     expect(igdb.filteredCalls).toHaveLength(2);
     expect(second.variantExhausted).toBe(true);
   });
 
   it("misma query con el mismo intent no refetchea cuando la lista está consumida", async () => {
-    const { discovery, igdb } = makeSetup({
+    const { discovery, igdb, run } = makeSetup({
       filteredResults: [makeRaw(2, "A")],
     });
     const intent = makeIntent({ keywords: ["x"] });
 
-    await discovery.discoverByQuery("q", 2, undefined, intent);
-    const second = await discovery.discoverByQuery("q", 2, undefined, intent);
+    await discovery.discoverByQuery("q", 2, undefined, intent, [], undefined, run);
+    const second = await discovery.discoverByQuery("q", 2, undefined, intent, [], undefined, run);
 
     expect(igdb.filteredCalls).toHaveLength(1);
     expect(second.variantExhausted).toBe(true);
@@ -209,7 +358,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
   });
 
   it("pre-filtro must: los candidatos condenados se saltan sin gastar Brave/LLM", async () => {
-    const { discovery, catalog, enrichment } = makeSetup({
+    const { discovery, catalog, enrichment, run } = makeSetup({
       filteredResults: [
         makeRaw(10, "Random Horror", {
           genres: [{ id: 1, name: "Horror" }],
@@ -233,6 +382,9 @@ describe("DiscoveryManager.discoverByQuery", () => {
       2,
       undefined,
       intent,
+      [],
+      undefined,
+      run,
     );
 
     expect(attempt.newGames.map((game) => game.title)).toEqual([
@@ -250,20 +402,20 @@ describe("DiscoveryManager.discoverByQuery", () => {
       },
     });
 
-    const attempt = await discovery.discoverByQuery("pirates", 2);
+    const attempt = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, createDiscoveryRun());
 
     expect(attempt.newGames).toHaveLength(1);
     expect(catalog.createCalls).toBe(1);
   });
 
   it("siembra las palabras de la query en las keywords de la ficha creada", async () => {
-    const { discovery, catalog } = makeSetup({
+    const { discovery, catalog, run } = makeSetup({
       igdbResults: {
         batman: [makeRaw(201, "Dark Knight Game", { keywords: [] })],
       },
     });
 
-    await discovery.discoverByQuery("batman", 1);
+    await discovery.discoverByQuery("batman", 1, undefined, undefined, [], undefined, run);
 
     expect(catalog.createCalls).toBe(1);
     // Ficha guardada = IGDB (sin keywords) ∪ búsqueda ("batman") + enrichment
@@ -272,13 +424,13 @@ describe("DiscoveryManager.discoverByQuery", () => {
   });
 
   it("siembra la query completa como UNA keyword además de sus palabras", async () => {
-    const { discovery, catalog } = makeSetup({
+    const { discovery, catalog, run } = makeSetup({
       igdbResults: {
         "car wash": [makeRaw(301, "Washy Game", { keywords: [] })],
       },
     });
 
-    await discovery.discoverByQuery("car wash", 1);
+    await discovery.discoverByQuery("car wash", 1, undefined, undefined, [], undefined, run);
 
     // El intent pedirá "car wash" como frase: debe casar con la ficha
     expect(catalog.createCalls).toBe(1);
@@ -288,15 +440,15 @@ describe("DiscoveryManager.discoverByQuery", () => {
   });
 
   it("una lista IGDB vacía no se cachea como agotada: la query se reintenta", async () => {
-    const { discovery, igdb } = makeSetup({
+    const { discovery, igdb, run } = makeSetup({
       igdbResults: { pirates: [] },
     });
 
-    const first = await discovery.discoverByQuery("pirates", 2);
+    const first = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, run);
     expect(first.newGames).toHaveLength(0);
     expect(first.variantExhausted).toBe(true);
 
-    const second = await discovery.discoverByQuery("pirates", 2);
+    const second = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, run);
     expect(second.newGames).toHaveLength(0);
     expect(second.variantExhausted).toBe(true);
     // Dos búsquedas: el cursor vacío NO envenena la query
@@ -304,7 +456,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
   });
 
   it("gate de calidad: salta candidatos sin señal comunitaria y conserva los desconocidos", async () => {
-    const { discovery, catalog } = makeSetup({
+    const { discovery, catalog, run } = makeSetup({
       igdbResults: {
         pirates: [
           makeRaw(2, "Has Ratings", { total_rating_count: 3 }),
@@ -314,7 +466,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
       },
     });
 
-    const attempt = await discovery.discoverByQuery("pirates", 3);
+    const attempt = await discovery.discoverByQuery("pirates", 3, undefined, undefined, [], undefined, run);
 
     expect(attempt.newGames.map((game) => game.title)).toEqual([
       "Has Ratings",
@@ -594,6 +746,7 @@ describe("DiscoveryManager.reEnrich", () => {
         },
       },
       catalog,
+      new InMemoryDiscoveryCacheRepository(),
       budget,
       RECOMMENDATION_CONFIG,
     );
@@ -759,7 +912,7 @@ describe("DiscoveryManager.discoverRelaxed", () => {
   });
 
   it("recicla la lista estricta y completa con amplia + where relajado", async () => {
-    const { discovery, igdb } = makeSetup({
+    const { discovery, igdb, run } = makeSetup({
       filteredResults: [
         makeRaw(201, "Cowboy Action", {
           themes: [{ id: 1, name: "Action" }],
@@ -768,12 +921,15 @@ describe("DiscoveryManager.discoverRelaxed", () => {
       ],
     });
 
-    // La pasada estricta la tumba el must pero deja la lista en caché.
+    // La pasada estricta la tumba el must pero deja el raw en el pool.
     const strict = await discovery.discoverByQuery(
       "cowboys",
       2,
       undefined,
       COWBOYS_INTENT,
+      [],
+      undefined,
+      run,
     );
     expect(strict.newGames).toHaveLength(0);
     expect(igdb.filteredCalls).toHaveLength(1);
@@ -785,7 +941,7 @@ describe("DiscoveryManager.discoverRelaxed", () => {
       COWBOYS_INTENT,
     );
 
-    // 1 estricta + amplia + where relajado (la lista cacheada sola no basta).
+    // 1 estricta + amplia + where relajado (los raws del pool no llenan).
     expect(igdb.filteredCalls).toHaveLength(3);
     expect(attempt.newGames).toHaveLength(1);
     expect(attempt.droppedGroups).toEqual(["themes"]);
@@ -818,7 +974,7 @@ describe("DiscoveryManager.discoverRelaxed", () => {
     const raws = Array.from({ length: 35 }, (_, index) =>
       makeRaw(300 + index, `Pirate ${index}`),
     );
-    const { discovery, igdb } = makeSetup({
+    const { discovery, igdb, run } = makeSetup({
       filteredResults: raws,
       limits: { igdb: 10, brave: 300, llm: 300 },
     });
@@ -829,6 +985,9 @@ describe("DiscoveryManager.discoverRelaxed", () => {
       100,
       undefined,
       intent,
+      [],
+      undefined,
+      run,
     );
     expect(first.newGames).toHaveLength(30);
     expect(igdb.filteredCalls).toHaveLength(1);
@@ -839,6 +998,9 @@ describe("DiscoveryManager.discoverRelaxed", () => {
       100,
       undefined,
       intent,
+      [],
+      undefined,
+      run,
     );
     expect(second.newGames).toHaveLength(5);
     expect(igdb.filteredCalls).toHaveLength(2);
@@ -850,6 +1012,9 @@ describe("DiscoveryManager.discoverRelaxed", () => {
       100,
       undefined,
       intent,
+      [],
+      undefined,
+      run,
     );
     expect(third.newGames).toHaveLength(0);
     expect(igdb.filteredCalls).toHaveLength(2);

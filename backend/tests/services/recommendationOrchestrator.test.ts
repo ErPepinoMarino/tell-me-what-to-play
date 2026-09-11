@@ -4,6 +4,7 @@ import {
   RecommendationOrchestrator,
 } from "../../src/orchestrator/recommendationOrchestrator.js";
 import { DiscoveryManager } from "../../src/orchestrator/discovery.js";
+import { InMemoryDiscoveryCacheRepository } from "../../src/orchestrator/discoveryCache.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import {
   RECOMMENDATION_CONFIG,
@@ -89,7 +90,13 @@ function setup(options: SetupOptions) {
     brave: options.limits?.brave ?? 0,
     llm: options.limits?.llm ?? 0,
   });
-  const discovery = new DiscoveryManager(igdb, enrichment, catalog, budget);
+  const discovery = new DiscoveryManager(
+    igdb,
+    enrichment,
+    catalog,
+    new InMemoryDiscoveryCacheRepository(),
+    budget,
+  );
   const config: RecommendationConfig = {
     ...RECOMMENDATION_CONFIG,
     ...options.config,
@@ -859,9 +866,12 @@ describe("RecommendationOrchestrator", () => {
     // Responde con el efectivo (sin OPEN_WORLD); el intent original lo
     // conserva el CLIENTE, no el servidor.
     expect(response.intent.objective?.themes).toBeNull();
-    // El rescate reúne 3 patas (estricta reciclada + amplia + where
-    // relajado): 1 llamada estricta + 2 de rescate.
-    expect(igdb.filteredCalls).toHaveLength(3);
+    // El pool de request 1 deja el raw 201 (no promovido), pero no pasa el
+    // must estricto del request 2 (falta OPEN_WORLD): se re-marca estricta
+    // (#2) + amplia (#3) + where relajado (#4). Request 1 hizo 1 estricta.
+    expect(igdb.filteredCalls).toHaveLength(4);
+    // La estricta del 2º viene antes de la amplia ("cowboys") y el where.
+    expect(igdb.filteredCalls[2]?.text).toBe("cowboys");
   });
 
   it("streaming: emite intent y un snapshot por tanda creada", async () => {

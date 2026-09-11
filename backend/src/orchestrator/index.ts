@@ -10,6 +10,7 @@ import { DiscoveryManager } from "./discovery.js";
 import { RecommendationOrchestrator } from "./recommendationOrchestrator.js";
 import { MissingRecommendationCredentialsError } from "./errors.js";
 import { prismaCatalogLayer, jsonCacheLayer } from "./adapters.js";
+import { InMemoryDiscoveryCacheRepository } from "./discoveryCache.js";
 import { prisma } from "../lib/prisma.js";
 
 let singleton: RecommendationOrchestrator | undefined;
@@ -51,10 +52,18 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     budget,
   });
 
+  /*
+   * Pool de raws descubiertos y reutilizables: global por proceso (memoria).
+   * Primera implementación de DiscoveryCacheRepository; intercambiable por
+   * Redis/PostgreSQL sin tocar DiscoveryManager.
+   */
+  const discoveryCache = new InMemoryDiscoveryCacheRepository();
+
   const discovery = new DiscoveryManager(
     igdb,
     enrichment,
     prismaCatalogLayer,
+    discoveryCache,
     budget,
     RECOMMENDATION_CONFIG,
     lexicon,

@@ -20,8 +20,8 @@ export class GameNotInLibraryError extends Error {
 }
 
 export class GameAlreadyInLibraryError extends Error {
-  constructor() {
-    super("Game already in library");
+  constructor(cause?: unknown) {
+    super("Game already in library", cause !== undefined ? { cause } : undefined);
     this.name = "GameAlreadyInLibraryError";
   }
 }
