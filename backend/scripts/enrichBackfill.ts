@@ -28,6 +28,7 @@ import {
 } from "../src/recommendation/constants.js";
 import { prisma } from "../src/lib/prisma.js";
 import { InMemoryDiscoveryCacheRepository } from "../src/orchestrator/discoveryCache.js";
+import { InMemoryQueryOffsetStore } from "../src/orchestrator/queryOffsetStore.js";
 
 async function main(): Promise<void> {
   const missingCredentials: string[] = [];
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
     enrichment,
     prismaCatalogLayer,
     new InMemoryDiscoveryCacheRepository(),
+    new InMemoryQueryOffsetStore(),
     budget,
     RECOMMENDATION_CONFIG,
   );

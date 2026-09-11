@@ -5,6 +5,7 @@ import {
 } from "../../src/orchestrator/recommendationOrchestrator.js";
 import { DiscoveryManager } from "../../src/orchestrator/discovery.js";
 import { InMemoryDiscoveryCacheRepository } from "../../src/orchestrator/discoveryCache.js";
+import { InMemoryQueryOffsetStore } from "../../src/orchestrator/queryOffsetStore.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import {
   RECOMMENDATION_CONFIG,
@@ -95,6 +96,7 @@ function setup(options: SetupOptions) {
     enrichment,
     catalog,
     new InMemoryDiscoveryCacheRepository(),
+    new InMemoryQueryOffsetStore(),
     budget,
   );
   const config: RecommendationConfig = {

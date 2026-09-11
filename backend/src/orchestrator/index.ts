@@ -11,6 +11,7 @@ import { RecommendationOrchestrator } from "./recommendationOrchestrator.js";
 import { MissingRecommendationCredentialsError } from "./errors.js";
 import { prismaCatalogLayer, jsonCacheLayer } from "./adapters.js";
 import { InMemoryDiscoveryCacheRepository } from "./discoveryCache.js";
+import { InMemoryQueryOffsetStore } from "./queryOffsetStore.js";
 import { prisma } from "../lib/prisma.js";
 
 let singleton: RecommendationOrchestrator | undefined;
@@ -58,12 +59,19 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
    * Redis/PostgreSQL sin tocar DiscoveryManager.
    */
   const discoveryCache = new InMemoryDiscoveryCacheRepository();
+  /*
+   * Cursor de paginación IGDB por (query, intent): global por proceso como
+   * el pool, pero responsable SOLO de recordar el offset (qué página pedir
+   * cuando una búsqueda reaparece sin candidatos). Sin Redis en v1.
+   */
+  const queryOffsets = new InMemoryQueryOffsetStore();
 
   const discovery = new DiscoveryManager(
     igdb,
     enrichment,
     prismaCatalogLayer,
     discoveryCache,
+    queryOffsets,
     budget,
     RECOMMENDATION_CONFIG,
     lexicon,

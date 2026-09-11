@@ -1,15 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
   createDiscoveryRun,
+  type DiscoveryAttempt,
   DiscoveryManager,
   dropRelaxGroup,
+  intentFilterKey,
   knownSemanticsCount,
+  MAX_IGDB_LIST_RESULTS,
+  queryOffsetKey,
   RELAX_ORDER,
 } from "../../src/orchestrator/discovery.js";
 import {
   InMemoryDiscoveryCacheRepository,
   type DiscoveryCacheRepository,
 } from "../../src/orchestrator/discoveryCache.js";
+import {
+  InMemoryQueryOffsetStore,
+  type QueryOffsetStore,
+} from "../../src/orchestrator/queryOffsetStore.js";
 import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import { RECOMMENDATION_CONFIG } from "../../src/recommendation/constants.js";
 import type { IgdbGameRaw } from "../../src/igdb/types.js";
@@ -33,6 +41,7 @@ function makeSetup(
     enrichment?: FakeEnrichment;
     catalog?: FakeCatalogLayer;
     cache?: DiscoveryCacheRepository;
+    queryOffsets?: QueryOffsetStore;
   } = {},
 ) {
   const catalog = opts.catalog ?? new FakeCatalogLayer();
@@ -40,6 +49,7 @@ function makeSetup(
   igdb.filteredResults = opts.filteredResults ?? [];
   const enrichment = opts.enrichment ?? new FakeEnrichment();
   const cache = opts.cache ?? new InMemoryDiscoveryCacheRepository();
+  const queryOffsets = opts.queryOffsets ?? new InMemoryQueryOffsetStore();
   const budget = new InMemoryBudgetLedger({
     igdb: opts.limits?.igdb ?? 100,
     brave: opts.limits?.brave ?? 100,
@@ -50,6 +60,7 @@ function makeSetup(
     enrichment,
     catalog,
     cache,
+    queryOffsets,
     budget,
     RECOMMENDATION_CONFIG,
   );
@@ -60,6 +71,7 @@ function makeSetup(
     enrichment,
     budget,
     cache,
+    queryOffsets,
     // Estado de UNA ejecución: cada petición crea el suyo; los tests de
     // llamadas consecutivas reutilizan el mismo (y los de concurrencia,
     // no).
@@ -747,6 +759,7 @@ describe("DiscoveryManager.reEnrich", () => {
       },
       catalog,
       new InMemoryDiscoveryCacheRepository(),
+      new InMemoryQueryOffsetStore(),
       budget,
       RECOMMENDATION_CONFIG,
     );
@@ -1006,7 +1019,8 @@ describe("DiscoveryManager.discoverRelaxed", () => {
     expect(igdb.filteredCalls).toHaveLength(2);
     expect(igdb.filteredCalls[1]?.offset).toBe(30);
 
-    // Tercera: tope de 60 por lista → agotada sin más llamadas.
+    // Tercera: la página retomada en offset 35 ya no tiene resultados →
+    // agotada (el storage avanza solo con páginas no vacías).
     const third = await discovery.discoverByQuery(
       "pirates",
       100,
@@ -1017,6 +1031,298 @@ describe("DiscoveryManager.discoverRelaxed", () => {
       run,
     );
     expect(third.newGames).toHaveLength(0);
+    expect(third.variantExhausted).toBe(true);
+    expect(igdb.filteredCalls).toHaveLength(3);
+    expect(igdb.filteredCalls[2]?.offset).toBe(35);
+  });
+});
+
+describe("QueryOffsetStore (paginación cross-request)", () => {
+  const PIRATES = makeIntent({ keywords: ["pirates"] });
+  const KEY = queryOffsetKey("pirates", intentFilterKey(PIRATES));
+
+  it("la primera página de una query nueva se pide sin offset y el store avanza", async () => {
+    const filteredResults = Array.from({ length: 30 }, (_, i) =>
+      makeRaw(400 + i, `High Seas ${i}`),
+    );
+    const { discovery, igdb, queryOffsets } = makeSetup({
+      filteredResults,
+      limits: { igdb: 10, brave: 1000, llm: 1000 },
+    });
+
+    const attempt = await discovery.discoverByQuery(
+      "pirates",
+      30,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      createDiscoveryRun(),
+    );
+
+    expect(igdb.filteredCalls).toHaveLength(1);
+    expect(igdb.filteredCalls[0]?.offset).toBeUndefined();
+    expect(attempt.newGames).toHaveLength(30);
+    expect(await queryOffsets.getNextOffset(KEY)).toBe(30);
+  });
+
+  it("una petición nueva de la misma query retoma el offset donde se quedó", async () => {
+    const filteredResults = Array.from({ length: 60 }, (_, i) =>
+      makeRaw(500 + i, `Ghost ${i}`),
+    );
+    const { discovery, igdb, queryOffsets } = makeSetup({
+      filteredResults,
+      limits: { igdb: 20, brave: 2000, llm: 2000 },
+    });
+
+    // Petición 1: promociona la primera página entera (el pool queda vacío).
+    await discovery.discoverByQuery(
+      "pirates",
+      30,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      createDiscoveryRun(),
+    );
+    expect(igdb.filteredCalls[0]?.offset).toBeUndefined();
+
+    // Petición 2: sin raws compatibles en el pool, retoma en offset 30 en
+    // lugar de repetir la página 0.
+    const second = await discovery.discoverByQuery(
+      "pirates",
+      30,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      createDiscoveryRun(),
+    );
+    expect(second.newGames.map((game) => Number(game.sourceId))).toEqual(
+      filteredResults.slice(30, 60).map((raw) => raw.id),
+    );
     expect(igdb.filteredCalls).toHaveLength(2);
+    expect(igdb.filteredCalls[1]?.offset).toBe(30);
+    expect(await queryOffsets.getNextOffset(KEY)).toBe(60);
+  });
+
+  it("la paginación intrarun (misma petición) también avanza el store", async () => {
+    const filteredResults = Array.from({ length: 60 }, (_, i) =>
+      makeRaw(600 + i, `Reaper ${i}`),
+    );
+    const { discovery, igdb, queryOffsets } = makeSetup({
+      filteredResults,
+      limits: { igdb: 20, brave: 2000, llm: 2000 },
+    });
+    const run = createDiscoveryRun();
+
+    const first = await discovery.discoverByQuery(
+      "pirates",
+      30,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      run,
+    );
+    expect(first.newGames).toHaveLength(30);
+
+    const second = await discovery.discoverByQuery(
+      "pirates",
+      30,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      run,
+    );
+    expect(second.newGames).toHaveLength(30);
+    expect(igdb.filteredCalls).toHaveLength(2);
+    expect(igdb.filteredCalls[1]?.offset).toBe(30);
+    expect(await queryOffsets.getNextOffset(KEY)).toBe(60);
+  });
+
+  it("queries distintas no comparten offset", async () => {
+    const filteredResults = Array.from({ length: 90 }, (_, i) =>
+      makeRaw(700 + i, `Voyage ${i}`),
+    );
+    const { discovery, queryOffsets } = makeSetup({
+      filteredResults,
+      limits: { igdb: 10, brave: 1000, llm: 1000 },
+    });
+
+    const piratesRun = createDiscoveryRun();
+    const piratasRun = createDiscoveryRun();
+
+    // "pirates" dos llamadas con mismo run → pagina hasta offset 60.
+    await discovery.discoverByQuery(
+      "pirates",
+      100,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      piratesRun,
+    );
+    await discovery.discoverByQuery(
+      "pirates",
+      100,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      piratesRun,
+    );
+    expect(
+      await queryOffsets.getNextOffset(
+        queryOffsetKey("pirates", intentFilterKey(PIRATES)),
+      ),
+    ).toBe(60);
+
+    // "piratas" (otra clave) arranca en 0 aunque la anterior ya paginó.
+    await discovery.discoverByQuery(
+      "piratas",
+      100,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      piratasRun,
+    );
+    expect(
+      await queryOffsets.getNextOffset(
+        queryOffsetKey("piratas", intentFilterKey(PIRATES)),
+      ),
+    ).toBe(30);
+
+    // La query original no fue pisada por la nueva: sigue en 60.
+    expect(
+      await queryOffsets.getNextOffset(
+        queryOffsetKey("pirates", intentFilterKey(PIRATES)),
+      ),
+    ).toBe(60);
+  });
+
+  it("deduplica páginas solapadas (mismo id en dos páginas) sin doble trabajo", async () => {
+    const base = Array.from({ length: 59 }, (_, i) =>
+      makeRaw(800 + i, `Buccaneer ${i}`),
+    );
+    // El id 800 aparece en la página 1 (índice 0) y de nuevo al empezar la
+    // página 2 (índice 30): un search por similitud no garantiza orden
+    // estable entre páginas.
+    const filteredResults = [
+      base[0],
+      ...base.slice(1, 30),
+      base[0],
+      ...base.slice(30),
+    ];
+    const { discovery, enrichment, catalog, igdb, queryOffsets } = makeSetup({
+      filteredResults,
+      limits: { igdb: 20, brave: 5000, llm: 5000 },
+    });
+    const run = createDiscoveryRun();
+
+    const first = await discovery.discoverByQuery(
+      "pirates",
+      30,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      run,
+    );
+    expect(first.newGames).toHaveLength(30);
+
+    const second = await discovery.discoverByQuery(
+      "pirates",
+      30,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      run,
+    );
+    // La página 2 trae 30 posiciones, pero el id 800 ya se vio en la página
+    // 1: solo 29 candidatos únicos llegan al procesado.
+    expect(second.newGames).toHaveLength(29);
+    expect(igdb.filteredCalls).toHaveLength(2);
+    expect(igdb.filteredCalls[1]?.offset).toBe(30);
+    expect(await queryOffsets.getNextOffset(KEY)).toBe(60);
+
+    // Ninguna ficha se crea ni se enriquece dos veces por el solapamiento.
+    const sourceIds = catalog.all().map((game) => game.sourceId);
+    expect(sourceIds).toHaveLength(59);
+    expect(new Set(sourceIds).size).toBe(sourceIds.length);
+    const enrichedBySource = enrichment.enrichCalls.map((c) => c.sourceId);
+    expect(enrichedBySource).toHaveLength(59);
+    expect(new Set(enrichedBySource).size).toBe(enrichedBySource.length);
+    expect(enrichedBySource.filter((id) => id === "800")).toHaveLength(1);
+  });
+
+  it("llegado al tope, la query queda agotada sin gastar más llamadas", async () => {
+    const pageSize = RECOMMENDATION_CONFIG.igdbSearchLimit;
+    const pages = MAX_IGDB_LIST_RESULTS / pageSize;
+    const filteredResults = Array.from(
+      { length: MAX_IGDB_LIST_RESULTS },
+      (_, i) => makeRaw(900 + i, `Marooner ${i}`),
+    );
+    const { discovery, igdb, budget, queryOffsets } = makeSetup({
+      filteredResults,
+      limits: { igdb: 30, brave: 5000, llm: 5000 },
+    });
+    const run = createDiscoveryRun();
+
+    let last: DiscoveryAttempt | undefined;
+    for (let i = 0; i < pages; i++) {
+      last = await discovery.discoverByQuery(
+        "pirates",
+        100,
+        undefined,
+        PIRATES,
+        [],
+        undefined,
+        run,
+      );
+    }
+    expect(last!.variantExhausted).toBe(true);
+    expect(igdb.filteredCalls).toHaveLength(pages);
+    const expectedOffsets = [undefined];
+    for (let i = 1; i < pages; i++) expectedOffsets.push(i * pageSize);
+    expect(igdb.filteredCalls.map((call) => call.offset)).toEqual(
+      expectedOffsets,
+    );
+    expect(await queryOffsets.getNextOffset(KEY)).toBe(MAX_IGDB_LIST_RESULTS);
+    expect(budget.remaining("igdb")).toBe(30 - pages);
+
+    // La siguiente unidad en la misma ejecución: agotada, cero llamadas.
+    const after = await discovery.discoverByQuery(
+      "pirates",
+      100,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      run,
+    );
+    expect(after.variantExhausted).toBe(true);
+    expect(after.newGames).toHaveLength(0);
+    expect(igdb.filteredCalls).toHaveLength(pages);
+    expect(budget.remaining("igdb")).toBe(30 - pages);
+
+    // Y una petición NUEVA tampoco reproduce la llamada: el store ya marca
+    // el techo y el arranque cross-request agota sin reservar.
+    const newRequest = await discovery.discoverByQuery(
+      "pirates",
+      100,
+      undefined,
+      PIRATES,
+      [],
+      undefined,
+      createDiscoveryRun(),
+    );
+    expect(newRequest.variantExhausted).toBe(true);
+    expect(newRequest.newGames).toHaveLength(0);
+    expect(igdb.filteredCalls).toHaveLength(pages);
+    expect(budget.remaining("igdb")).toBe(30 - pages);
   });
 });

@@ -27,6 +27,7 @@ import { withTimeout } from "../lib/withTimeout.js";
 import { createTrace, type Trace } from "../lib/logger.js";
 import type { CatalogLayer } from "./types.js";
 import type { DiscoveryCacheRepository } from "./discoveryCache.js";
+import type { QueryOffsetStore } from "./queryOffsetStore.js";
 
 export type DiscoveryAttemptOutcome = "ok" | "budget-exhausted" | "error";
 
@@ -75,10 +76,22 @@ export type ReEnrichResult =
   | { status: "budget-exhausted" }
   | { status: "error" };
 
-// Tope de raws acumulados por lista (query, intent): primera página más UNA
-// extra. Suficiente para que "buscar más" traiga títulos nuevos sin quemar
-// el presupuesto diario en un nicho infinito.
-const MAX_IGDB_LIST_RESULTS = 60;
+/*
+ * Tope de raws acumulados por lista (query+intent) — tanto la paginación
+ * intrarun como el cursor cross-request (QueryOffsetStore) la comparten.
+ *
+ * ¿Por qué 300? IGDB solo documenta el máximo por REQUEST (limit ≤ 500) y
+ * no fija techo para offset (el motor legado dejaba de paginar ~10.000
+ * filas por offset; más allá exige scroll). Aquí no buscamos hecho
+ * científico, sino nuestra regla "hacemos cuanto sea razonable, pero no
+ * garantizamos encontrar resultados": 300 candidatos = 10 páginas de
+ * igdbSearchLimit (30) ≈ 3,3% del presupuesto IGDB diario gastado en UNA
+ * (query, intent) concreta. El orden por valoración comunitaria pone lo
+ * mejor al principio; lo que asoma al final de la cola son títulos de
+ * larga cola con señal mínima (isLowQualityRaw los cribaría igualmente).
+ * Más profundo que esto es insistir.
+ */
+export const MAX_IGDB_LIST_RESULTS = 300;
 
 // Grupos de requisitos, del primero al último en soltarse en la criba
 // relajada: lo circunstancial (años, cámara, plataforma) antes que la
@@ -198,7 +211,10 @@ export interface DiscoveryRun {
   raws: IgdbGameRaw[];
   // Cuántos raws de la lista se han consumido ya en esta ejecución.
   cursor: number;
-  // Paginación de la lista: offset ya pedido y tamaño de página.
+  // Paginación de la lista: offset de la PRÓXIMA página a pedir (avanza con
+  // el tamaño real de cada página; los raws deduplicados no mueven la
+  // posición). Arranca en 0 o, si la lista se retomó del store cross-request,
+  // en el offset donde la dejó la petición anterior.
   offset: number;
   limit: number;
 }
@@ -214,33 +230,51 @@ export function createDiscoveryRun(): DiscoveryRun {
   };
 }
 
-export class DiscoveryManager {
-  /*
-   * Clave estable de los campos del intent que determinan el `where` de
-   * filteredSearch (null cuando no hay intent: text-search clásico).
-   */
-  private static intentFilterKey(intent?: GameSearchIntent): string | null {
-    if (!intent) return null;
-    return JSON.stringify({
-      keywords: intent.keywords ?? null,
-      genres: intent.objective?.genres ?? null,
-      themes: intent.objective?.themes ?? null,
-      platforms: intent.objective?.platforms ?? null,
-      gameModes: intent.objective?.gameModes ?? null,
-      perspectives: intent.objective?.perspectives ?? null,
-      releaseYear: intent.releaseYear ?? null,
-      yearFrom: intent.yearFrom ?? null,
-      yearTo: intent.yearTo ?? null,
-      excluded: intent.excluded ?? null,
-    });
-  }
+/*
+ * Clave estable de los campos del intent que determinan el `where` de
+ * filteredSearch (null cuando no hay intent: text-search clásico).
+ */
+export function intentFilterKey(intent?: GameSearchIntent): string | null {
+  if (!intent) return null;
+  return JSON.stringify({
+    keywords: intent.keywords ?? null,
+    genres: intent.objective?.genres ?? null,
+    themes: intent.objective?.themes ?? null,
+    platforms: intent.objective?.platforms ?? null,
+    gameModes: intent.objective?.gameModes ?? null,
+    perspectives: intent.objective?.perspectives ?? null,
+    releaseYear: intent.releaseYear ?? null,
+    yearFrom: intent.yearFrom ?? null,
+    yearTo: intent.yearTo ?? null,
+    excluded: intent.excluded ?? null,
+  });
+}
 
+/*
+ * Clave del QueryOffsetStore: la MISMA (query normalizada, intent) que
+ * clavea la lista en DiscoveryRun — el `where` de IGDB (y por tanto su
+ * contenido) depende de ambos. Normalizada para que "Pirates" y "pirates"
+ * compartan cursor; el intent identifica la lista incluso si el texto se
+ * repite con filtros distintos.
+ */
+export function queryOffsetKey(
+  normalizedQuery: string,
+  intentKey: string | null,
+): string {
+  return `${normalizedQuery}::${intentKey ?? "no-intent"}`;
+}
+
+export class DiscoveryManager {
   constructor(
     private igdb: IgdbClient,
     private enrichment: EnrichmentService & Partial<EnrichmentUpdater>,
     private catalog: CatalogLayer,
     // Pool global de raws descubiertos y reutilizables entre peticiones.
     private cache: DiscoveryCacheRepository,
+    // Cursor de paginación IGDB por (query, intent): en qué offset retomar
+    // una búsqueda que reaparece en otra petición sin candidatos. Estado
+    // separado del pool: aquí cero contenido, solo posición.
+    private queryOffsets: QueryOffsetStore,
     private budget: BudgetLedger,
     private config: RecommendationConfig = RECOMMENDATION_CONFIG,
     // Opcional (FASE 4): canonicalización + resolución canónico → id IGDB
@@ -372,25 +406,28 @@ export class DiscoveryManager {
       : normalizedQuery.length > 0
         ? [normalizedQuery, ...queryWords]
         : [];
-    const intentKey = DiscoveryManager.intentFilterKey(intent);
+    const intentKey = intentFilterKey(intent);
+    const queryKey = queryOffsetKey(normalizedQuery, intentKey);
     const sameQuery =
       run.query === query && run.intentKey === intentKey;
     if (sameQuery && run.cursor >= run.raws.length) {
       /*
-       * Paginación: la misma pregunta agotada pide la página siguiente
-       * (hasta MAX_IGDB_LIST_RESULTS en total) en vez de rendirse para
-       * siempre — "buscar más" debe poder traer títulos nuevos de IGDB.
-       * Sin presupuesto para la página, agotado sin ruido (no es un error
-       * de descubrimiento, es fin de lista por hoy).
+       * Paginación intrarun: la misma pregunta agotada pide la página
+       * siguiente (hasta MAX_IGDB_LIST_RESULTS en total por lista) en vez de
+       * rendirse para siempre — "buscar más" debe poder traer títulos nuevos
+       * de IGDB. La profundidad se comparte con el store cross-request: un
+       * run nuevo retoma donde el store diga. Sin presupuesto para la página,
+       * agotado sin ruido (no es un error de descubrimiento, es fin de lista
+       * por hoy).
        */
-      const nextOffset = run.offset + run.raws.length;
+      const nextOffset = run.offset;
       const canPage =
         intent !== undefined &&
         run.raws.length >= run.limit &&
         nextOffset < MAX_IGDB_LIST_RESULTS &&
         this.budget.tryReserve("igdb", 1);
       if (!canPage) {
-        trace?.("igdb-list-exhausted", { query });
+        trace?.("igdb-list-exhausted", { query, offset: nextOffset });
         return {
           outcome: "ok",
           newGames: [],
@@ -427,8 +464,22 @@ export class DiscoveryManager {
           enrichmentErrors: 0,
         };
       }
-      run.raws = [...run.raws, ...page];
-      run.offset = nextOffset;
+      /*
+       * El offset avanza por el tamaño REAL de la página pedida: IGDB pagina
+       * por posición, así que aunque desdupliquemos solapamientos (el orden
+       * de un search por similitud no se garantiza estable entre páginas) la
+       * posición de la lista sigue avanzando sin atascarse.
+       */
+      run.offset = nextOffset + page.length;
+      const seenIds = new Set(run.raws.map((raw) => raw.id));
+      run.raws = [
+        ...run.raws,
+        ...page.filter((raw) => !seenIds.has(raw.id)),
+      ];
+      await this.queryOffsets.setNextOffset(
+        queryKey,
+        Math.min(run.offset, MAX_IGDB_LIST_RESULTS),
+      );
       await this.cache.addMany(page);
       trace?.("igdb-list-next-page", {
         query,
@@ -480,6 +531,29 @@ export class DiscoveryManager {
         run.limit = poolCompatibles.length + 1;
         trace?.("pool-reuse", { query, results: poolCompatibles.length });
       } else {
+        /*
+         * Paginación cross-request: si esta (query, intent) ya se pidió sin
+         * nada compatible, retomamos la lista por donde se quedó en lugar de
+         * repetir la página 0. El cursor lo lleva QueryOffsetStore (solo la
+         * posición: ni contenido ni historial); el pool global sigue siendo
+         * la única memoria de raws. La búsqueda de texto sin intent no
+         * pagina, así que ahí el offset es siempre 0.
+         */
+        const nextOffset = intent
+          ? await this.queryOffsets.getNextOffset(queryKey)
+          : 0;
+        if (intent && nextOffset >= MAX_IGDB_LIST_RESULTS) {
+          // Límite alcanzado en peticiones anteriores: agotado sin reservar
+          // ni gastar — no se insiste en un nicho ya barrido.
+          trace?.("igdb-list-exhausted", { query, offset: nextOffset });
+          return {
+            outcome: "ok",
+            newGames: [],
+            budgetExhausted: false,
+            variantExhausted: true,
+            enrichmentErrors: 0,
+          };
+        }
         if (!this.budget.tryReserve("igdb", 1)) {
           return {
             outcome: "budget-exhausted",
@@ -494,7 +568,7 @@ export class DiscoveryManager {
         try {
           raws = await withTimeout(
             intent
-              ? this.filteredSearch(intent, trace)
+              ? this.filteredSearch(intent, trace, nextOffset)
               : this.igdb.searchGames(
                   query,
                   this.config.igdbSearchLimit,
@@ -515,6 +589,15 @@ export class DiscoveryManager {
         this.budget.commit("igdb", 1);
         if (raws.length > 0) {
           await this.cache.addMany(raws);
+          if (intent) {
+            // Solo se avanza con páginas no vacías (igual que "las listas
+            // vacías no se cachean como agotadas"): una falla transitoria o
+            // un nicho aún sin resultados no clava el cursor.
+            await this.queryOffsets.setNextOffset(
+              queryKey,
+              Math.min(nextOffset + raws.length, MAX_IGDB_LIST_RESULTS),
+            );
+          }
         }
         /*
          * Una lista VACÍA no se cachea como cursor agotado: la query volvería
@@ -526,7 +609,9 @@ export class DiscoveryManager {
         run.intentKey = raws.length > 0 ? intentKey : null;
         run.raws = raws;
         run.cursor = 0;
-        run.offset = 0;
+        // Base posicional de la lista: si se retomó de un store con offset,
+        // la siguiente página dentro de esta ejecución sigue en ese offset.
+        run.offset = raws.length > 0 ? nextOffset + raws.length : 0;
         run.limit = this.config.igdbSearchLimit;
         if (intent) {
           // Traza de la consulta filtrada: qué atributos fueron al `where`.
