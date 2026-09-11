@@ -98,7 +98,6 @@ describe("prismaGameRepository", () => {
 
   it("creates and returns an objective game", async () => {
     const game: IgdbGame = {
-      provenance: "igdb",
       id: 0,
       sourceId: null,
       slug: "hades-test-2020",
@@ -155,7 +154,6 @@ describe("prismaGameRepository", () => {
 
   it("creates a game from IgdbGameToPersist (importer path): BDD assigns id and search_count", async () => {
     const game: IgdbGameToPersist = {
-      provenance: "igdb",
       sourceId: "53354",
       slug: "elden-ring-2022",
       title: "Elden Ring",
@@ -273,7 +271,6 @@ describe("prismaGameRepository", () => {
       },
     });
     const duplicateGame: IgdbGame = {
-      provenance: "igdb",
       id: 0,
       sourceId: null,
       slug: "hades-test-2020",
@@ -348,7 +345,6 @@ describe("prismaGameRepository", () => {
 
     it("persists and reads all twelve semantic attribute values", async () => {
       const game: IgdbGame = {
-        provenance: "igdb",
         id: 0,
         sourceId: null,
         slug: "hades-test-2020",
@@ -405,7 +401,6 @@ describe("prismaGameRepository", () => {
 
     it("accepts the boundary values 0 and 1", async () => {
       const game: IgdbGame = {
-        provenance: "igdb",
         id: 0,
         sourceId: null,
         slug: "portal-2-test-2011",

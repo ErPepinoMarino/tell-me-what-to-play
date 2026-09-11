@@ -66,9 +66,9 @@ export interface MatchableGame {
   gameModes: GameMode[];
   perspectives: Perspective[];
   /*
-   * Super-tipo común de lectura: IgdbKeyword[], CuratedKeyword[] y
-   * SearchKeyword[] (overlay de hints) son asignables a readonly string[].
-   * El matching solo lee; jamás escribe keywords.
+   * Super-tipo común de lectura: IgdbKeyword[] y SearchKeyword[] (overlay de
+   * hints) son asignables a readonly string[]. El matching solo lee; jamás
+   * escribe keywords.
    */
   keywords: readonly string[];
   difficulty: number | null;

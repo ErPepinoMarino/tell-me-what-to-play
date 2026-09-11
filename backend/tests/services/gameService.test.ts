@@ -21,7 +21,6 @@ describe("gameService.search", () => {
   it('calls the repository with "elden" and returns its games', async () => {
     const games: Game[] = [
       {
-        provenance: "igdb",
         id: 1,
         sourceId: null,
         slug: "elden-ring",

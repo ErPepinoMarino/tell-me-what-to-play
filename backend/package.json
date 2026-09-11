@@ -20,7 +20,8 @@
     "lexicon:seed": "tsx scripts/seedKeywordDictionary.ts",
     "backfill:themes": "tsx scripts/backfillThemes.ts",
     "ratings:backfill": "tsx scripts/backfillRatings.ts",
-    "import:games": "tsx scripts/importGames.ts"
+    "import:games": "tsx scripts/importGames.ts",
+    "repair:catalog": "tsx scripts/repairCatalog.ts"
   },
   "keywords": [],
   "type": "module",

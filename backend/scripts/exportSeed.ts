@@ -2,14 +2,11 @@
  * Exporta de vuelta a games_seed.json las fichas del seed:
  * mantiene la forma del fixture (mismas claves y orden) y refresca en sitio
  * los campos rehabilitados desde IGDB + enrichment
- * (identidad, clasificaciones, portada, año, semánticas, descripciones).
- *
- * SOLO exporta fichas con provenance === "curated": las filas que en PG ya
- * son "igdb" (p. ej. tras una sincronización de catálogo) se conservan sin
- * cambios en el seed, porque sus keywords son vocabulario IGDB y no deben
- * colarse en el seed curado.
+ * (identidad, clasificaciones, portada, año, keywords, semánticas, descripciones).
  *
  * Uso: npm run seed:export   (desde backend/, tras npm run enrich:backfill)
+ *      Tras la reparación de catálogo, regenerar regenera las keywords del
+ *      archivo con las de IGDB (única semántica de Game.keywords).
  */
 import "./env.js";
 import fs from "node:fs";
@@ -33,13 +30,6 @@ for (const entry of original) {
   const game: Game | undefined = await prismaGameRepository.getBySlug(slug);
   if (!game) {
     console.log(`# ? ${slug}: no está en PG (sin cambios)`);
-    continue;
-  }
-  // El archivo del seed es CURADO. Si la fila de PG ya es "igdb" (p. ej.
-  // tras una sincronización de catálogo), NO se refresca: sus keywords son
-  // vocabulario IGDB y no deben colarse en el seed curado.
-  if (game.provenance !== "curated") {
-    console.log(`# - ${slug}: fila IGDB en PG (se conserva el seed curado)`);
     continue;
   }
 

@@ -1,14 +1,16 @@
-import { games, toCuratedKeywords } from "../data/games.js";
-import type { CuratedGame, Game } from "../types/Game.js";
+import { games } from "../data/games.js";
+import { brandStoredIgdbKeywords } from "../igdb/keywords.js";
+import type { Game } from "../types/Game.js";
 
 /*
- * Cache fría del seed: todas sus fichas son vocabulario CU-RADO (nunca
- * IgdbKeyword). Se tipan como CuratedGame con el mint curado; es imposible
- * que un dato del seed "finja" procedencia IGDB.
+ * Cache fría del seed: proyección de las fichas más populares. Estas fichas
+ * se crean con keywords VACÍAS (Game.keywords es exclusivamente IGDB y el
+ * seed es offline); la reparación de catálogo las rellena desde IGDB. Las
+ * arrays `keywords` del archivo de datos son legado y no se sirven.
  */
 export const jsonGameRepository = {
   async getAll(): Promise<Game[]> {
-    return games.map(toCuratedGame);
+    return games.map(toGame);
   },
 
   async search(query: string): Promise<Game[]> {
@@ -16,14 +18,15 @@ export const jsonGameRepository = {
 
     return games
       .filter((game) => game.title.toLowerCase().includes(searchQuery))
-      .map(toCuratedGame);
+      .map(toGame);
   },
 };
 
-function toCuratedGame(game: (typeof games)[number]): CuratedGame {
+function toGame(game: (typeof games)[number]): Game {
+  const { keywords: _legacyKeywords, ...rest } = game;
+  void _legacyKeywords;
   return {
-    ...game,
-    provenance: "curated",
-    keywords: toCuratedKeywords(game.keywords),
+    ...rest,
+    keywords: brandStoredIgdbKeywords([]),
   };
 }

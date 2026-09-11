@@ -10,8 +10,6 @@ import {
 import { mintSearchKeywords } from "../../src/matching/keywords.js";
 import type {
   Candidate,
-  CuratedGame,
-  CuratedGameToPersist,
   Game,
   IgdbGame,
   IgdbGameToPersist,
@@ -77,7 +75,6 @@ export function makeGame(
     platforms: ["PC"],
     gameModes: ["UNKNOWN"],
     perspectives: ["UNKNOWN"],
-    provenance: "igdb",
     keywords: brandStoredIgdbKeywords(keywords),
     developers: [],
     publishers: [],
@@ -222,19 +219,6 @@ export class FakeCatalogLayer implements CatalogLayer {
     this.createCalls++;
     const created: IgdbGame = {
       ...game,
-      provenance: "igdb",
-      id: this.nextId++,
-      searchCount: 0,
-    };
-    this.byId.set(created.id, created);
-    return created;
-  }
-
-  async createCurated(game: CuratedGameToPersist): Promise<CuratedGame> {
-    this.createCalls++;
-    const created: CuratedGame = {
-      ...game,
-      provenance: "curated",
       id: this.nextId++,
       searchCount: 0,
     };
@@ -338,6 +322,10 @@ export class FakeIgdbClient implements IgdbClient {
   }
 
   async fetchGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
+    return this.allById.filter((raw) => ids.includes(raw.id));
+  }
+
+  async fetchFullGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
     return this.allById.filter((raw) => ids.includes(raw.id));
   }
 

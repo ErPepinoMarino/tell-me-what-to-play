@@ -43,6 +43,9 @@ class FakeIgdbClient implements IgdbClient {
   async fetchGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
     return this.games.filter((game) => ids.includes(game.id));
   }
+  async fetchFullGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
+    return this.games.filter((game) => ids.includes(game.id));
+  }
   async filteredSearch(): Promise<IgdbGameRaw[]> {
     return this.games;
   }
@@ -97,7 +100,6 @@ function makeExistingGame(
   overrides: Partial<Omit<IgdbGame, "keywords">> = {},
 ): Game {
   return {
-    provenance: "igdb",
     id: 1,
     slug: "hollow-knight",
     sourceId: "100",

@@ -1,4 +1,4 @@
-import { games, toCuratedKeywords } from "../data/games.js";
+import { games } from "../data/games.js";
 import type { CatalogLayer } from "../orchestrator/types.js";
 
 export interface SeedCatalogResult {
@@ -33,15 +33,14 @@ export async function ensureSeedCatalog(
       skipped++;
       continue;
     }
-    // createCurated() usa solo los campos de persistencia: id y searchCount los
-    // pone PostgreSQL (serial / default 0). El vocabulario del seed es
-    // CU-RADO: cruza la frontera por el mint curado toCuratedKeywords, jamás
-    // por un mint de IgdbKeyword — un dato del seed no puede fingir que
-    // procede de IGDB (CuratedKeyword[] no es asignable a IgdbKeyword[]).
-    await catalog.createCurated({
+    // createIgdb() usa solo los campos de persistencia: id y searchCount los
+    // pone PostgreSQL (serial / default 0). El seed es OFFLINE: no puede
+    // conocer las keywords de IGDB, así que se crea con keywords vacías
+    // (Game.keywords tiene una única semántica: IGDB). La reparación de
+    // catálogo (repairCatalog / syncCatalogKeywords) las rellena desde IGDB.
+    await catalog.createIgdb({
       ...game,
-      provenance: "curated",
-      keywords: toCuratedKeywords(game.keywords),
+      keywords: [],
     });
     created++;
   }

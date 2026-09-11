@@ -7,14 +7,9 @@ import * as keywordModule from "../../src/igdb/keywords.js";
 import * as mappers from "../../src/igdb/mappers.js";
 import { mapToCandidate, concludeGameToPersist } from "../../src/igdb/mappers.js";
 import { mintSearchKeywords } from "../../src/matching/keywords.js";
-import { toCuratedKeywords } from "../../src/data/games.js";
 import type { IgdbGameRaw } from "../../src/igdb/types.js";
 import type { IgdbGameToPersist } from "../../src/types/Game.js";
-import type {
-  CuratedKeyword,
-  IgdbKeyword,
-  SearchKeyword,
-} from "../../src/types/keywords.js";
+import type { IgdbKeyword, SearchKeyword } from "../../src/types/keywords.js";
 import type { Semantic } from "../../src/types/GameEnrichment.js";
 
 function makeRaw(overrides: Partial<IgdbGameRaw> = {}): IgdbGameRaw {
@@ -53,9 +48,9 @@ const nullSemantic: Semantic = {
 };
 
 /*
- * Invariante estructural: Game.keywords de un juego IGDB === raw.keywords.
- * La frontera de tipos garantiza que un string[] plano, un SearchKeyword[] o
- * un CuratedKeyword[] NO pueden vivir en las keywords de un IgdbGameToPersist.
+ * Invariante estructural: Game.keywords de un juego === raw.keywords de IGDB.
+ * La frontera de tipos garantiza que un string[] plano o un SearchKeyword[]
+ * NO pueden vivir en las keywords de un IgdbGameToPersist.
  * El mint IgdbKeyword está sellado: solo extractIgdbKeywords(raw) y el
  * re-marcado de lectura brandStoredIgdbKeywords lo producen.
  */
@@ -117,13 +112,6 @@ describe("Frontera de marca IgdbKeyword", () => {
     const hints: readonly SearchKeyword[] = mintSearchKeywords(["trucks"]);
     // @ts-expect-error el vocabulario de búsqueda jamás vive en Game.keywords
     const bad: IgdbGameToPersist["keywords"] = hints;
-    void bad;
-  });
-
-  it("compile-time: CuratedKeyword[] NO es asignable a IgdbGameToPersist keywords", () => {
-    const curated: readonly CuratedKeyword[] = toCuratedKeywords(["curated"]);
-    // @ts-expect-error un dato curado no puede fingir procedencia IGDB
-    const bad: IgdbGameToPersist["keywords"] = curated;
     void bad;
   });
 

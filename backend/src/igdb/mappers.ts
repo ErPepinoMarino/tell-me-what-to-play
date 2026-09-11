@@ -90,7 +90,6 @@ export function concludeGameToPersist(
   editable: EnrichmentEditable,
 ): IgdbGameToPersist {
   return {
-    provenance: "igdb",
     slug: candidate.slug,
     sourceId: candidate.sourceId,
     title: candidate.title,

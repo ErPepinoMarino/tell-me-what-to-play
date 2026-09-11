@@ -1,26 +1,20 @@
 import type { Game } from "../types/Game.js";
-import type { CuratedKeyword } from "../types/keywords.js";
 
 /*
- * Las keywords del seed son vocabulario CURADO (no IGDB): se tipan como
- * string[] y cruzan la frontera de persistencia por el mint curado
- * toCuratedKeywords (jamás por un mint de IgdbKeyword). No se las puede
- * confundir por tipos con las keywords IGDB (IgdbKeyword): CuratedKeyword[]
- * no es asignable a IgdbKeyword[].
+ * Fichas del seed (catálogo frío de arranque). Cada una tiene source_id y su
+ * identidad/clasificaciones/descripciones propias.
+ *
+ * NOTA sobre las arrays `keywords` de estas fichas: son vocabulario LEGADO
+ * (curado a mano) que ya NO se persiste ni se sirve. Game.keywords tiene una
+ * única semántica — keywords de IGDB — y el seed se crea con keywords vacías
+ * (seedCatalogService) hasta que la reparación de catálogo (repairCatalog /
+ * syncCatalogKeywords) las rellene desde IGDB. Estas arrays se conservan en
+ * el archivo hasta que se regenere desde IGDB (npm run seed:export tras la
+ * reparación); el runtime no las lee.
  */
-export type GameSeed = Omit<Game, "keywords" | "provenance"> & {
+export type GameSeed = Omit<Game, "keywords"> & {
   keywords: string[];
 };
-
-/*
- * Mint curado: la única forma de producir CuratedKeyword (vocabulario
- * manual/seed). Congela el array: barrera de runtime contra mutación.
- */
-export function toCuratedKeywords(
-  keywords: readonly string[],
-): readonly CuratedKeyword[] {
-  return Object.freeze([...keywords]) as readonly CuratedKeyword[];
-}
 
 export const games: GameSeed[] = [
   {
@@ -2102,10 +2096,3 @@ export const games: GameSeed[] = [
     "coziness": null
   }
 ];
-
-// Sets de identidad del seed para clasificar procedencia en la lectura
-// (provisional hasta la columna keywords_provenance de la migración).
-export const seedSlugs: ReadonlySet<string> = new Set(games.map((g) => g.slug));
-export const seedSourceIds: ReadonlySet<string> = new Set(
-  games.map((g) => g.sourceId).filter((s): s is string => s !== null),
-);

@@ -1,6 +1,4 @@
 import type {
-  CuratedGame,
-  CuratedGameToPersist,
   Game,
   IgdbGame,
   IgdbGameToPersist,
@@ -60,9 +58,9 @@ export interface ReEnrichPatch {
  * resultados, exclusiones) nace de aquí. El JSON cache es una proyección
  * y se canonicaliza contra esta capa antes de entrar al matcher.
  *
- * Escritura de keywords: SOLO tres operaciones semánticamente explícitas
- * (createIgdb, createCurated, syncCatalogKeywords). No existe ningún
- * `create`/`update` genérico que acepte un `Game` arbitrario.
+ * Escritura de keywords: SOLO dos operaciones semánticamente explícitas
+ * (createIgdb, syncCatalogKeywords). No existe ningún `create`/`update`
+ * genérico que acepte un `Game` arbitrario.
  * updateReEnrich actualiza la ficha SIN acceso a keywords.
  */
 export interface CatalogLayer {
@@ -72,7 +70,6 @@ export interface CatalogLayer {
   getBySourceId(sourceId: string): Promise<Game | undefined>;
   searchByTitle(query: string): Promise<Game[]>;
   createIgdb(game: IgdbGameToPersist): Promise<IgdbGame>;
-  createCurated(game: CuratedGameToPersist): Promise<CuratedGame>;
   syncCatalogKeywords(game: IgdbGame, raw: IgdbGameRaw): Promise<IgdbGame>;
   updateReEnrich(game: Game, patch: ReEnrichPatch): Promise<Game>;
   incrementSearchCounts(ids: number[]): Promise<void>;

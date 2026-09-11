@@ -106,6 +106,20 @@ export class HttpIgdbClient implements IgdbClient {
     return this.withRetry(() => this.request(token, body));
   }
 
+  // Reparación del catálogo: recuperación COMPLETA por IDs (todos los campos
+  // FIELDS). La identidad de la reparación es source_id, nunca búsqueda por título.
+  async fetchFullGamesByIds(ids: number[]): Promise<IgdbGameRaw[]> {
+    if (ids.length === 0) return [];
+    const token = await this.auth.getAccessToken();
+    const body =
+      [
+        `fields ${FIELDS}`,
+        `where id = (${ids.join(",")})`,
+        `limit ${Math.min(ids.length, 500)}`,
+      ].join("; ") + ";";
+    return this.withRetry(() => this.request(token, body));
+  }
+
   /*
    * Diccionario completo de keywords (seed del léxico): TODA la taxonomía de
    * keywords de IGDB, paginada. Única fuente del diccionario cerrado.

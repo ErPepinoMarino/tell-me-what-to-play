@@ -11,7 +11,6 @@ export const prismaCatalogLayer: CatalogLayer = {
   getBySourceId: (sourceId) => prismaGameRepository.getBySourceId(sourceId),
   searchByTitle: (query) => prismaGameRepository.search(query),
   createIgdb: (game) => prismaGameRepository.createIgdb(game),
-  createCurated: (game) => prismaGameRepository.createCurated(game),
   syncCatalogKeywords: (game, raw) =>
     prismaGameRepository.syncCatalogKeywords(game, raw),
   updateReEnrich: (game, patch) =>

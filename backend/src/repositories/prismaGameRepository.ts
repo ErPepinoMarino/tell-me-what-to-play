@@ -3,14 +3,7 @@ import {
   brandStoredIgdbKeywords,
   extractIgdbKeywords,
 } from "../igdb/keywords.js";
-import {
-  seedSlugs,
-  seedSourceIds,
-  toCuratedKeywords,
-} from "../data/games.js";
 import type {
-  CuratedGame,
-  CuratedGameToPersist,
   Game,
   IgdbGame,
   IgdbGameToPersist,
@@ -43,7 +36,7 @@ export interface CandidateFilter {
 
 type GameRow = Awaited<ReturnType<typeof prisma.games.findUnique>> & {};
 
-// Base común de una fila a dominio (sin keywords ni provenance).
+// Base común de una fila a dominio.
 function gameBase(game: GameRow) {
   return {
     id: game.id,
@@ -78,52 +71,23 @@ function gameBase(game: GameRow) {
   };
 }
 
-function toIgdbGame(game: GameRow): IgdbGame {
+// Lee una fila a dominio. Las keywords se re-marcan como IgdbKeyword[]: la
+// BD guarda las keywords que el pipeline sellado escribió desde el raw de
+// IGDB (invariante Game.keywords === raw.keywords).
+export function toGame(game: GameRow): IgdbGame {
   return {
     ...gameBase(game),
-    provenance: "igdb",
     keywords: brandStoredIgdbKeywords(game.keywords),
   };
 }
 
-function toCuratedGame(game: GameRow): CuratedGame {
-  return {
-    ...gameBase(game),
-    provenance: "curated",
-    keywords: toCuratedKeywords(game.keywords),
-  };
-}
-
 /*
- * Clasificación de procedencia en LECTURA. La BD aún no tiene columna
- * keywords_provenance (la migración la añadirá): hasta entonces, las fichas
- * cuyo slug/source_id pertenecen al seed curado se consideran "curated" y el
- * resto "igdb". Para las filas creadas tras esta arquitectura la etiqueta es
- * correcta por construcción (el único escritor de un juego IGDB es el
- * pipeline sellado); la migración verificará por contenido el legado.
- */
-function provenanceFor(
-  slug: string,
-  sourceId: string | null,
-): "igdb" | "curated" {
-  if (seedSlugs.has(slug)) return "curated";
-  if (sourceId !== null && seedSourceIds.has(sourceId)) return "curated";
-  return "igdb";
-}
-
-export function toGame(game: GameRow): Game {
-  return provenanceFor(game.slug, game.source_id) === "curated"
-    ? toCuratedGame(game)
-    : toIgdbGame(game);
-}
-
-/*
- * Columnas de una ficha excepto keywords: compartidas por las tres únicas
- * operaciones de escritura de keywords (createIgdb, createCurated,
- * syncCatalogKeywords usa su propio update de una sola columna).
+ * Columnas de una ficha excepto keywords: compartidas por las dos únicas
+ * operaciones de escritura de keywords (createIgdb y syncCatalogKeywords,
+ * que usa su propio update de una sola columna).
  */
 function createData(
-  game: IgdbGameToPersist | CuratedGameToPersist,
+  game: IgdbGameToPersist,
   keywords: readonly string[],
 ) {
   return {
@@ -283,34 +247,20 @@ export const prismaGameRepository = {
   /*
    * ÚNICA operación de escritura de keywords del pipeline IGDB: recibe un
    * IgdbGameToPersist cuyas keywords ya salieron del mint sellado
-   * extractIgdbKeywords(raw). No acepta Game ni CuratedGame: un string[] o
-   * un vocabulario curado no compila aquí.
+   * extractIgdbKeywords(raw). Un string[] plano o un vocabulario de búsqueda
+   * no compila aquí.
    */
   async createIgdb(game: IgdbGameToPersist): Promise<IgdbGame> {
     const createdGame = await prisma.games.create({
       data: createData(game, game.keywords),
     });
 
-    return toIgdbGame(createdGame);
-  },
-
-  /*
-   * Única operación de escritura de keywords del seed curado: recibe un
-   * CuratedGameToPersist con keywords CuratedKeyword[] (mint curado). Jamás
-   * lleva la marca IgdbKeyword. Implementación propia: no delega en
-   * createIgdb, el canal es explícito.
-   */
-  async createCurated(game: CuratedGameToPersist): Promise<CuratedGame> {
-    const createdGame = await prisma.games.create({
-      data: createData(game, game.keywords),
-    });
-
-    return toCuratedGame(createdGame);
+    return toGame(createdGame);
   },
 
   /*
    * Sincronización EXPLÍCITA de keywords desde IGDB (la única vía para
-   * refrescar/reparar keywords de un juego igdb, separada del enrichment):
+   * refrescar/reparar keywords de un juego, separada del enrichment):
    * sobrescribe la columna con extractIgdbKeywords(raw) — el raw fresco.
    */
   async syncCatalogKeywords(
@@ -326,7 +276,7 @@ export const prismaGameRepository = {
       },
     });
 
-    return toIgdbGame(updatedGame);
+    return toGame(updatedGame);
   },
 
   /*

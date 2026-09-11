@@ -90,6 +90,9 @@ export interface FilteredSearchOptions {
 // fetchGames: paginación genérica (tests/scripts; en runtime se prefiere search/filtered)
 // searchGames (la buena) que nos permite añadir una query con criterios de búsqueda y un límite de resultados.
 // fetchGamesByIds: recovery/backfill de metadatos (ratings) para fichas ya descubiertas.
+// fetchFullGamesByIds: recuperación COMPLETA (todos los campos FIELDS) por IDs —
+//   necesaria para la reparación del catálogo por source_id (la identidad es el id,
+//   no se busca por título).
 // filteredSearch: descubrimiento por ATRIBUTOS (géneros/keywords/plataformas/año).
 // fetchAllKeywords: diccionario completo de keywords (seed del léxico).
 // fetchThemesByGameIds: backfill de themes para fichas del catálogo.
@@ -102,6 +105,8 @@ export interface IgdbClient {
   searchGames(query: string, limit?: number): Promise<IgdbGameRaw[]>;
 
   fetchGamesByIds(ids: number[]): Promise<IgdbGameRaw[]>;
+
+  fetchFullGamesByIds(ids: number[]): Promise<IgdbGameRaw[]>;
 
   filteredSearch(options: FilteredSearchOptions): Promise<IgdbGameRaw[]>;
 

@@ -11,10 +11,8 @@
  *    mutación in-place posterior.
  *  - brandStoredIgdbKeywords(names): re-aserción de lectura. Concede la
  *    marca a strings que YA salieron de extractIgdbKeywords y volvieron de
- *    la BDD (provenance="igdb"). NO es un mint arbitrario: solo tiene
- *    sentido para filas cuya escritura pasó por el pipeline sellado. La
- *    migración de la BD existente debe verificar el contenido antes de
- *    conceder provenance="igdb" (fail-closed). Fuera de este módulo está
+ *    la BDD. NO es un mint arbitrario: solo tiene sentido para filas cuya
+ *    escritura pasó por el pipeline sellado. Fuera de este módulo está
  *    prohibido fabricar IgdbKeyword con casts (ver eslint.config.js).
  */
 import type { IgdbGameRaw } from "./types.js";
