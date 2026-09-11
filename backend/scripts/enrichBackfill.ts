@@ -8,7 +8,10 @@
  * Por cada ficha: IGDB search por título (match por sourceId, slug o título
  * normalizado) → si la ficha no tenía identidad se ADOPTAN los datos
  * objetivos canónicos de IGDB (source_id, clasificaciones, portada, año) →
- * Brave + LLM para semánticas y keywords (conservando las conocidas).
+ * Brave + LLM para descripciones y semánticas (conservando las conocidas).
+ * Las keywords NO se modifican (invariante: reEnrich es un patch sin
+ * keywords; refrescarlas desde IGDB es una sincronización explícita de
+ * catálogo, fuera del alcance de este script).
  *
  * Uso: npm run enrich:backfill   (desde backend/, con IGDB/Brave/OpenAI
  * configuradas y PG accesible). Respeta el presupuesto diario.

@@ -4,7 +4,6 @@ import {
   generateSlug,
   normalizeGameModes,
   normalizeGenres,
-  normalizeKeywords,
   normalizePerspectives,
   normalizePlatforms,
   normalizeThemes,
@@ -40,30 +39,26 @@ describe("normalizeGenres", () => {
   it("maps known IGDB genre names to TMWTP Genre enums (1:1 con IGDB)", () => {
     const result = normalizeGenres(["Shooter", "Role-playing (RPG)", "Platform"]);
     expect(result.values).toEqual(["SHOOTER", "ROLE_PLAYING_RPG", "PLATFORM"]);
-    expect(result.unclassified).toEqual([]);
   });
 
-  it("returns unclassified names separately instead of inventing enum values", () => {
+  it("no mapea nombres desconocidos a valores de enum (no se inventa nada)", () => {
     const result = normalizeGenres(["Shooter", "Whatever"]);
     expect(result.values).toEqual(["SHOOTER"]);
-    expect(result.unclassified).toEqual(["Whatever"]);
   });
 
   it("returns empty results for absent or empty input", () => {
-    expect(normalizeGenres(undefined)).toEqual({ values: [], unclassified: [] });
-    expect(normalizeGenres([])).toEqual({ values: [], unclassified: [] });
+    expect(normalizeGenres(undefined)).toEqual({ values: [] });
+    expect(normalizeGenres([])).toEqual({ values: [] });
   });
 
   it("deduplicates genres while preserving order", () => {
     const result = normalizeGenres(["Shooter", "Shooter"]);
     expect(result.values).toEqual(["SHOOTER"]);
-    expect(result.unclassified).toEqual([]);
   });
 
   it("rejects genre names that IGDB does not have (Action/Casual/MMO)", () => {
     const result = normalizeGenres(["Action", "Casual", "Massively Multiplayer"]);
     expect(result.values).toEqual([]);
-    expect(result.unclassified).toEqual(["Action", "Casual", "Massively Multiplayer"]);
   });
 });
 
@@ -76,13 +71,11 @@ describe("normalizeThemes", () => {
       "SCIENCE_FICTION",
       "OPEN_WORLD",
     ]);
-    expect(result.unclassified).toEqual([]);
   });
 
-  it("keeps unknown themes as unclassified", () => {
+  it("no mapea themes desconocidos a valores de enum", () => {
     const result = normalizeThemes(["Horror", "Whatever"]);
     expect(result.values).toEqual(["HORROR"]);
-    expect(result.unclassified).toEqual(["Whatever"]);
   });
 });
 
@@ -94,18 +87,16 @@ describe("normalizePlatforms", () => {
       "Xbox Series X|S",
     ]);
     expect(result.values).toEqual(["PC", "NINTENDO_3DS", "XBOX_SERIES"]);
-    expect(result.unclassified).toEqual([]);
   });
 
-  it("keeps platforms without a TMWTP equivalent as unclassified (not discarded)", () => {
+  it("no mapea plataformas sin equivalencia TMWTP a valores de enum", () => {
     const result = normalizePlatforms(["PC (Microsoft Windows)", "Sega Saturn", "Ouya"]);
     expect(result.values).toEqual(["PC"]);
-    expect(result.unclassified).toEqual(["Sega Saturn", "Ouya"]);
   });
 
   it("returns empty results for absent or empty input", () => {
-    expect(normalizePlatforms(undefined)).toEqual({ values: [], unclassified: [] });
-    expect(normalizePlatforms([])).toEqual({ values: [], unclassified: [] });
+    expect(normalizePlatforms(undefined)).toEqual({ values: [] });
+    expect(normalizePlatforms([])).toEqual({ values: [] });
   });
 
   it("deduplicates platforms while preserving order", () => {
@@ -129,17 +120,15 @@ describe("normalizeGameModes", () => {
       "MULTIPLAYER",
       "MASSIVELY_MULTIPLAYER",
     ]);
-    expect(result.unclassified).toEqual([]);
   });
 
-  it("keeps unknown game modes as unclassified", () => {
+  it("no mapea modos de juego desconocidos a valores de enum", () => {
     const result = normalizeGameModes(["Single player", "Battle Royale"]);
     expect(result.values).toEqual(["SINGLE_PLAYER"]);
-    expect(result.unclassified).toEqual(["Battle Royale"]);
   });
 
   it("returns empty results for absent or empty input", () => {
-    expect(normalizeGameModes(undefined)).toEqual({ values: [], unclassified: [] });
+    expect(normalizeGameModes(undefined)).toEqual({ values: [] });
   });
 });
 
@@ -149,41 +138,13 @@ describe("normalizePerspectives", () => {
     expect(result.values).toEqual(["FIRST_PERSON", "SIDE_VIEW", "TEXT"]);
   });
 
-  it("keeps IGDB-only perspectives as unclassified instead of losing them", () => {
+  it("no mapea perspectivas solo-IGDB a valores de enum", () => {
     const result = normalizePerspectives(["First person", "Virtual Reality", "Auditory"]);
     expect(result.values).toEqual(["FIRST_PERSON"]);
-    expect(result.unclassified).toEqual(["Virtual Reality", "Auditory"]);
   });
 
   it("returns empty results for absent or empty input", () => {
-    expect(normalizePerspectives(undefined)).toEqual({ values: [], unclassified: [] });
-  });
-});
-
-describe("normalizeKeywords", () => {
-  it("merges keywords and unclassified extras into one vocabulary, in arrival order", () => {
-    const result = normalizeKeywords(["zombies", "crafting"], ["Fantasy", "Horror"]);
-    expect(result).toEqual(["zombies", "crafting", "Fantasy", "Horror"]);
-  });
-
-  it("deduplicates case-insensitively, keeping the first form that arrives", () => {
-    const result = normalizeKeywords(["Horror"], ["horror", "HORROR"]);
-    expect(result).toEqual(["Horror"]);
-  });
-
-  it("trims terms and discards empty ones", () => {
-    const result = normalizeKeywords(["  zombies  ", "", "   "], undefined);
-    expect(result).toEqual(["zombies"]);
-  });
-
-  it("returns an empty array when everything is absent or empty", () => {
-    expect(normalizeKeywords(undefined, undefined)).toEqual([]);
-    expect(normalizeKeywords([], [])).toEqual([]);
-  });
-
-  it("appends extra terms (unclassified from enums) after keywords", () => {
-    const result = normalizeKeywords(["zombies"], ["Card & Board Game"]);
-    expect(result).toEqual(["zombies", "Card & Board Game"]);
+    expect(normalizePerspectives(undefined)).toEqual({ values: [] });
   });
 });
 

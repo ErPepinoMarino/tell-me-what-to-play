@@ -6,8 +6,22 @@
   Theme,
 } from "./enums.js";
 import type { IgdbGameRaw } from "../igdb/types.js";
+import type { CuratedKeyword, IgdbKeyword } from "./keywords.js";
 
-export interface Game {
+// Marca nominal sobre string: las keywords PERSISTIDAS solo pueden nacer del
+// vocabulario IGDB (src/igdb/keywords.ts — extractIgdbKeywords). Un string[]
+// plana (términos de búsqueda, keywords adicionales del LLM) NO es asignable:
+// la contaminación de la BDD pasa a ser estructuralmente imposible, no una
+// regla de disciplina.
+
+/*
+ * Base común de toda ficha. La procedencia de las keywords está
+ * discriminada: un juego IGDB SOLO puede tener IgdbKeyword[] (mint sellado
+ * del raw); un juego curado SOLO CuratedKeyword[]. Ninguna es asignable a la
+ * otra → es imposible por tipos que un seed "finja" procedencia IGDB o que
+ * una search keyword entre en Game.keywords.
+ */
+interface GameBase {
   id: number;
   slug: string;
   sourceId: string | null;
@@ -21,7 +35,6 @@ export interface Game {
   platforms: Platform[];
   gameModes: GameMode[];
   perspectives: Perspective[];
-  keywords: string[];
   developers: string[];
   publishers: string[];
   searchCount: number;
@@ -40,18 +53,35 @@ export interface Game {
   isolation: number | null;
 }
 
+// Juego cuya fuente es IGDB: keywords === raw.keywords de IGDB, por
+// construcción (extractIgdbKeywords), sin excepciones de runtime.
+export interface IgdbGame extends GameBase {
+  provenance: "igdb";
+  keywords: readonly IgdbKeyword[];
+}
+
+// Juego con keywords curadas/manuales (seed). Nunca lleva la marca IGDB.
+export interface CuratedGame extends GameBase {
+  provenance: "curated";
+  keywords: readonly CuratedKeyword[];
+}
+
+export type Game = IgdbGame | CuratedGame;
+
 /*
- * Lo único que asigna la BDD y el mapper no genera es id y searchCount.
- * Todo lo demás (description_es, description_en, coverUrl, releaseYear, semánticas) puede ser null
- * tanto al crear como al leer de la BDD — el schema Prisma las declara nullable.
+ * Lo único que asignan la BDD y el mapper no genera es id y searchCount.
+ * Todo lo demás puede ser null tanto al crear como al leer de la BDD — el
+ * schema Prisma las declara nullable.
  */
-export type GameToPersist = Omit<Game, "id" | "searchCount">;
+export type IgdbGameToPersist = Omit<IgdbGame, "id" | "searchCount">;
+export type CuratedGameToPersist = Omit<CuratedGame, "id" | "searchCount">;
 
 /*
  * Candidato intermedio durante el proceso de importación.
  * Contiene los campos normalizados desde IGDB más el raw original,
  * necesario para el enriquecimiento posterior (description_es, description_en, semánticas, etc.).
- * No se persiste: existe solo en memoria hasta que se transforma en GameToPersist.
+ * No se persiste: existe solo en memoria hasta que se transforma en IgdbGameToPersist.
+ * Las keywords son SIEMPRE IgdbKeyword (mint sellado del raw).
  */
 export interface Candidate {
   sourceId: string;
@@ -63,7 +93,7 @@ export interface Candidate {
   platforms: Platform[];
   gameModes: GameMode[];
   perspectives: Perspective[];
-  keywords: string[];
+  keywords: readonly IgdbKeyword[];
   developers: string[];
   publishers: string[];
   coverUrl: string | null;

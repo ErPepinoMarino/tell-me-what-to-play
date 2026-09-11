@@ -1320,7 +1320,10 @@ describe("RecommendationOrchestrator", () => {
     const updated = catalog.get(1)!;
     expect(updated.difficulty).toBe(0.7);
     expect(updated.horror).toBe(0.8);
-    expect(updated.keywords).toContain("treasure");
+    // reEnrich mantiene el vocabulario IGDB (["pirates"]): la keyword
+    // adicional del LLM ("treasure") es señal del gate, jamás persistida.
+    expect(updated.keywords).toEqual(["pirates"]);
+    expect(updated.keywords).not.toContain("treasure");
   });
 
   it("PG caída: degrada al pool del JSON cache con notice", async () => {
@@ -1356,13 +1359,18 @@ describe("RecommendationOrchestrator", () => {
 
   it("circuito cerrado: lo descubierto matchea la intención que lo descubrió", async () => {
     // Caso real que falló en producción: la ficha descubierta no tenía la
-    // keyword del término buscado → todos inválidos. Con la siembra, el
-    // circuito descubre → enriquece → guarda → matchea.
+    // keyword del término buscado → todos inválidos. El circuito descubre →
+    // enriquece → guarda → matchea cuando IGDB etiqueta la ficha con el
+    // término (keyword IGDB "batman"); la query nunca contamina las keywords.
     const { orchestrator, igdb } = setup({
       intent: makeIntent({ keywords: ["batman"] }),
       limits: { igdb: 100, brave: 100, llm: 100 },
     });
-    igdb.filteredResults = [makeRaw(201, "Dark Knight Game", { keywords: [] })];
+    igdb.filteredResults = [
+      makeRaw(201, "Dark Knight Game", {
+        keywords: [{ id: 1, name: "batman" }],
+      }),
+    ];
 
     const { response } = await orchestrator.handle({
       action: "search",

@@ -108,7 +108,7 @@ export function buildQueryVariants(intent: GameSearchIntent): string[] {
    * filtrada aplica TODOS los campos del intent en el `where`, así que
    * cualquier texto no vacío vale como clave de la unidad de
    * descubrimiento — se construye con el resto de señales para que las
-   * keywords sembradas sigan teniendo sentido.
+   * pistas de búsqueda de la query sigan teniendo sentido.
    */
   if (variants.length === 0) {
     const themeTerms = (intent.objective?.themes ?? [])

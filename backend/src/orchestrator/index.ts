@@ -42,10 +42,11 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
   /*
    * Léxico de keywords: diccionario completo de IGDB (ver
    * scripts/seedKeywordDictionary.ts). Carga perezosa de keyword_lexicon y
-   * canonicalización de keywords del usuario/enrichment/siembra. Política
-   * CONSERVADORA: lo que no matchea (literal/stem/embedding) se DROP — el
-   * diccionario es cerrado, nunca crece. Con el servicio de embeddings
-   * caído o presupuesto seco degrada a literal.
+   * canonicalización de las keywords del usuario y de las pistas de búsqueda
+   * (SearchContext.hints). Política CONSERVADORA: lo que no matchea
+   * (literal/stem/embedding) se DROP — el diccionario es cerrado, nunca
+   * crece. Con el servicio de embeddings caído o presupuesto seco degrada a
+   * literal.
    */
   const lexicon = createKeywordLexiconService({
     loader: async () => prisma.keyword_lexicon.findMany(),

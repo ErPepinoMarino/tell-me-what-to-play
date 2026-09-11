@@ -79,31 +79,29 @@ const THEME_MAP: Record<string, Theme> = {
 
 export interface EnumNormalization<T> {
   values: T[];
-  unclassified: string[];
 }
 
 /*
- * Funcion simple: Recibe un array de nombres y un mapa de equivalencias (nombre -> enum)
- * Devuelve un objeto con dos arrays: los valores del enum que se pudieron mapear y los nombres que no se pudieron mapear (unclassified).
+ * Funcion simple: Recibe un array de nombres y un mapa de equivalencias (nombre -> enum).
+ * Los nombres sin equivalencia simplemente no se mapean (nunca se inventa un
+ * valor ni se acumulan: la regla "categoría IGDB no mapeada → keyword" quedó
+ * eliminada de la arquitectura de keywords).
  */
 function mapToEnum<T extends string>(
   names: string[] | undefined,
   map: Record<string, T>,
 ): EnumNormalization<T> {
   if (!names || names.length === 0) {
-    return { values: [], unclassified: [] };
+    return { values: [] };
   }
   const values: T[] = [];
-  const unclassified: string[] = [];
   for (const name of names) {
     const mapped = map[name];
     if (mapped) {
       values.push(mapped);
-    } else {
-      unclassified.push(name);
     }
   }
-  return { values: [...new Set(values)], unclassified };
+  return { values: [...new Set(values)] };
 }
 
 //Llama a mapToEnum con el mapa de géneros. (Facilito)
@@ -192,29 +190,6 @@ export function normalizePerspectives(
 }
 
 /*
- * Recibe un array de keywords y un intent previo (opcional)
- * Devuelve un array de keywords normalizadas (sin duplicados, sin espacios, sin vacíos)
- */
-export function normalizeKeywords(
-  keywords: string[] | undefined,
-  extra: string[] | undefined = [],
-): string[] {
-  const seen = new Set<string>(); // forma lowercase ya vista
-  const result: string[] = [];
-
-  for (const term of [...(keywords ?? []), ...(extra ?? [])]) {
-    const trimmed = term?.trim();
-    if (!trimmed) continue; // vacÃ­o o solo espacios
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue; // duplicado case-insensitive
-    seen.add(key);
-    result.push(trimmed);
-  }
-
-  return result;
-}
-
-/*
  * Recibe un título y un año (opcional) y genera un slug normalizado para la BDD.
  */
 export function generateSlug(title: string, year: number | null): string {
@@ -244,40 +219,9 @@ const GENRE_REVERSE: Map<Genre, string[]> = (() => {
   return map;
 })();
 
-// Record de temas IGDB a su slug correspondiente.
-const THEME_SLUGS: Record<Exclude<Theme, "UNKNOWN">, string> = {
-  ACTION: "action",
-  BUSINESS: "business",
-  COMEDY: "comedy",
-  DRAMA: "drama",
-  EDUCATIONAL: "educational",
-  EROTIC: "erotic",
-  FANTASY: "fantasy",
-  FOUR_X: "4x-explore-expand-exploit-and-exterminate",
-  HISTORICAL: "historical",
-  HORROR: "horror",
-  KIDS: "kids",
-  MYSTERY: "mystery",
-  NON_FICTION: "non-fiction",
-  OPEN_WORLD: "open-world",
-  PARTY: "party",
-  ROMANCE: "romance",
-  SANDBOX: "sandbox",
-  SCIENCE_FICTION: "science-fiction",
-  STEALTH: "stealth",
-  SURVIVAL: "survival",
-  THRILLER: "thriller",
-  WARFARE: "warfare",
-};
-
-// Getter de los slugs IGDB posibles para un enum de theme.
+// Getter de los slugs IGDB posibles para un enum de genre.
 export function genreIgbNames(genre: Genre): string[] {
   return GENRE_REVERSE.get(genre) ?? [];
-}
-
-// Getter que devuelve un theme IGDB a partir de su slug (o null si el theme es UNKNOWN).
-export function themeIgbSlug(theme: Theme): string | null {
-  return theme === "UNKNOWN" ? null : THEME_SLUGS[theme];
 }
 
 // Record con los id de cada Theme.

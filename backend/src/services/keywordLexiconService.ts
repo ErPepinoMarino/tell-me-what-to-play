@@ -16,7 +16,8 @@ export const LEXICON_SIMILARITY_THRESHOLD = 0.58;
  * Política de supervisión compartida por el minado (FASE 1) y la migración
  * (FASE 3): keywords que NUNCA deben entrar al léxico ni proponerse como
  * entradas nuevas — metadatos de plataforma/distribución, y fragmentos que
- * el antiguo siembra dej colar en el catálogo.
+ * la antigua contaminación de términos de búsqueda dejó colar en el
+ * catálogo.
  */
 export const TECH_NOISE = new Set([
   "steam",

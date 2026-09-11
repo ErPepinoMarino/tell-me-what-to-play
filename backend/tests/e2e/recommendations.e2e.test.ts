@@ -191,7 +191,9 @@ describe("POST /api/recommendations E2E", () => {
         message: "dame más",
         action: "more",
         contextIntent: search.json().intent,
-        shownGameIds: search.json().results.map((item) => item.game.id),
+        shownGameIds: search.json().results.map(
+          (item: { game: { id: string } }) => item.game.id,
+        ),
       },
     });
 
@@ -223,7 +225,9 @@ describe("POST /api/recommendations E2E", () => {
         message: "dame más",
         action: "more",
         contextIntent: search.json().intent,
-        shownGameIds: search.json().results.map((item) => item.game.id),
+        shownGameIds: search.json().results.map(
+          (item: { game: { id: string } }) => item.game.id,
+        ),
       },
       headers: { authorization: `Bearer ${accessToken}` },
     });

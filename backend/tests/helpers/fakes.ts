@@ -3,17 +3,30 @@ import type {
   IgdbClient,
   IgdbGameRaw,
 } from "../../src/igdb/types.js";
-import type { Candidate, Game, GameToPersist } from "../../src/types/Game.js";
+import {
+  brandStoredIgdbKeywords,
+  extractIgdbKeywords,
+} from "../../src/igdb/keywords.js";
+import { mintSearchKeywords } from "../../src/matching/keywords.js";
+import type {
+  Candidate,
+  CuratedGame,
+  CuratedGameToPersist,
+  Game,
+  IgdbGame,
+  IgdbGameToPersist,
+} from "../../src/types/Game.js";
 import type {
   GameEnrichment,
   Semantic,
 } from "../../src/types/GameEnrichment.js";
 import type { GameSearchIntent } from "../../src/types/GameSearchIntent.js";
 import type {
+  EnrichmentResult,
   EnrichmentService,
   EnrichmentUpdater,
 } from "../../src/services/enrichmentService.js";
-import type { CatalogLayer, CacheLayer } from "../../src/orchestrator/types.js";
+import type { CatalogLayer, CacheLayer, ReEnrichPatch } from "../../src/orchestrator/types.js";
 import type { BudgetLimits } from "../../src/budget/budgetLedger.js";
 
 export const FULL_SEMANTIC: Semantic = {
@@ -48,7 +61,10 @@ export const NULL_SEMANTIC: Semantic = {
   isolation: null,
 };
 
-export function makeGame(overrides: Partial<Game> & Pick<Game, "id">): Game {
+export function makeGame(
+  overrides: Partial<Omit<IgdbGame, "keywords">> & { keywords?: string[] } & Pick<IgdbGame, "id">,
+): IgdbGame {
+  const { keywords = [], ...rest } = overrides;
   return {
     slug: `game-${overrides.id}`,
     title: `Game ${overrides.id}`,
@@ -61,13 +77,14 @@ export function makeGame(overrides: Partial<Game> & Pick<Game, "id">): Game {
     platforms: ["PC"],
     gameModes: ["UNKNOWN"],
     perspectives: ["UNKNOWN"],
-    keywords: [],
+    provenance: "igdb",
+    keywords: brandStoredIgdbKeywords(keywords),
     developers: [],
     publishers: [],
     searchCount: 0,
     sourceId: String(overrides.id),
     ...NULL_SEMANTIC,
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -117,7 +134,7 @@ function overlap(a: string[], b: string[]): boolean {
   return a.some((value) => b.includes(value));
 }
 
-function overlapKeywords(a: string[], b: string[]): boolean {
+function overlapKeywords(a: readonly string[], b: readonly string[]): boolean {
   const normalizedA = a.map((k) => k.toLowerCase());
   return b.some((k) => normalizedA.includes(k.toLowerCase()));
 }
@@ -201,17 +218,74 @@ export class FakeCatalogLayer implements CatalogLayer {
     );
   }
 
-  async create(game: GameToPersist): Promise<Game> {
+  async createIgdb(game: IgdbGameToPersist): Promise<IgdbGame> {
     this.createCalls++;
-    const created: Game = { ...game, id: this.nextId++, searchCount: 0 };
+    const created: IgdbGame = {
+      ...game,
+      provenance: "igdb",
+      id: this.nextId++,
+      searchCount: 0,
+    };
     this.byId.set(created.id, created);
     return created;
   }
 
-  async update(game: Game): Promise<Game> {
+  async createCurated(game: CuratedGameToPersist): Promise<CuratedGame> {
+    this.createCalls++;
+    const created: CuratedGame = {
+      ...game,
+      provenance: "curated",
+      id: this.nextId++,
+      searchCount: 0,
+    };
+    this.byId.set(created.id, created);
+    return created;
+  }
+
+  async syncCatalogKeywords(
+    game: IgdbGame,
+    raw: IgdbGameRaw,
+  ): Promise<IgdbGame> {
+    const updated: IgdbGame = {
+      ...game,
+      keywords: extractIgdbKeywords(raw),
+    };
+    this.byId.set(updated.id, updated);
+    return updated;
+  }
+
+  async updateReEnrich(game: Game, patch: ReEnrichPatch): Promise<Game> {
     this.updateCalls++;
-    this.byId.set(game.id, game);
-    return game;
+    const updated: Game = {
+      ...game,
+      description_es: patch.description_es,
+      description_en: patch.description_en,
+      sourceId: patch.sourceId !== undefined ? patch.sourceId : game.sourceId,
+      coverUrl: patch.coverUrl ?? game.coverUrl,
+      releaseYear: patch.releaseYear ?? game.releaseYear,
+      genres: patch.genres ?? game.genres,
+      themes: patch.themes ?? game.themes,
+      platforms: patch.platforms ?? game.platforms,
+      gameModes: patch.gameModes ?? game.gameModes,
+      perspectives: patch.perspectives ?? game.perspectives,
+      developers: patch.developers ?? game.developers,
+      publishers: patch.publishers ?? game.publishers,
+      difficulty: patch.semantic.difficulty ?? game.difficulty,
+      pace: patch.semantic.pace ?? game.pace,
+      narrative: patch.semantic.narrative ?? game.narrative,
+      complexity: patch.semantic.complexity ?? game.complexity,
+      coziness: patch.semantic.coziness ?? game.coziness,
+      strategy: patch.semantic.strategy ?? game.strategy,
+      exploration: patch.semantic.exploration ?? game.exploration,
+      violence: patch.semantic.violence ?? game.violence,
+      horror: patch.semantic.horror ?? game.horror,
+      darkness: patch.semantic.darkness ?? game.darkness,
+      tension: patch.semantic.tension ?? game.tension,
+      humor: patch.semantic.humor ?? game.humor,
+      isolation: patch.semantic.isolation ?? game.isolation,
+    };
+    this.byId.set(updated.id, updated);
+    return updated;
   }
 
   async incrementSearchCounts(ids: number[]): Promise<void> {
@@ -293,26 +367,16 @@ export class FakeEnrichment implements EnrichmentService, EnrichmentUpdater {
     private fail = false,
   ) {}
 
-  async enrich(candidate: Candidate): Promise<GameToPersist> {
+  async enrich(candidate: Candidate): Promise<EnrichmentResult> {
     this.enrichCalls.push(candidate);
     if (this.fail) throw new Error("enrich failed");
     return {
-      slug: candidate.slug,
-      sourceId: candidate.sourceId,
-      title: candidate.title,
-      coverUrl: candidate.coverUrl,
-      releaseYear: candidate.releaseYear,
-      genres: candidate.genres,
-      themes: candidate.themes,
-      platforms: candidate.platforms,
-      gameModes: candidate.gameModes,
-      perspectives: candidate.perspectives,
-      developers: candidate.developers,
-      publishers: candidate.publishers,
-      keywords: [...candidate.keywords, ...this.enrichment.additionalKeywords],
-      ...this.enrichment.semantic,
-      description_es: this.enrichment.description_es,
-      description_en: this.enrichment.description_en,
+      editable: {
+        description_es: this.enrichment.description_es,
+        description_en: this.enrichment.description_en,
+        semantic: this.enrichment.semantic,
+      },
+      additionalKeywords: mintSearchKeywords(this.enrichment.additionalKeywords),
     };
   }
 

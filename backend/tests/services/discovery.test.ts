@@ -383,8 +383,9 @@ describe("DiscoveryManager.discoverByQuery", () => {
     });
 
     // El intent exige la keyword "cozy" (must): "Random Horror" no la tendrá
-    // ni sembrada; "Cozy Horror" sí (la query "horror" siembra "horror" y la
-    // keyword IGDB aporta "cozy").
+    // ni como keyword IGDB ni como pista; "Cozy Horror" sí (la keyword IGDB
+    // aporta "cozy"; la pista de la query "horror" solo vive en la vista
+    // MatchableGame del pre-filtro, jamás en la ficha persistida).
     const intent = makeIntent({
       keywords: ["cozy"],
       semantic: { ...NULL_SEMANTIC, coziness: 0.9 },
@@ -420,7 +421,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
     expect(catalog.createCalls).toBe(1);
   });
 
-  it("siembra las palabras de la query en las keywords de la ficha creada", async () => {
+  it("NO siembra las palabras de la query en las keywords de la ficha creada", async () => {
     const { discovery, catalog, run } = makeSetup({
       igdbResults: {
         batman: [makeRaw(201, "Dark Knight Game", { keywords: [] })],
@@ -430,12 +431,14 @@ describe("DiscoveryManager.discoverByQuery", () => {
     await discovery.discoverByQuery("batman", 1, undefined, undefined, [], undefined, run);
 
     expect(catalog.createCalls).toBe(1);
-    // Ficha guardada = IGDB (sin keywords) ∪ búsqueda ("batman") + enrichment
+    // Invariante de persistencia: la query es pista EFÍMERA del pre-filtro;
+    // la ficha guardada solo lleva vocabulario IGDB (+ portada/descripciones).
     const created = catalog.all()[0];
-    expect(created.keywords).toContain("batman");
+    expect(created.keywords).not.toContain("batman");
+    expect(created.keywords).toEqual([]);
   });
 
-  it("siembra la query completa como UNA keyword además de sus palabras", async () => {
+  it("NO siembra la query completa ni sus palabras en las keywords", async () => {
     const { discovery, catalog, run } = makeSetup({
       igdbResults: {
         "car wash": [makeRaw(301, "Washy Game", { keywords: [] })],
@@ -444,11 +447,69 @@ describe("DiscoveryManager.discoverByQuery", () => {
 
     await discovery.discoverByQuery("car wash", 1, undefined, undefined, [], undefined, run);
 
-    // El intent pedirá "car wash" como frase: debe casar con la ficha
     expect(catalog.createCalls).toBe(1);
     const created = catalog.all()[0];
-    expect(created.keywords).toContain("car wash");
-    expect(created.keywords).toContain("wash");
+    expect(created.keywords).not.toContain("car wash");
+    expect(created.keywords).not.toContain("wash");
+    expect(created.keywords).toEqual([]);
+  });
+
+  it("regresión MK11: las keywords persistidas son EXACTAMENTE las IGDB del candidato", async () => {
+    // El bug MK11: la BDD acababa con keywords de la query y del LLM
+    // ("previously on - stadia pro", "trucks", "time travel", "quickloading",
+    // "brutality") además de las 4 reales de IGDB.
+    const contaminated = new FakeEnrichment(
+      makeGameEnrichment({
+        additionalKeywords: [
+          "previously on - stadia pro",
+          "trucks",
+          "time travel",
+          "quickloading",
+          "brutality",
+        ],
+      }),
+    );
+    const { discovery, catalog, enrichment } = makeSetup({
+      igdbResults: {
+        mortal: [
+          makeRaw(527, "Mortal Kombat 11", {
+            keywords: [
+              { id: 1, name: "violence" },
+              { id: 2, name: "character customization" },
+              { id: 3, name: "time manipulation" },
+              { id: 4, name: "gore" },
+            ],
+          }),
+        ],
+      },
+      enrichment: contaminated,
+    });
+
+    await discovery.discoverByQuery(
+      "mortal",
+      1,
+      undefined,
+      undefined,
+      [],
+      undefined,
+      createDiscoveryRun(),
+    );
+
+    const created = catalog.all()[0];
+    expect(created.keywords).toEqual([
+      "violence",
+      "character customization",
+      "time manipulation",
+      "gore",
+    ]);
+    expect(created.keywords).not.toContain("trucks");
+    expect(created.keywords).not.toContain("time travel");
+    expect(created.keywords).not.toContain("brutality");
+    expect(created.keywords).not.toContain("mortal");
+    // Guard runtime: el array del candidato va congelado — un push
+    // accidental lanzaría en lugar de contaminar silenciosamente la BDD.
+    expect(Object.isFrozen(enrichment.enrichCalls[0].keywords)).toBe(true);
+    expect(created.keywords).toBe(enrichment.enrichCalls[0].keywords);
   });
 
   it("una lista IGDB vacía no se cachea como agotada: la query se reintenta", async () => {
@@ -582,7 +643,10 @@ describe("DiscoveryManager.reEnrich", () => {
     const updated = catalog.get(5)!;
     expect(updated.difficulty).toBe(0.9); // null del enrichment = conservar
     expect(updated.horror).toBe(0.8); // evidencia nueva = actualizar
-    expect(updated.keywords).toEqual(["pirates", "treasure"]);
+    // INVARIANTE: reEnrich es un patch sin keywords — las keywords quedan
+    // intactas y las adicionales del LLM ("treasure") jamás entran a la BDD.
+    expect(updated.keywords).toEqual(["pirates"]);
+    expect(updated.keywords).not.toContain("treasure");
     expect(updated.description_es).toBe("Descripción nueva");
     expect(updated.genres).toEqual(["ROLE_PLAYING_RPG"]); // objetivos estables
     expect(updated.title).toBe("Pirates!");
@@ -1286,7 +1350,7 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     }
     expect(last!.variantExhausted).toBe(true);
     expect(igdb.filteredCalls).toHaveLength(pages);
-    const expectedOffsets = [undefined];
+    const expectedOffsets: (number | undefined)[] = [undefined];
     for (let i = 1; i < pages; i++) expectedOffsets.push(i * pageSize);
     expect(igdb.filteredCalls.map((call) => call.offset)).toEqual(
       expectedOffsets,

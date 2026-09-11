@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { Candidate } from "../../src/types/Game.js";
+import { brandStoredIgdbKeywords } from "../../src/igdb/keywords.js";
 import type {
   GameEnrichment,
   Semantic,
@@ -23,7 +24,7 @@ function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
     platforms: ["XBOX_360"],
     gameModes: ["SINGLE_PLAYER", "MULTIPLAYER"],
     perspectives: ["FIRST_PERSON"],
-    keywords: ["sci-fi", "aliens"],
+    keywords: brandStoredIgdbKeywords(["sci-fi", "aliens"]),
     developers: ["Bungie"],
     publishers: ["Microsoft Game Studios"],
     coverUrl:
@@ -106,57 +107,58 @@ function makeFakeModel(enrichment: GameEnrichment): EnrichmentModel {
 }
 
 describe("EnrichmentServiceImpl.enrich", () => {
-  it("builds a complete GameToPersist from a candidate and the enrichment output", async () => {
+  it("expone solo lo editable (descripciones + semántica), nunca las keywords", async () => {
     const research = new FakeResearchProvider();
     const model = makeFakeModel(makeEnrichment());
     const service = new EnrichmentServiceImpl(research, model);
 
     const result = await service.enrich(makeCandidate());
 
-    expect(result.title).toBe("Halo 3");
-    expect(result.slug).toBe("halo-3-2007");
-    expect(result.sourceId).toBe("105421");
-    expect(result.releaseYear).toBe(2007);
-    expect(result.genres).toEqual(["SHOOTER"]);
-    expect(result.platforms).toEqual(["XBOX_360"]);
-    expect(result.developers).toEqual(["Bungie"]);
-    expect(result.publishers).toEqual(["Microsoft Game Studios"]);
-    expect(result.coverUrl).toBe(
-      "https://images.igdb.com/igdb/image/upload/t_cover_big/co1h2v.jpg",
+    expect(result.editable.description_es).toBe(
+      "La épica conclusión de la trilogía.",
     );
-    expect(result.description_es).toBe("La épica conclusión de la trilogía.");
-    expect(result.description_en).toBe("The epic conclusion of the trilogy.");
+    expect(result.editable.description_en).toBe(
+      "The epic conclusion of the trilogy.",
+    );
+    expect(result.editable.semantic.difficulty).toBe(0.6);
+    // Las keywords adicionales viajan como señal transitoria del gate...
+    expect(result.additionalKeywords).toEqual(["aliens", "space", "warthog"]);
+    // ...y el resultado NO expone canal de keywords: el vocabulario de la
+    // BDD solo puede nacer en los mappers (IgdbKeyword).
+    expect("keywords" in result).toBe(false);
   });
 
-  it("copies the semantic scores from the enrichment output", async () => {
+  it("copia los scores semánticos desde el enrichment", async () => {
     const research = new FakeResearchProvider();
     const model = makeFakeModel(makeEnrichment());
     const service = new EnrichmentServiceImpl(research, model);
 
     const result = await service.enrich(makeCandidate());
 
-    expect(result.difficulty).toBe(0.6);
-    expect(result.violence).toBe(0.9);
-    expect(result.tension).toBe(0.7);
-    expect(result.humor).toBe(0.2);
+    expect(result.editable.semantic.difficulty).toBe(0.6);
+    expect(result.editable.semantic.violence).toBe(0.9);
+    expect(result.editable.semantic.tension).toBe(0.7);
+    expect(result.editable.semantic.humor).toBe(0.2);
   });
 
-  it("keeps semantics null when the enrichment has no evidence-based values", async () => {
+  it("mantiene las semánticas null cuando el enrichment no tiene evidencias", async () => {
     const research = new FakeResearchProvider();
     const model = makeFakeModel(makeEnrichment({ semantic: NULL_SEMANTIC }));
     const service = new EnrichmentServiceImpl(research, model);
 
     const result = await service.enrich(makeCandidate());
 
-    expect(result.difficulty).toBeNull();
-    expect(result.pace).toBeNull();
-    expect(result.horror).toBeNull();
-    expect(result.isolation).toBeNull();
+    expect(result.editable.semantic.difficulty).toBeNull();
+    expect(result.editable.semantic.pace).toBeNull();
+    expect(result.editable.semantic.horror).toBeNull();
+    expect(result.editable.semantic.isolation).toBeNull();
   });
 
-  it("merges additional keywords, deduplicating against existing candidate keywords", async () => {
+  it("pasa las keywords adicionales tal cual (sin fusionar ni deduplicar)", async () => {
     const research = new FakeResearchProvider();
-    // "aliens" ya existe en el candidate -> se descarta; "space" y "warthog" se añaden
+    // Sin dedup aquí: el candidato con ["sci-fi","aliens"] y el enrichment
+    // con "aliens" repetida llega igual — la fusion/dedupe vivía en la vía
+    // que contaminaba la BDD y ya no existe.
     const model = makeFakeModel(
       makeEnrichment({ additionalKeywords: ["aliens", "space", "warthog"] }),
     );
@@ -164,10 +166,10 @@ describe("EnrichmentServiceImpl.enrich", () => {
 
     const result = await service.enrich(makeCandidate());
 
-    expect(result.keywords).toEqual(["sci-fi", "aliens", "space", "warthog"]);
+    expect(result.additionalKeywords).toEqual(["aliens", "space", "warthog"]);
   });
 
-  it("merges deduplicating case-insensitively", async () => {
+  it("no normaliza a minúsculas: las adicionales son señal cruda del gate", async () => {
     const research = new FakeResearchProvider();
     const model = makeFakeModel(
       makeEnrichment({ additionalKeywords: ["Aliens", "SPACE", "warthog"] }),
@@ -176,10 +178,10 @@ describe("EnrichmentServiceImpl.enrich", () => {
 
     const result = await service.enrich(makeCandidate());
 
-    expect(result.keywords).toEqual(["sci-fi", "aliens", "space", "warthog"]);
+    expect(result.additionalKeywords).toEqual(["Aliens", "SPACE", "warthog"]);
   });
 
-  it("queries the research provider for evidence before calling the model", async () => {
+  it("consulta al research provider por evidencia antes de llamar al modelo", async () => {
     const research = new FakeResearchProvider();
 
     let captured: unknown;
@@ -236,7 +238,7 @@ describe("buildQueries", () => {
       makeCandidate({
         developers: [],
         genres: ["UNKNOWN"],
-        keywords: ["sci-fi", "aliens"],
+        keywords: brandStoredIgdbKeywords(["sci-fi", "aliens"]),
       }),
     );
 

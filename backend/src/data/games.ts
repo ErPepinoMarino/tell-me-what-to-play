@@ -1,6 +1,28 @@
 import type { Game } from "../types/Game.js";
+import type { CuratedKeyword } from "../types/keywords.js";
 
-export const games: Game[] = [
+/*
+ * Las keywords del seed son vocabulario CURADO (no IGDB): se tipan como
+ * string[] y cruzan la frontera de persistencia por el mint curado
+ * toCuratedKeywords (jamás por un mint de IgdbKeyword). No se las puede
+ * confundir por tipos con las keywords IGDB (IgdbKeyword): CuratedKeyword[]
+ * no es asignable a IgdbKeyword[].
+ */
+export type GameSeed = Omit<Game, "keywords" | "provenance"> & {
+  keywords: string[];
+};
+
+/*
+ * Mint curado: la única forma de producir CuratedKeyword (vocabulario
+ * manual/seed). Congela el array: barrera de runtime contra mutación.
+ */
+export function toCuratedKeywords(
+  keywords: readonly string[],
+): readonly CuratedKeyword[] {
+  return Object.freeze([...keywords]) as readonly CuratedKeyword[];
+}
+
+export const games: GameSeed[] = [
   {
     "id": 1,
     "sourceId": "119133",
@@ -2080,3 +2102,10 @@ export const games: Game[] = [
     "coziness": null
   }
 ];
+
+// Sets de identidad del seed para clasificar procedencia en la lectura
+// (provisional hasta la columna keywords_provenance de la migración).
+export const seedSlugs: ReadonlySet<string> = new Set(games.map((g) => g.slug));
+export const seedSourceIds: ReadonlySet<string> = new Set(
+  games.map((g) => g.sourceId).filter((s): s is string => s !== null),
+);

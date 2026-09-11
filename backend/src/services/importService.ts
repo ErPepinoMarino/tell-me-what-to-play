@@ -1,7 +1,7 @@
-﻿import { mapToCandidate } from "../igdb/mappers.js";
+﻿import { concludeGameToPersist, mapToCandidate } from "../igdb/mappers.js";
 import { shouldSkipNonIndependentGame } from "../igdb/gameType.js";
 import type { IgdbClient } from "../igdb/types.js";
-import type { Game, GameToPersist } from "../types/Game.js";
+import type { Game, IgdbGame, IgdbGameToPersist } from "../types/Game.js";
 import type { EnrichmentService } from "./enrichmentService.js";
 
 export type { EnrichmentService };
@@ -14,7 +14,7 @@ export interface ImportResult {
 
 export interface GameRepository {
   getBySlug(slug: string): Promise<Game | undefined>;
-  create(game: GameToPersist): Promise<Game>;
+  createIgdb(game: IgdbGameToPersist): Promise<IgdbGame>;
 }
 
 export class ImportService {
@@ -48,8 +48,10 @@ export class ImportService {
           continue;
         }
 
-        const enriched = await this.enrichmentService.enrich(candidate);
-        await this.repository.create(enriched);
+        const { editable } = await this.enrichmentService.enrich(candidate);
+        await this.repository.createIgdb(
+          concludeGameToPersist(candidate, editable),
+        );
         result.created++;
       } catch (error) {
         result.errors.push({

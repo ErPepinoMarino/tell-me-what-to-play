@@ -16,11 +16,25 @@ export function keywordStem(keyword: string): string {
   return normalized;
 }
 
+import type { SearchKeyword } from "../types/keywords.js";
+
 /*
- * Palabras vacías que nunca deben convertirse en keyword: el siembra de
- * discovery parte las queries en palabras y, sin este filtro, "and" o "the"
- * acababan en el catálogo y en el léxico (hallazgo del minado FASE 1).
- * Compartido por el siembra (discovery) y el minado del léxico.
+ * Único mint de SearchKeyword: vocabulario de BÚSQUEDA (query del usuario,
+ * pistas de búsqueda / SearchContext.hints, additionalKeywords del LLM). Son
+ * términos que se comparan contra Game.keywords en el matcher o se resuelven
+ * a IGDB para el WHERE, pero NUNCA se persisten. Su marca los hace no
+ * asignables a IgdbKeyword[].
+ */
+export function mintSearchKeywords(terms: readonly string[]): readonly SearchKeyword[] {
+  return Object.freeze([...terms]) as readonly SearchKeyword[];
+}
+
+/*
+ * Palabras vacías que nunca deben convertirse en keyword: la construcción de
+ * pistas de búsqueda (buildSearchHints en discovery) parte las queries en
+ * palabras y, sin este filtro, "and" o "the" acabarían como pistas de
+ * matching y en el léxico (hallazgo del minado FASE 1).
+ * Compartido por las pistas de búsqueda (discovery) y el minado del léxico.
  */
 export const KEYWORD_STOPWORDS = new Set([
   "and",

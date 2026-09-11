@@ -1,4 +1,22 @@
 import { prisma } from "../lib/prisma.js";
+import {
+  brandStoredIgdbKeywords,
+  extractIgdbKeywords,
+} from "../igdb/keywords.js";
+import {
+  seedSlugs,
+  seedSourceIds,
+  toCuratedKeywords,
+} from "../data/games.js";
+import type {
+  CuratedGame,
+  CuratedGameToPersist,
+  Game,
+  IgdbGame,
+  IgdbGameToPersist,
+} from "../types/Game.js";
+import type { ReEnrichPatch } from "../orchestrator/types.js";
+import type { IgdbGameRaw } from "../igdb/types.js";
 import type {
   GameMode,
   Genre,
@@ -6,7 +24,6 @@ import type {
   Platform,
   Theme,
 } from "../types/enums.js";
-import type { Game, GameToPersist } from "../types/Game.js";
 
 // Filtro de pre-selección de candidatos para el orquestador. Semántica
 // conjuntiva: TODO lo pedido debe estar (contrato de filtros duros). El SQL
@@ -24,9 +41,10 @@ export interface CandidateFilter {
   limit: number;
 }
 
-export function toGame(
-  game: Awaited<ReturnType<typeof prisma.games.findUnique>> & {},
-): Game {
+type GameRow = Awaited<ReturnType<typeof prisma.games.findUnique>> & {};
+
+// Base común de una fila a dominio (sin keywords ni provenance).
+function gameBase(game: GameRow) {
   return {
     id: game.id,
     slug: game.slug,
@@ -41,10 +59,89 @@ export function toGame(
     platforms: game.platforms,
     gameModes: game.game_modes,
     perspectives: game.perspectives,
-    keywords: game.keywords,
     developers: game.developers,
     publishers: game.publishers,
     searchCount: game.search_count,
+    difficulty: game.difficulty,
+    pace: game.pace,
+    narrative: game.narrative,
+    complexity: game.complexity,
+    coziness: game.coziness,
+    strategy: game.strategy,
+    exploration: game.exploration,
+    violence: game.violence,
+    horror: game.horror,
+    darkness: game.darkness,
+    tension: game.tension,
+    humor: game.humor,
+    isolation: game.isolation,
+  };
+}
+
+function toIgdbGame(game: GameRow): IgdbGame {
+  return {
+    ...gameBase(game),
+    provenance: "igdb",
+    keywords: brandStoredIgdbKeywords(game.keywords),
+  };
+}
+
+function toCuratedGame(game: GameRow): CuratedGame {
+  return {
+    ...gameBase(game),
+    provenance: "curated",
+    keywords: toCuratedKeywords(game.keywords),
+  };
+}
+
+/*
+ * Clasificación de procedencia en LECTURA. La BD aún no tiene columna
+ * keywords_provenance (la migración la añadirá): hasta entonces, las fichas
+ * cuyo slug/source_id pertenecen al seed curado se consideran "curated" y el
+ * resto "igdb". Para las filas creadas tras esta arquitectura la etiqueta es
+ * correcta por construcción (el único escritor de un juego IGDB es el
+ * pipeline sellado); la migración verificará por contenido el legado.
+ */
+function provenanceFor(
+  slug: string,
+  sourceId: string | null,
+): "igdb" | "curated" {
+  if (seedSlugs.has(slug)) return "curated";
+  if (sourceId !== null && seedSourceIds.has(sourceId)) return "curated";
+  return "igdb";
+}
+
+export function toGame(game: GameRow): Game {
+  return provenanceFor(game.slug, game.source_id) === "curated"
+    ? toCuratedGame(game)
+    : toIgdbGame(game);
+}
+
+/*
+ * Columnas de una ficha excepto keywords: compartidas por las tres únicas
+ * operaciones de escritura de keywords (createIgdb, createCurated,
+ * syncCatalogKeywords usa su propio update de una sola columna).
+ */
+function createData(
+  game: IgdbGameToPersist | CuratedGameToPersist,
+  keywords: readonly string[],
+) {
+  return {
+    slug: game.slug,
+    title: game.title,
+    description_es: game.description_es,
+    description_en: game.description_en,
+    cover_url: game.coverUrl,
+    release_year: game.releaseYear,
+    genres: game.genres,
+    themes: game.themes,
+    platforms: game.platforms,
+    game_modes: game.gameModes,
+    perspectives: game.perspectives,
+    keywords: [...keywords],
+    source_id: game.sourceId,
+    developers: game.developers,
+    publishers: game.publishers,
     difficulty: game.difficulty,
     pace: game.pace,
     narrative: game.narrative,
@@ -183,43 +280,61 @@ export const prismaGameRepository = {
     });
   },
 
-  async create(game: Game | GameToPersist): Promise<Game> {
+  /*
+   * ÚNICA operación de escritura de keywords del pipeline IGDB: recibe un
+   * IgdbGameToPersist cuyas keywords ya salieron del mint sellado
+   * extractIgdbKeywords(raw). No acepta Game ni CuratedGame: un string[] o
+   * un vocabulario curado no compila aquí.
+   */
+  async createIgdb(game: IgdbGameToPersist): Promise<IgdbGame> {
     const createdGame = await prisma.games.create({
+      data: createData(game, game.keywords),
+    });
+
+    return toIgdbGame(createdGame);
+  },
+
+  /*
+   * Única operación de escritura de keywords del seed curado: recibe un
+   * CuratedGameToPersist con keywords CuratedKeyword[] (mint curado). Jamás
+   * lleva la marca IgdbKeyword. Implementación propia: no delega en
+   * createIgdb, el canal es explícito.
+   */
+  async createCurated(game: CuratedGameToPersist): Promise<CuratedGame> {
+    const createdGame = await prisma.games.create({
+      data: createData(game, game.keywords),
+    });
+
+    return toCuratedGame(createdGame);
+  },
+
+  /*
+   * Sincronización EXPLÍCITA de keywords desde IGDB (la única vía para
+   * refrescar/reparar keywords de un juego igdb, separada del enrichment):
+   * sobrescribe la columna con extractIgdbKeywords(raw) — el raw fresco.
+   */
+  async syncCatalogKeywords(
+    game: IgdbGame,
+    raw: IgdbGameRaw,
+  ): Promise<IgdbGame> {
+    const updatedGame = await prisma.games.update({
+      where: {
+        id: game.id,
+      },
       data: {
-        slug: game.slug,
-        title: game.title,
-        description_es: game.description_es,
-        description_en: game.description_en,
-        cover_url: game.coverUrl,
-        release_year: game.releaseYear,
-        genres: game.genres,
-        themes: game.themes,
-        platforms: game.platforms,
-        game_modes: game.gameModes,
-        perspectives: game.perspectives,
-        keywords: game.keywords,
-        source_id: game.sourceId,
-        developers: game.developers,
-        publishers: game.publishers,
-        difficulty: game.difficulty,
-        pace: game.pace,
-        narrative: game.narrative,
-        complexity: game.complexity,
-        coziness: game.coziness,
-        strategy: game.strategy,
-        exploration: game.exploration,
-        violence: game.violence,
-        horror: game.horror,
-        darkness: game.darkness,
-        tension: game.tension,
-        humor: game.humor,
-        isolation: game.isolation,
+        keywords: [...extractIgdbKeywords(raw)],
       },
     });
 
-    return toGame(createdGame);
+    return toIgdbGame(updatedGame);
   },
-  async update(game: Game): Promise<Game> {
+
+  /*
+   * Re-enrichment: SOLO escribe el patch (descripciones, semánticas y, para
+   * fichas sin identidad, objetivos). `keywords` NO está en el patch
+   * (keywords?: never): la columna queda intacta por construcción.
+   */
+  async updateReEnrich(game: Game, patch: ReEnrichPatch): Promise<Game> {
     const updatedGame = await prisma.games.update({
       where: {
         id: game.id,
@@ -227,37 +342,37 @@ export const prismaGameRepository = {
       data: {
         slug: game.slug,
         title: game.title,
-        description_es: game.description_es,
-        description_en: game.description_en,
-        cover_url: game.coverUrl,
-        release_year: game.releaseYear,
-        genres: game.genres,
-        themes: game.themes,
-        platforms: game.platforms,
-        game_modes: game.gameModes,
-        perspectives: game.perspectives,
-        keywords: game.keywords,
-        source_id: game.sourceId,
-        developers: game.developers,
-        publishers: game.publishers,
-        difficulty: game.difficulty,
-        pace: game.pace,
-        narrative: game.narrative,
-        complexity: game.complexity,
-        coziness: game.coziness,
-        strategy: game.strategy,
-        exploration: game.exploration,
-        violence: game.violence,
-        horror: game.horror,
-        darkness: game.darkness,
-        tension: game.tension,
-        humor: game.humor,
-        isolation: game.isolation,
+        description_es: patch.description_es,
+        description_en: patch.description_en,
+        cover_url: patch.coverUrl ?? game.coverUrl,
+        release_year: patch.releaseYear ?? game.releaseYear,
+        genres: patch.genres ?? game.genres,
+        themes: patch.themes ?? game.themes,
+        platforms: patch.platforms ?? game.platforms,
+        game_modes: patch.gameModes ?? game.gameModes,
+        perspectives: patch.perspectives ?? game.perspectives,
+        source_id: patch.sourceId !== undefined ? patch.sourceId : game.sourceId,
+        developers: patch.developers ?? game.developers,
+        publishers: patch.publishers ?? game.publishers,
+        difficulty: patch.semantic.difficulty ?? game.difficulty,
+        pace: patch.semantic.pace ?? game.pace,
+        narrative: patch.semantic.narrative ?? game.narrative,
+        complexity: patch.semantic.complexity ?? game.complexity,
+        coziness: patch.semantic.coziness ?? game.coziness,
+        strategy: patch.semantic.strategy ?? game.strategy,
+        exploration: patch.semantic.exploration ?? game.exploration,
+        violence: patch.semantic.violence ?? game.violence,
+        horror: patch.semantic.horror ?? game.horror,
+        darkness: patch.semantic.darkness ?? game.darkness,
+        tension: patch.semantic.tension ?? game.tension,
+        humor: patch.semantic.humor ?? game.humor,
+        isolation: patch.semantic.isolation ?? game.isolation,
       },
     });
 
     return toGame(updatedGame);
   },
+
   async delete(id: number): Promise<void> {
     await prisma.games.delete({
       where: { id },

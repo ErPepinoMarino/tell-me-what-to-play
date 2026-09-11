@@ -1,4 +1,19 @@
-import type { Game, GameToPersist } from "../types/Game.js";
+import type {
+  CuratedGame,
+  CuratedGameToPersist,
+  Game,
+  IgdbGame,
+  IgdbGameToPersist,
+} from "../types/Game.js";
+import type { Semantic } from "../types/GameEnrichment.js";
+import type { IgdbGameRaw } from "../igdb/types.js";
+import type {
+  GameMode,
+  Genre,
+  Perspective,
+  Platform,
+  Theme,
+} from "../types/enums.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 // Filtro de pre-selección SQL del pool de candidatos (cap externo incluido).
@@ -17,9 +32,38 @@ export interface CandidateFilter {
 }
 
 /*
+ * Patch de re-enrichment: SOLO lo que el enrichment puede escribir sobre una
+ * ficha existente — descripciones, semánticas y (para fichas sin identidad)
+ * datos objetivos. `keywords?: never` hace estructuralmente imposible que el
+ * reEnrich toque las keywords: refrescarlas desde IGDB es una operación
+ * explícita de sincronización de catálogo, no parte del enrichment.
+ */
+export interface ReEnrichPatch {
+  description_es: string | null;
+  description_en: string | null;
+  semantic: Semantic;
+  sourceId?: string | null;
+  coverUrl?: string | null;
+  releaseYear?: number | null;
+  genres?: Genre[];
+  themes?: Theme[];
+  platforms?: Platform[];
+  gameModes?: GameMode[];
+  perspectives?: Perspective[];
+  developers?: string[];
+  publishers?: string[];
+  keywords?: never;
+}
+
+/*
  * Capa de catálogo canónica: TODA identidad de juego (ids de sesión,
  * resultados, exclusiones) nace de aquí. El JSON cache es una proyección
  * y se canonicaliza contra esta capa antes de entrar al matcher.
+ *
+ * Escritura de keywords: SOLO tres operaciones semánticamente explícitas
+ * (createIgdb, createCurated, syncCatalogKeywords). No existe ningún
+ * `create`/`update` genérico que acepte un `Game` arbitrario.
+ * updateReEnrich actualiza la ficha SIN acceso a keywords.
  */
 export interface CatalogLayer {
   findCandidates(filter: CandidateFilter): Promise<Game[]>;
@@ -27,8 +71,10 @@ export interface CatalogLayer {
   getBySlug(slug: string): Promise<Game | undefined>;
   getBySourceId(sourceId: string): Promise<Game | undefined>;
   searchByTitle(query: string): Promise<Game[]>;
-  create(game: GameToPersist): Promise<Game>;
-  update(game: Game): Promise<Game>;
+  createIgdb(game: IgdbGameToPersist): Promise<IgdbGame>;
+  createCurated(game: CuratedGameToPersist): Promise<CuratedGame>;
+  syncCatalogKeywords(game: IgdbGame, raw: IgdbGameRaw): Promise<IgdbGame>;
+  updateReEnrich(game: Game, patch: ReEnrichPatch): Promise<Game>;
   incrementSearchCounts(ids: number[]): Promise<void>;
   countGames(): Promise<number>;
 }

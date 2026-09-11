@@ -1,12 +1,23 @@
 import { gameEnrichmentAIModel } from "../lib/enrichmentAi.js";
 import type { BaseLanguageModelInput } from "@langchain/core/language_models/base";
-import type { Candidate, GameToPersist } from "../types/Game.js";
-import type { GameEnrichment } from "../types/GameEnrichment.js";
+import type { Candidate } from "../types/Game.js";
+import type { SearchKeyword } from "../types/keywords.js";
+import { mintSearchKeywords } from "../matching/keywords.js";
+import type { EnrichmentEditable, GameEnrichment } from "../types/GameEnrichment.js";
 import type { Evidence, ResearchProvider } from "./research.js";
 import type { Genre } from "../types/enums.js";
 
+export interface EnrichmentResult {
+  // Lo único que el enriquecimiento puede persistir (descripciones + semántica).
+  editable: EnrichmentEditable;
+  // Vocabulario adicional detectado por la IA: señal transitoria para el
+  // gate de valor del orquestador. Vocabulario de BÚSQUEDA (SearchKeyword):
+  // NUNCA se persiste en las keywords (no asignable a IgdbKeyword[]).
+  additionalKeywords: readonly SearchKeyword[];
+}
+
 export interface EnrichmentService {
-  enrich(candidate: Candidate): Promise<GameToPersist>;
+  enrich(candidate: Candidate): Promise<EnrichmentResult>;
 }
 
 /*
@@ -127,10 +138,11 @@ export function buildQueries(candidate: Candidate): string[] {
 
 // Mezcla las keywords del candidate con las adicionales del enrichment,
 // descartando solapamientos literales/case-insensitive y normalizando a minúsculas.
-// Exportada: el re-enrichment del orquestador aplica la misma política.
+// Exportada: el overlay efímero de hints del orquestador la usa para matching
+// (nunca para persistir). Acepta solo lectura.
 export function mergeKeywords(
-  existing: string[],
-  additional: string[],
+  existing: readonly string[],
+  additional: readonly string[],
 ): string[] {
   const result = [...existing];
   for (const kw of additional) {
@@ -144,23 +156,6 @@ export function mergeKeywords(
   }
   return result;
 }
-// Lista de valores semánticos ponderados.
-const EMPTY_SEMANTIC: GameEnrichment["semantic"] = {
-  difficulty: null,
-  pace: null,
-  narrative: null,
-  complexity: null,
-  coziness: null,
-  strategy: null,
-  exploration: null,
-  violence: null,
-  horror: null,
-  darkness: null,
-  tension: null,
-  humor: null,
-  isolation: null,
-};
-
 // Aqui es donde implementaremos la llamada a la IA
 // Y donde se inyecta el ResearchProvider para poder mockearlo en tests.
 export class EnrichmentServiceImpl implements EnrichmentService {
@@ -169,30 +164,18 @@ export class EnrichmentServiceImpl implements EnrichmentService {
     private model: EnrichmentModel = gameEnrichmentAIModel(),
   ) {}
 
-  async enrich(candidate: Candidate): Promise<GameToPersist> {
+  async enrich(candidate: Candidate): Promise<EnrichmentResult> {
     const enrichment = await this.enrichForUpdate(candidate);
 
     return {
-      slug: candidate.slug,
-      sourceId: candidate.sourceId,
-      title: candidate.title,
-      coverUrl: candidate.coverUrl,
-      releaseYear: candidate.releaseYear,
-      genres: candidate.genres,
-      themes: candidate.themes,
-      platforms: candidate.platforms,
-      gameModes: candidate.gameModes,
-      perspectives: candidate.perspectives,
-      developers: candidate.developers,
-      publishers: candidate.publishers,
-      keywords: mergeKeywords(
-        candidate.keywords,
-        enrichment.additionalKeywords,
-      ),
-      ...EMPTY_SEMANTIC,
-      ...enrichment.semantic,
-      description_es: enrichment.description_es,
-      description_en: enrichment.description_en,
+      editable: {
+        description_es: enrichment.description_es,
+        description_en: enrichment.description_en,
+        semantic: enrichment.semantic,
+      },
+      // Solo señal para el gate: el orquestador decide si la ficha aporta.
+      // Se convierte a SearchKeyword[] (vocabulario de búsqueda, no persistible).
+      additionalKeywords: mintSearchKeywords(enrichment.additionalKeywords),
     };
   }
 

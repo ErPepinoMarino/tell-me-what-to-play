@@ -1,4 +1,4 @@
-import { mapToCandidate } from "../igdb/mappers.js";
+import { concludeGameToPersist, mapToCandidate } from "../igdb/mappers.js";
 import { shouldSkipNonIndependentGame } from "../igdb/gameType.js";
 import {
   genreIgbNames,
@@ -7,10 +7,12 @@ import {
   themeIgbId,
 } from "../igdb/normalizers.js";
 import type { IgdbClient, FilteredSearchOptions, IgdbGameRaw } from "../igdb/types.js";
-import type { Candidate, Game, GameToPersist } from "../types/Game.js";
+import type { Candidate, Game } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
+import type { EnrichmentEditable } from "../types/GameEnrichment.js";
+import type { SearchKeyword } from "../types/keywords.js";
 import { hardFilterViolations, passesHardFilters } from "../matching/matchGame.js";
-import { KEYWORD_STOPWORDS } from "../matching/keywords.js";
+import { KEYWORD_STOPWORDS, mintSearchKeywords } from "../matching/keywords.js";
 import type { MatchableGame } from "../matching/types.js";
 import type {
   EnrichmentService,
@@ -25,7 +27,7 @@ import {
 import { SEMANTIC_FIELDS } from "../matching/constants.js";
 import { withTimeout } from "../lib/withTimeout.js";
 import { createTrace, type Trace } from "../lib/logger.js";
-import type { CatalogLayer } from "./types.js";
+import type { CatalogLayer, ReEnrichPatch } from "./types.js";
 import type { DiscoveryCacheRepository } from "./discoveryCache.js";
 import type { QueryOffsetStore } from "./queryOffsetStore.js";
 
@@ -75,6 +77,18 @@ export type ReEnrichResult =
   | { status: "skipped" }
   | { status: "budget-exhausted" }
   | { status: "error" };
+
+/*
+ * Contexto de búsqueda EFÍMERO de UNA ejecución de discovery: los términos
+ * (canonicalizados) de la query que encontró el juego, usados SOLO como
+ * overlay de la vista MatchableGame del pre-filtro y del matcher. NUNCA
+ * llegan al candidato persistido: las keywords de la BDD solo contienen
+ * vocabulario IGDB (invariante de tipos Game.keywords: IgdbKeyword[]).
+ * Son SearchKeyword: vocabulario de búsqueda, no asignable a IgdbKeyword[].
+ */
+export interface SearchContext {
+  hints: readonly SearchKeyword[];
+}
 
 /*
  * Tope de raws acumulados por lista (query+intent) — tanto la paginación
@@ -285,8 +299,26 @@ export class DiscoveryManager {
     },
   ) {}
 
-  private async canonicalizeKeywords(terms: string[]): Promise<string[]> {
-    return this.lexicon ? this.lexicon.canonicalizeTerms(terms) : terms;
+  /*
+   * Términos de la query que actúa como pista de contexto (pre-filtro y
+   * matcher): la query que ENCONTRÓ el juego en IGDB es evidencia real de
+   * temática. Se canonicalizan para que el matching vea el vocabulario
+   * canónico ("infectados" → "zombies"). Viven en SearchContext: efímeros,
+   * jamás se persisten.
+   */
+  private async buildSearchHints(query: string): Promise<readonly SearchKeyword[]> {
+    const normalizedQuery = query.trim().toLowerCase();
+    const queryWords = normalizedQuery
+      .split(/\s+/)
+      .filter((word) => word.length >= 3 && !KEYWORD_STOPWORDS.has(word));
+    const terms = this.lexicon
+      ? await this.lexicon.canonicalizeTerms(
+          normalizedQuery.length > 0 ? [normalizedQuery, ...queryWords] : [],
+        )
+      : normalizedQuery.length > 0
+        ? [normalizedQuery, ...queryWords]
+        : [];
+    return mintSearchKeywords(terms);
   }
 
   // Canónicos → IDs numéricos de IGDB desde el léxico local (keyword_lexicon.
@@ -391,21 +423,12 @@ export class DiscoveryManager {
     const trace = traceId ? createTrace(traceId) : null;
 
     /*
-     * Canonicalización (punto 3 de integración): los términos de la query
-     * que sembramos en las fichas ya nacen canónicos ("infectados" →
-     * "zombies"), de modo que el pre-filtro must y el matcher los vean.
+     * Pistas efímeras de la query para el pre-filtro (SearchContext): afectan
+     * la VISTA MatchableGame, nunca las keywords persistidas del candidato.
      */
     const normalizedQuery = query.trim().toLowerCase();
-    const queryWords = normalizedQuery
-      .split(/\s+/)
-      .filter((word) => word.length >= 3 && !KEYWORD_STOPWORDS.has(word));
-    const seedTerms = this.lexicon
-      ? await this.lexicon.canonicalizeTerms(
-          normalizedQuery.length > 0 ? [normalizedQuery, ...queryWords] : [],
-        )
-      : normalizedQuery.length > 0
-        ? [normalizedQuery, ...queryWords]
-        : [];
+    const hints = await this.buildSearchHints(query);
+    const context: SearchContext = { hints };
     const intentKey = intentFilterKey(intent);
     const queryKey = queryOffsetKey(normalizedQuery, intentKey);
     const sameQuery =
@@ -505,14 +528,11 @@ export class DiscoveryManager {
           poolCompatibles.push(poolRaw);
           continue;
         }
-        const poolCandidate = this.seedQueryKeywords(
-          mapToCandidate(poolRaw),
-          seedTerms,
-        );
+        const poolCandidate = mapToCandidate(poolRaw);
         if (
           passesHardFilters(
             intent,
-            candidateAsMatchable(poolCandidate),
+            matchableView(poolCandidate, context),
             { semanticGates: false, anchors },
           )
         ) {
@@ -648,22 +668,23 @@ export class DiscoveryManager {
       if (shouldSkipNonIndependentGame(raw)) continue;
       if (this.isLowQualityRaw(raw)) continue;
 
-      const candidate = this.seedQueryKeywords(mapToCandidate(raw), seedTerms);
+      const candidate = mapToCandidate(raw);
 
       /*
-       * Pre-filtro must: si el candidato (ya con las keywords de la query
-       * sembradas) falla los filtros duros del intent, está condenado a
-       * invalid — no merece existsInCatalog ni Brave/LLM. Trade-off
-       * asumido: no se almacena; si encaja en búsquedas futuras cuyo intent
-       * lo admita, se redescubrirá entonces con las keywords correctas.
-       * Los GATES SEMÁNTICOS se omiten aquí: el candidato aún no tiene
-       * semánticas (las escribirá el enrichment) — se re-evalúa después.
+       * Pre-filtro must: el candidato se evalúa con su vista MatchableGame
+       * (keywords IGDB + pistas de la query como overlay EFÍMERO). Si falla
+       * los filtros duros del intent, está condenado a invalid — no merece
+       * existsInCatalog ni Brave/LLM. Trade-off asumido: no se almacena; si
+       * encaja en búsquedas futuras cuyo intent lo admita, se redescubrirá
+       * entonces con las keywords correctas. Los GATES SEMÁNTICOS se omiten
+       * aquí: el candidato aún no tiene semánticas (las escribirá el
+       * enrichment) — se re-evalúa después.
        */
       if (
         intent &&
         !passesHardFilters(
           intent,
-          candidateAsMatchable(candidate),
+          matchableView(candidate, context),
           { semanticGates: false, anchors },
         )
       ) {
@@ -672,7 +693,7 @@ export class DiscoveryManager {
           query,
           ...hardFilterViolations(
             intent,
-            candidateAsMatchable(candidate),
+            matchableView(candidate, context),
           ),
         });
         continue;
@@ -693,22 +714,15 @@ export class DiscoveryManager {
       }
 
         try {
-          const enriched = await withTimeout(
+          const result = await withTimeout(
             this.enrichment.enrich(candidate),
             this.config.unitTimeoutMs,
             "enrichment",
           );
           this.commitEnrichmentBudget();
-          /*
-           * Canonicalización (punto 2 de integración): las keywords
-           * adicionales del enrichment convergen al vocabulario canónico
-           * antes de persistir.
-           */
-          if (this.lexicon) {
-            enriched.keywords = await this.lexicon.canonicalizeTerms(
-              enriched.keywords,
-          );
-          }
+          // La ficha se concluye SOLO con lo que el campo editable expone;
+          // las keywords salen intactas del candidate (vocabulario IGDB).
+          const enriched = concludeGameToPersist(candidate, result.editable);
           /*
            * NOTA de diseño: la ficha enriquecida se ALMACENA SIEMPRE que
            * aporta valor (enrichmentAddsValue) aunque falle los gates
@@ -720,16 +734,18 @@ export class DiscoveryManager {
            */
         /*
          * Garantía de calidad del catálogo: si el enrichment no aporta
-         * NINGUNA semántica conocida NI keywords nuevas, la ficha es
+         * NINGUNA semántica conocida NI keywords adicionales, la ficha es
          * inservible para el matching (todo null = no comparable) y solo
          * ensucia la BDD. Se gasta el Brave (ya consumido) pero NO se
          * persiste.
          */
-        if (!enrichmentAddsValue(enriched, candidate)) {
+        if (
+          !enrichmentAddsValue(result.editable, result.additionalKeywords)
+        ) {
           trace?.("discovery-skip-empty", { slug: candidate.slug });
           continue;
         }
-        newGames.push(await this.catalog.create(enriched));
+        newGames.push(await this.catalog.createIgdb(enriched));
         // Promoción completada: el raw ya tiene dueño en PostgreSQL, sale
         // del pool (regla de borrado: solo tras existe-en-PG o promoción).
         await this.cache.remove(candidate.sourceId);
@@ -891,23 +907,13 @@ export class DiscoveryManager {
     }
     const raws = allRaws;
 
-    // Siembra + gates baratos, una sola vez para todas las pasadas.
-    const normalizedQuery = query.trim().toLowerCase();
-    const queryWords = normalizedQuery
-      .split(/\s+/)
-      .filter((word) => word.length >= 3 && !KEYWORD_STOPWORDS.has(word));
-    const seedTerms = this.lexicon
-      ? await this.lexicon.canonicalizeTerms(
-          normalizedQuery.length > 0 ? [normalizedQuery, ...queryWords] : [],
-        )
-      : normalizedQuery.length > 0
-        ? [normalizedQuery, ...queryWords]
-        : [];
+    // Pistas de la query + gates baratos, una sola vez para todas las pasadas.
+    const context: SearchContext = { hints: await this.buildSearchHints(query) };
     const candidates: Candidate[] = [];
     for (const raw of raws) {
       if (shouldSkipNonIndependentGame(raw)) continue;
       if (this.isLowQualityRaw(raw)) continue;
-      candidates.push(this.seedQueryKeywords(mapToCandidate(raw), seedTerms));
+      candidates.push(mapToCandidate(raw));
     }
 
     const newGames: Game[] = [];
@@ -937,7 +943,7 @@ export class DiscoveryManager {
         if (
           !passesHardFilters(
             relaxed,
-            candidateAsMatchable(candidate),
+            matchableView(candidate, context),
             { semanticGates: false, anchors },
           )
         ) {
@@ -947,7 +953,7 @@ export class DiscoveryManager {
             pass,
             ...hardFilterViolations(
               relaxed,
-              candidateAsMatchable(candidate),
+              matchableView(candidate, context),
             ),
           });
           continue;
@@ -962,22 +968,18 @@ export class DiscoveryManager {
           break;
         }
         try {
-          const enriched = await withTimeout(
+          const result = await withTimeout(
             this.enrichment.enrich(candidate),
             this.config.unitTimeoutMs,
             "enrichment",
           );
           this.commitEnrichmentBudget();
-          if (this.lexicon) {
-            enriched.keywords = await this.lexicon.canonicalizeTerms(
-              enriched.keywords,
-            );
-          }
-          if (!enrichmentAddsValue(enriched, candidate)) {
-            seen.add(candidate.slug);
+          const enriched = concludeGameToPersist(candidate, result.editable);
+          if (!enrichmentAddsValue(result.editable, result.additionalKeywords)) {
+seen.add(candidate.slug);
             continue;
           }
-          newGames.push(await this.catalog.create(enriched));
+          newGames.push(await this.catalog.createIgdb(enriched));
           await this.cache.remove(candidate.sourceId);
           lastCreationPass = pass;
           // El intent efectivo es el que filtraba cuando se creó el último
@@ -1066,20 +1068,6 @@ export class DiscoveryManager {
   }
 
   /*
-   * Siembra: la query que ENCONTRÓ el juego en IGDB es evidencia real de
-   * temática (el índice de búsqueda la usó para devolverlo) → se fusiona
-   * en las keywords del candidato ANTES del enriquecimiento, junto con sus
-   * palabras (≥3 letras) por si el intent las pide sueltas. La query
-   * completa va como UNA keyword: "car wash" del intent debe casar con la
-   * ficha descubierta por "car wash", no con "car" y "wash" por separado.
-   * Fichas guardadas = IGDB ∪ búsqueda (dedup), de modo que lo descubierto
-   * matchea con la intención que lo descubrió.
-   */
-  private seedQueryKeywords(candidate: Candidate, terms: string[]): Candidate {
-    return { ...candidate, keywords: mergeKeywords(candidate.keywords, terms) };
-  }
-
-  /*
    * Gate de calidad del relleno: sin señal comunitaria mínima en IGDB, la
    * ficha es probablemente ruido (títulos genéricos, apps infantiles) y no
    * merece 2 Brave + 1 LLM. Sin dato (undefined) = desconocido = se
@@ -1134,13 +1122,15 @@ export class DiscoveryManager {
     }
 
     try {
-      const enriched = await withTimeout(
+      const { editable } = await withTimeout(
         this.enrichment.enrich(candidate),
         this.config.unitTimeoutMs,
         "anchor enrichment",
       );
       this.commitEnrichmentBudget();
-      const created = await this.catalog.create(enriched);
+      const created = await this.catalog.createIgdb(
+        concludeGameToPersist(candidate, editable),
+      );
       trace?.("anchor-created", { slug: created.slug });
       return { status: "found", game: created };
     } catch (error) {
@@ -1240,54 +1230,45 @@ export class DiscoveryManager {
       );
       this.commitEnrichmentBudget();
 
+      /*
+       * PATCH sin keywords (ReEnrichPatch.keywords?: never): el re-enrichment
+       * actualiza descripciones, semánticas y (para fichas sin identidad)
+       * datos objetivos. Las keywords quedan INTACTAS byte a byte; refrescarlas
+       * desde IGDB es una operación explícita de sincronización de catálogo.
+       */
       const semantic = enrichment.semantic;
-      const updated: Game = {
-        ...game,
+      const resolvedSemantic = Object.fromEntries(
+        SEMANTIC_FIELDS.map((field) => [
+          field,
+          semantic[field] ?? game[field],
+        ]),
+      ) as ReEnrichPatch["semantic"];
+      const patch: ReEnrichPatch = {
         // Objetivos: estables salvo en fichas sin identidad (seed), que se
         // rehabilitan con los datos canónicos de IGDB. Compañías: se rellenan
         // si faltan, nunca se degradan las conocidas.
-        sourceId: adoptObjective ? candidate.sourceId : game.sourceId,
+        sourceId: adoptObjective ? candidate.sourceId : undefined,
         coverUrl: adoptObjective
           ? (candidate.coverUrl ?? game.coverUrl)
-          : game.coverUrl,
+          : undefined,
         releaseYear: adoptObjective
           ? (candidate.releaseYear ?? game.releaseYear)
-          : game.releaseYear,
-        genres: adoptObjective ? candidate.genres : game.genres,
-        themes: adoptObjective ? candidate.themes : game.themes,
-        platforms: adoptObjective ? candidate.platforms : game.platforms,
-        gameModes: adoptObjective ? candidate.gameModes : game.gameModes,
-        perspectives: adoptObjective
-          ? candidate.perspectives
-          : game.perspectives,
+          : undefined,
+        genres: adoptObjective ? candidate.genres : undefined,
+        themes: adoptObjective ? candidate.themes : undefined,
+        platforms: adoptObjective ? candidate.platforms : undefined,
+        gameModes: adoptObjective ? candidate.gameModes : undefined,
+        perspectives: adoptObjective ? candidate.perspectives : undefined,
         developers:
-          game.developers.length > 0 ? game.developers : candidate.developers,
+          game.developers.length > 0 ? undefined : candidate.developers,
         publishers:
-          game.publishers.length > 0 ? game.publishers : candidate.publishers,
-        keywords: await this.canonicalizeKeywords(
-          mergeKeywords(
-            mergeKeywords(game.keywords, candidate.keywords),
-            enrichment.additionalKeywords,
-          ),
-        ),
-        difficulty: semantic.difficulty ?? game.difficulty,
-        pace: semantic.pace ?? game.pace,
-        narrative: semantic.narrative ?? game.narrative,
-        complexity: semantic.complexity ?? game.complexity,
-        coziness: semantic.coziness ?? game.coziness,
-        strategy: semantic.strategy ?? game.strategy,
-        exploration: semantic.exploration ?? game.exploration,
-        violence: semantic.violence ?? game.violence,
-        horror: semantic.horror ?? game.horror,
-        darkness: semantic.darkness ?? game.darkness,
-        tension: semantic.tension ?? game.tension,
-        humor: semantic.humor ?? game.humor,
-        isolation: semantic.isolation ?? game.isolation,
+          game.publishers.length > 0 ? undefined : candidate.publishers,
+        semantic: resolvedSemantic,
         description_es: enrichment.description_es || game.description_es,
         description_en: enrichment.description_en || game.description_en,
       };
 
-      const updatedGame = await this.catalog.update(updated);
+      const updatedGame = await this.catalog.updateReEnrich(game, patch);
       trace?.("re-enrich-updated", {
         slug: updatedGame.slug,
         knownSemantics: knownSemanticsCount(updatedGame),
@@ -1369,17 +1350,38 @@ function candidateAsMatchable(candidate: Candidate): MatchableGame {
 }
 
 /*
+ * Overlay EFÍMERO de las pistas de la query sobre la vista MatchableGame:
+ * el pre-filtro y el matcher siguen viendo los términos que encontraron el
+ * juego, pero ESAS pistas jamás entran a las keywords persistidas del
+ * candidato. Contexto de UNA ejecución: no hay memoria entre peticiones.
+ */
+function matchableView(
+  candidate: Candidate,
+  context: SearchContext,
+): MatchableGame {
+  const matchable = candidateAsMatchable(candidate);
+  if (context.hints.length === 0) return matchable;
+  return {
+    ...matchable,
+    keywords: mergeKeywords(matchable.keywords, context.hints),
+  };
+}
+
+/*
  * ¿Aporta algo el enrichment? Garantía de calidad del catálogo: una ficha
- * sin NINGUNA semántica conocida y sin keywords nuevas no matchea nunca
- * (todo null = no comparable) y solo ensucia la BDD.
+ * sin NINGUNA semántica conocida y sin keywords adicionales detectadas no
+ * matchea nunca (todo null = no comparable) y solo ensucia la BDD. Las
+ * keywords adicionales solo señalizan valor: NO se persisten.
  */
 function enrichmentAddsValue(
-  enriched: GameToPersist,
-  candidate: Candidate,
+  editable: EnrichmentEditable,
+  additionalKeywords: readonly SearchKeyword[],
 ): boolean {
   const hasSemantics = SEMANTIC_FIELDS.some(
-    (field) => enriched[field] !== null,
+    (field) => editable.semantic[field] !== null,
   );
-  const addsKeywords = enriched.keywords.length > candidate.keywords.length;
-  return hasSemantics || addsKeywords;
+  const hasAdditionalKeywords = additionalKeywords.some(
+    (term) => term.trim().length > 0,
+  );
+  return hasSemantics || hasAdditionalKeywords;
 }

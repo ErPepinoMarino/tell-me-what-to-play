@@ -589,7 +589,7 @@ export class RecommendationOrchestrator {
       enrichmentErrors: fillEnrichmentErrors,
     });
 
-    // Drops del diccionario durante el relleno (siembra/enrichment/rescate).
+    // Drops del diccionario durante el relleno (pistas de búsqueda/enrichment/rescate).
     if (this.deps.lexicon) this.traceLexiconDrops(trace);
 
     // Enrichments fallidos (p. ej. Brave 402) sin crear nada: el

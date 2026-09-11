@@ -2,13 +2,14 @@
 // Función pura: no HTTP, no Prisma, no IA, sin colisiones de slug (eso es
 // responsabilidad del ImportService). Orquesta los normalizers existentes.
 
-import type { Candidate, GameToPersist } from "../types/Game.js";
+import type { Candidate, IgdbGameToPersist } from "../types/Game.js";
+import type { EnrichmentEditable } from "../types/GameEnrichment.js";
+import { extractIgdbKeywords } from "./keywords.js";
 import {
   extractYear,
   generateSlug,
   normalizeGameModes,
   normalizeGenres,
-  normalizeKeywords,
   normalizePerspectives,
   normalizePlatforms,
   normalizeThemes,
@@ -43,72 +44,9 @@ function extractCompanies(
 }
 
 /*
- * Transforma un juego raw de IGDB en el dominio TMWTP.
- * Regla fundamental: NADA se descarta. Todo nombre sin equivalencia en un
- * enum (géneros, plataformas, modos, perspectivas) acaba en keywords.
- * description_es, description_en y semánticas quedan null: solo el enriquecimiento futuro
- * puede escribirlos.
- */
-export function mapIGDBGame(raw: IgdbGameRaw): GameToPersist {
-  // 1. Normalizamos las clasificaciones (enums + unclassified)
-  const genres = normalizeGenres(extractNames(raw.genres));
-  const themes = normalizeThemes(extractNames(raw.themes));
-  const platforms = normalizePlatforms(extractNames(raw.platforms));
-  const gameModes = normalizeGameModes(extractNames(raw.game_modes));
-  const perspectives = normalizePerspectives(
-    extractNames(raw.player_perspectives),
-  );
-
-  // 2. Todo lo que no cupo en un enum se conserva como vocabulario abierto
-  const unclassified = [
-    ...genres.unclassified,
-    ...platforms.unclassified,
-    ...gameModes.unclassified,
-    ...perspectives.unclassified,
-  ];
-  const keywords = normalizeKeywords(extractNames(raw.keywords), unclassified);
-
-  // 3. Fecha -> año (null si IGDB no la trae)
-  const releaseYear = extractYear(raw.first_release_date);
-
-  return {
-    slug: generateSlug(raw.name, releaseYear),
-    title: raw.name,
-    description_es: null, // nunca se genera aquí: es del enriquecimiento futuro
-    description_en: null, // nunca se genera aquí: es del enriquecimiento futuro
-    coverUrl: buildCoverUrl(raw.cover),
-    releaseYear,
-    // Defaults del schema: sin clasificación clasificable -> UNKNOWN
-    genres: genres.values.length > 0 ? genres.values : ["UNKNOWN"],
-    themes: themes.values.length > 0 ? themes.values : ["UNKNOWN"],
-    platforms: platforms.values.length > 0 ? platforms.values : ["UNKNOWN"],
-    gameModes: gameModes.values.length > 0 ? gameModes.values : ["UNKNOWN"],
-    perspectives:
-      perspectives.values.length > 0 ? perspectives.values : ["UNKNOWN"],
-    keywords,
-    sourceId: String(raw.id),
-    developers: extractCompanies(raw.involved_companies, "developer"),
-    publishers: extractCompanies(raw.involved_companies, "publisher"),
-    // Semánticas: el importador NUNCA las infiere
-    difficulty: null,
-    pace: null,
-    narrative: null,
-    complexity: null,
-    coziness: null,
-    strategy: null,
-    exploration: null,
-    violence: null,
-    horror: null,
-    darkness: null,
-    tension: null,
-    humor: null,
-    isolation: null,
-  };
-}
-
-/*
  * Transforma un IgdbGameRaw en un Candidate para el pipeline de importación.
- * Reutiliza la misma normalización que mapIGDBGame pero:
+ * Normaliza las clasificaciones (enums) y extrae las keywords EXCLUSIVAMENTE
+ * de raw.keywords (extractIgdbKeywords). A diferencia del resto del pipeline:
  * - NO incluye description_es, description_en ni semánticas (se rellenan en el enriquecimiento)
  * - SÍ incluye el raw original (necesario para el enriquecimiento)
  */
@@ -121,14 +59,6 @@ export function mapToCandidate(raw: IgdbGameRaw): Candidate {
     extractNames(raw.player_perspectives),
   );
 
-  const unclassified = [
-    ...genres.unclassified,
-    ...platforms.unclassified,
-    ...gameModes.unclassified,
-    ...perspectives.unclassified,
-  ];
-  const keywords = normalizeKeywords(extractNames(raw.keywords), unclassified);
-
   return {
     slug: generateSlug(raw.name, extractYear(raw.first_release_date)),
     title: raw.name,
@@ -140,10 +70,42 @@ export function mapToCandidate(raw: IgdbGameRaw): Candidate {
     gameModes: gameModes.values.length > 0 ? gameModes.values : ["UNKNOWN"],
     perspectives:
       perspectives.values.length > 0 ? perspectives.values : ["UNKNOWN"],
-    keywords,
+    keywords: extractIgdbKeywords(raw),
     sourceId: String(raw.id),
     developers: extractCompanies(raw.involved_companies, "developer"),
     publishers: extractCompanies(raw.involved_companies, "publisher"),
     raw,
+  };
+}
+
+/*
+ * ÚNICO punto de soldadura del orquestador: candidate (objetivo IGDB normalizado)
+ * + EnrichmentEditable (descripciones y semánticas del enriquecimiento) →
+ * IgdbGameToPersist. Las keywords salen SIN TOCAR del candidate (mint del
+ * raw): el pipelino no puede mezclar aquí términos de búsqueda ni keywords
+ * adicionales del LLM.
+ */
+export function concludeGameToPersist(
+  candidate: Candidate,
+  editable: EnrichmentEditable,
+): IgdbGameToPersist {
+  return {
+    provenance: "igdb",
+    slug: candidate.slug,
+    sourceId: candidate.sourceId,
+    title: candidate.title,
+    coverUrl: candidate.coverUrl,
+    releaseYear: candidate.releaseYear,
+    genres: candidate.genres,
+    themes: candidate.themes,
+    platforms: candidate.platforms,
+    gameModes: candidate.gameModes,
+    perspectives: candidate.perspectives,
+    developers: candidate.developers,
+    publishers: candidate.publishers,
+    keywords: candidate.keywords,
+    ...editable.semantic,
+    description_es: editable.description_es,
+    description_en: editable.description_en,
   };
 }

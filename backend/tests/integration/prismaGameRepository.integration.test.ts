@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prismaGameRepository } from "../../src/repositories/prismaGameRepository.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { resetTestDatabase } from "../helpers/resetTestDatabase.js";
-import type { Game, GameToPersist } from "../../src/types/Game.js";
+import { brandStoredIgdbKeywords } from "../../src/igdb/keywords.js";
+import type { IgdbGame, IgdbGameToPersist } from "../../src/types/Game.js";
 import type {
   GameMode,
   Perspective,
@@ -96,10 +97,11 @@ describe("prismaGameRepository", () => {
   });
 
   it("creates and returns an objective game", async () => {
-    const game: Game = {
+    const game: IgdbGame = {
+      provenance: "igdb",
       id: 0,
       sourceId: null,
-      slug: "hades-2020",
+      slug: "hades-test-2020",
       title: "Hades",
       description_es: "A rogue-like dungeon crawler.",
       description_en: "A rogue-like dungeon crawler.",
@@ -131,7 +133,7 @@ describe("prismaGameRepository", () => {
       coziness: null,
     };
 
-    const result = await prismaGameRepository.create(game);
+    const result = await prismaGameRepository.createIgdb(game);
     const persistedGame = await prisma.games.findUnique({
       where: { slug: game.slug },
     });
@@ -151,8 +153,9 @@ describe("prismaGameRepository", () => {
     });
   });
 
-  it("creates a game from GameToPersist (importer path): BDD assigns id and search_count", async () => {
-    const game: GameToPersist = {
+  it("creates a game from IgdbGameToPersist (importer path): BDD assigns id and search_count", async () => {
+    const game: IgdbGameToPersist = {
+      provenance: "igdb",
       sourceId: "53354",
       slug: "elden-ring-2022",
       title: "Elden Ring",
@@ -166,7 +169,7 @@ describe("prismaGameRepository", () => {
       platforms: ["PC", "PS5"],
       gameModes: ["SINGLE_PLAYER"],
       perspectives: ["THIRD_PERSON"],
-      keywords: ["open world", "souls-like"],
+      keywords: brandStoredIgdbKeywords(["open world", "souls-like"]),
       developers: ["FromSoftware"],
       publishers: ["Bandai Namco"],
       difficulty: null,
@@ -184,7 +187,7 @@ describe("prismaGameRepository", () => {
       isolation: null,
     };
 
-    const result = await prismaGameRepository.create(game);
+    const result = await prismaGameRepository.createIgdb(game);
 
     // id y search_count los genera PostgreSQL
     expect(result.id).toEqual(expect.any(Number));
@@ -208,57 +211,6 @@ describe("prismaGameRepository", () => {
     const found = await prismaGameRepository.getBySlug("elden-ring-2022");
     expect(found?.id).toBe(result.id);
   });
-  it("updates and persists a game", async () => {
-    const createdGame = await prisma.games.create({
-      data: {
-        ...defaults,
-        slug: "hades-2020",
-        title: "Hades",
-        genres: ["SHOOTER"],
-        themes: ["UNKNOWN"],
-        platforms: ["PC"],
-      },
-    });
-    const updatedGame: Game = {
-      id: createdGame.id,
-      sourceId: null,
-      slug: "hades-ii-2024",
-      title: "Hades II",
-      description_es: "A sequel.",
-      description_en: "A sequel.",
-      coverUrl: "https://example.com/hades-ii.jpg",
-      releaseYear: 2024,
-      genres: ["SHOOTER"],
-
-      themes: ["UNKNOWN"],
-
-      platforms: ["PC", "SWITCH"],
-      gameModes: ["UNKNOWN"],
-      perspectives: ["UNKNOWN"],
-      developers: [],
-      publishers: [],
-      keywords: [],
-      searchCount: 0,
-      difficulty: null,
-      pace: null,
-      narrative: null,
-      complexity: null,
-      strategy: null,
-      exploration: null,
-      violence: null,
-      horror: null,
-      darkness: null,
-      tension: null,
-      humor: null,
-      isolation: null,
-      coziness: null,
-    };
-
-    const result = await prismaGameRepository.update(updatedGame);
-
-    expect(result).toEqual(updatedGame);
-  });
-
   it("allows the same title in different years", async () => {
     const first = await prisma.games.create({
       data: {
@@ -313,17 +265,18 @@ describe("prismaGameRepository", () => {
     await prisma.games.create({
       data: {
         ...defaults,
-        slug: "hades-2020",
+        slug: "hades-test-2020",
         title: "Hades",
         genres: ["SHOOTER"],
         themes: ["UNKNOWN"],
         platforms: ["PC"],
       },
     });
-    const duplicateGame: Game = {
+    const duplicateGame: IgdbGame = {
+      provenance: "igdb",
       id: 0,
       sourceId: null,
-      slug: "hades-2020",
+      slug: "hades-test-2020",
       title: "Another Hades",
       description_es: "A duplicate slug.",
       description_en: "A duplicate slug.",
@@ -356,7 +309,7 @@ describe("prismaGameRepository", () => {
     };
 
     await expect(
-      prismaGameRepository.create(duplicateGame),
+      prismaGameRepository.createIgdb(duplicateGame),
     ).rejects.toMatchObject({ code: "P2002" });
   });
 
@@ -394,10 +347,11 @@ describe("prismaGameRepository", () => {
     });
 
     it("persists and reads all twelve semantic attribute values", async () => {
-      const game: Game = {
+      const game: IgdbGame = {
+        provenance: "igdb",
         id: 0,
         sourceId: null,
-        slug: "hades-2020",
+        slug: "hades-test-2020",
         title: "Hades",
         description_es: "Action roguelite.",
         description_en: "Action roguelite.",
@@ -429,7 +383,7 @@ describe("prismaGameRepository", () => {
         coziness: null,
       };
 
-      const created = await prismaGameRepository.create(game);
+      const created = await prismaGameRepository.createIgdb(game);
 
       expect(created.difficulty).toBe(0.8);
       expect(created.pace).toBe(0.7);
@@ -450,10 +404,11 @@ describe("prismaGameRepository", () => {
     });
 
     it("accepts the boundary values 0 and 1", async () => {
-      const game: Game = {
+      const game: IgdbGame = {
+        provenance: "igdb",
         id: 0,
         sourceId: null,
-        slug: "portal-2-2011",
+        slug: "portal-2-test-2011",
         title: "Portal 2",
         description_es: "Puzzle.",
         description_en: "Puzzle.",
@@ -485,18 +440,18 @@ describe("prismaGameRepository", () => {
         coziness: null,
       };
 
-      const created = await prismaGameRepository.create(game);
+      const created = await prismaGameRepository.createIgdb(game);
       expect(created.difficulty).toBe(0);
       expect(created.pace).toBe(1);
       expect(created.humor).toBe(1);
       expect(created.tension).toBe(1);
     });
 
-    it("persists an update to semantic attribute values", async () => {
-      const base = await prisma.games.create({
+    it("updateReEnrich persiste valores semánticos sin tocar keywords", async () => {
+      await prisma.games.create({
         data: {
           ...defaults,
-          slug: "celeste-2018",
+          slug: "celeste-test-2018",
           title: "Celeste",
           genres: ["PLATFORM"],
           themes: ["UNKNOWN"],
@@ -504,39 +459,25 @@ describe("prismaGameRepository", () => {
         },
       });
 
-      const updated = await prismaGameRepository.update({
-        id: base.id,
-        sourceId: null,
-        slug: "celeste-2018",
-        title: "Celeste",
+      const game = await prismaGameRepository.getBySlug("celeste-test-2018");
+      const updated = await prismaGameRepository.updateReEnrich(game!, {
         description_es: "",
         description_en: "",
-        coverUrl: "",
-        releaseYear: 2018,
-        genres: ["PLATFORM"],
-
-        themes: ["UNKNOWN"],
-
-        platforms: ["PC"],
-        gameModes: ["UNKNOWN"],
-        perspectives: ["UNKNOWN"],
-        developers: [],
-        publishers: [],
-        keywords: [],
-        searchCount: 0,
-        difficulty: 0.75,
-        pace: 0.6,
-        narrative: 0.5,
-        complexity: 0.4,
-        strategy: 0.2,
-        exploration: 0.3,
-        violence: 0,
-        horror: 0,
-        darkness: 0.4,
-        tension: 0.8,
-        humor: 0.3,
-        isolation: 0.5,
-        coziness: null,
+        semantic: {
+          difficulty: 0.75,
+          pace: 0.6,
+          narrative: 0.5,
+          complexity: 0.4,
+          strategy: 0.2,
+          exploration: 0.3,
+          violence: 0,
+          horror: 0,
+          darkness: 0.4,
+          tension: 0.8,
+          humor: 0.3,
+          isolation: 0.5,
+          coziness: null,
+        },
       });
 
       expect(updated.difficulty).toBe(0.75);

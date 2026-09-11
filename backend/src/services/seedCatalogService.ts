@@ -1,4 +1,4 @@
-import { games } from "../data/games.js";
+import { games, toCuratedKeywords } from "../data/games.js";
 import type { CatalogLayer } from "../orchestrator/types.js";
 
 export interface SeedCatalogResult {
@@ -33,9 +33,16 @@ export async function ensureSeedCatalog(
       skipped++;
       continue;
     }
-    // create() usa solo los campos de persistencia: id y searchCount los
-    // pone PostgreSQL (serial / default 0).
-    await catalog.create(game);
+    // createCurated() usa solo los campos de persistencia: id y searchCount los
+    // pone PostgreSQL (serial / default 0). El vocabulario del seed es
+    // CU-RADO: cruza la frontera por el mint curado toCuratedKeywords, jamás
+    // por un mint de IgdbKeyword — un dato del seed no puede fingir que
+    // procede de IGDB (CuratedKeyword[] no es asignable a IgdbKeyword[]).
+    await catalog.createCurated({
+      ...game,
+      provenance: "curated",
+      keywords: toCuratedKeywords(game.keywords),
+    });
     created++;
   }
 

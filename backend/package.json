@@ -17,7 +17,6 @@
     "lexicon:mine": "tsx scripts/mineLexicon.ts",
     "lexicon:accept": "tsx scripts/acceptLexicon.ts",
     "lexicon:calibrate": "tsx scripts/calibrateLexicon.ts",
-    "lexicon:apply": "tsx scripts/applyLexiconKeywords.ts",
     "lexicon:seed": "tsx scripts/seedKeywordDictionary.ts",
     "backfill:themes": "tsx scripts/backfillThemes.ts",
     "ratings:backfill": "tsx scripts/backfillRatings.ts",

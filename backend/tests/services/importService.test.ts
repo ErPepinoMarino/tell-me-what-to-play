@@ -1,11 +1,34 @@
 import { describe, expect, it } from "vitest";
 import type { IgdbClient, IgdbGameRaw } from "../../src/igdb/types.js";
-import type { Candidate, Game, GameToPersist } from "../../src/types/Game.js";
+import type {
+  Candidate,
+  Game,
+  IgdbGame,
+  IgdbGameToPersist,
+} from "../../src/types/Game.js";
 import {
   ImportService,
   type EnrichmentService,
   type GameRepository,
 } from "../../src/services/importService.js";
+import type { EnrichmentResult } from "../../src/services/enrichmentService.js";
+import type { Semantic } from "../../src/types/GameEnrichment.js";
+
+const FULL_SEMANTIC: Semantic = {
+  difficulty: 0.5,
+  pace: 0.5,
+  narrative: 0.5,
+  complexity: 0.5,
+  coziness: 0.5,
+  strategy: 0.5,
+  exploration: 0.5,
+  violence: 0.5,
+  horror: 0.5,
+  darkness: 0.5,
+  tension: 0.5,
+  humor: 0.5,
+  isolation: 0.5,
+};
 
 // ─── Fakes ───────────────────────────────────────────────────────────────
 
@@ -32,53 +55,31 @@ class FakeIgdbClient implements IgdbClient {
 }
 
 class FakeEnrichmentService implements EnrichmentService {
-  async enrich(candidate: Candidate): Promise<GameToPersist> {
+  async enrich(): Promise<EnrichmentResult> {
     return {
-      slug: candidate.slug,
-      title: candidate.title,
-      description_es: "Enriched description ES",
-      description_en: "Enriched description EN",
-      coverUrl: candidate.coverUrl,
-      releaseYear: candidate.releaseYear,
-      genres: candidate.genres,
-      themes: candidate.themes,
-      platforms: candidate.platforms,
-      gameModes: candidate.gameModes,
-      perspectives: candidate.perspectives,
-      keywords: candidate.keywords,
-      sourceId: candidate.sourceId,
-      developers: candidate.developers,
-      publishers: candidate.publishers,
-      difficulty: 0.5,
-      pace: 0.5,
-      narrative: 0.5,
-      complexity: 0.5,
-      coziness: 0.5,
-      strategy: 0.5,
-      exploration: 0.5,
-      violence: 0.5,
-      horror: 0.5,
-      darkness: 0.5,
-      tension: 0.5,
-      humor: 0.5,
-      isolation: 0.5,
+      editable: {
+        description_es: "Enriched description ES",
+        description_en: "Enriched description EN",
+        semantic: FULL_SEMANTIC,
+      },
+      additionalKeywords: [],
     };
   }
 }
 
 class FakeRepository implements GameRepository {
-  public created: GameToPersist[] = [];
+  public created: IgdbGameToPersist[] = [];
   constructor(private existingBySlug: Record<string, Game> = {}) {}
   async getBySlug(slug: string): Promise<Game | undefined> {
     return this.existingBySlug[slug];
   }
-  async create(game: GameToPersist): Promise<Game> {
+  async createIgdb(game: IgdbGameToPersist): Promise<IgdbGame> {
     this.created.push(game);
     return {
       id: this.created.length,
       searchCount: 0,
       ...game,
-    } as Game;
+    };
   }
 }
 
@@ -92,8 +93,11 @@ function rawGame(
   return { id, name, ...extra };
 }
 
-function makeExistingGame(overrides: Partial<Game> = {}): Game {
+function makeExistingGame(
+  overrides: Partial<Omit<IgdbGame, "keywords">> = {},
+): Game {
   return {
+    provenance: "igdb",
     id: 1,
     slug: "hollow-knight",
     sourceId: "100",
@@ -170,37 +174,15 @@ describe("ImportService.importByQuery", () => {
 
     let enrichCalls = 0;
     const enrichment: EnrichmentService = {
-      enrich: async (candidate: Candidate) => {
+      enrich: async () => {
         enrichCalls++;
         return {
-          slug: candidate.slug,
-          title: candidate.title,
-          description_es: "Enriched",
-          description_en: "Enriched",
-          coverUrl: candidate.coverUrl,
-          releaseYear: candidate.releaseYear,
-          genres: candidate.genres,
-          themes: candidate.themes,
-          platforms: candidate.platforms,
-          gameModes: candidate.gameModes,
-          perspectives: candidate.perspectives,
-          keywords: candidate.keywords,
-          sourceId: candidate.sourceId,
-          developers: candidate.developers,
-          publishers: candidate.publishers,
-          difficulty: null,
-          pace: null,
-          narrative: null,
-          complexity: null,
-          coziness: null,
-          strategy: null,
-          exploration: null,
-          violence: null,
-          horror: null,
-          darkness: null,
-          tension: null,
-          humor: null,
-          isolation: null,
+          editable: {
+            description_es: "Enriched",
+            description_en: "Enriched",
+            semantic: FULL_SEMANTIC,
+          },
+          additionalKeywords: [],
         };
       },
     };
@@ -226,34 +208,12 @@ describe("ImportService.importByQuery", () => {
           throw new Error("Web search failed");
         }
         return {
-          slug: candidate.slug,
-          title: candidate.title,
-          description_es: "Enriched",
-          description_en: "Enriched",
-          coverUrl: candidate.coverUrl,
-          releaseYear: candidate.releaseYear,
-          genres: candidate.genres,
-          themes: candidate.themes,
-          platforms: candidate.platforms,
-          gameModes: candidate.gameModes,
-          perspectives: candidate.perspectives,
-          keywords: candidate.keywords,
-          sourceId: candidate.sourceId,
-          developers: candidate.developers,
-          publishers: candidate.publishers,
-          difficulty: null,
-          pace: null,
-          narrative: null,
-          complexity: null,
-          coziness: null,
-          strategy: null,
-          exploration: null,
-          violence: null,
-          horror: null,
-          darkness: null,
-          tension: null,
-          humor: null,
-          isolation: null,
+          editable: {
+            description_es: "Enriched",
+            description_en: "Enriched",
+            semantic: FULL_SEMANTIC,
+          },
+          additionalKeywords: [],
         };
       },
     };
