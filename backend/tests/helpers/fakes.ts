@@ -25,7 +25,6 @@ import type {
   EnrichmentUpdater,
 } from "../../src/services/enrichmentService.js";
 import type { CatalogLayer, CacheLayer, ReEnrichPatch } from "../../src/orchestrator/types.js";
-import type { BudgetLimits } from "../../src/budget/budgetLedger.js";
 
 export const FULL_SEMANTIC: Semantic = {
   difficulty: 0.6,
@@ -96,7 +95,6 @@ export function makeIntent(
     yearFrom: null,
     yearTo: null,
     excluded: null,
-    relation: null,
     semantic: null,
     ...overrides,
   };
@@ -374,5 +372,3 @@ export class FakeEnrichment implements EnrichmentService, EnrichmentUpdater {
     return this.enrichment;
   }
 }
-
-export const HIGH_BUDGET: BudgetLimits = { igdb: 100, brave: 200, llm: 200 };

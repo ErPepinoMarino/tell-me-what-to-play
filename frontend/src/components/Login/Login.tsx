@@ -15,8 +15,8 @@ export default function Login() {
 
   if (status === "authenticated") {
     return (
-      <section className="login">
-        <p>Sesión iniciada: puedes afinar, pedir más y cambiar de tema.</p>
+      <section className="flex items-center justify-between gap-4">
+        <p className="text-[0.9rem] text-muted">Sesión iniciada: puedes afinar, pedir más y cambiar de tema.</p>
         <button type="button" onClick={() => void logout()} className="button-secondary">
           Cerrar sesión
         </button>
@@ -25,8 +25,8 @@ export default function Login() {
   }
 
   return (
-    <section className="login">
-      <p>
+    <section className="flex items-center justify-between gap-4">
+      <p className="text-[0.9rem] text-muted">
         Inicia sesión para afinar tus búsquedas, pedir más resultados y
         cambiar de tema sin perder el contexto.
       </p>

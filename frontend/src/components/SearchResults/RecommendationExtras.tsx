@@ -22,12 +22,12 @@ export function RequestedGamesRow({
   return (
     <div className="requested-row">
       <h3>Lo que pediste (referencia)</h3>
-      <div className="requested-cards">
+      <div className="flex flex-wrap gap-3">
         {games.map((game) => (
           <button
             key={game.id}
             type="button"
-            className="requested-card"
+            className="flex flex-col items-center gap-[0.3rem] rounded-lg border border-dashed border-[#555] p-2 text-[0.8rem] text-[#d1d5db]"
             onClick={() => onSelectGame(game)}
           >
             <Image
@@ -50,7 +50,7 @@ export function RequestedGamesRow({
  */
 export function DemoMetaPanel({ meta }: { meta: RecommendationMeta }) {
   return (
-    <div className="demo-panel demo-meta">
+    <div className="rounded-[10px] border border-dashed border-[#444] px-4 py-3 [font-family:ui-monospace,monospace] text-[0.78rem] text-[#a1a1aa]">
       <p>
         <strong>meta:</strong> acción {meta.action} · {meta.evaluatedCandidates}{" "}
         candidatos evaluados · {meta.discoveryUnitsUsed} unidades de

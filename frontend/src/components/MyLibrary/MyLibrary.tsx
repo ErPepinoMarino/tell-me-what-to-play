@@ -33,16 +33,16 @@ const STATUS_LABELS: Record<UserGameStatus, string> = {
 };
 
 const RECOMMENDATION_LABELS: Record<Recommendation, string> = {
-  HIGHLY_RECOMMENDED: "Muy recomendado",
-  RECOMMENDED: "Recomendado",
-  MEH: "Paso",
-  NOT_RECOMMENDED: "No recomendado",
+  HIGHLY_RECOMMENDED: "\u{1F49C}",
+  RECOMMENDED: "\u{1F44D}",
+  MEH: "\u{1FAE4}",
+  NOT_RECOMMENDED: "\u{1F44E}",
 };
 
 /*
- * Cuerpo del PUT según el contrato del backend (missing → null en BD):
+ * Cuerpo del PUT seg?n el contrato del backend (missing ? null en BD):
  * siempre porta los valores vigentes; los valores null vigentes se
- * OMITEN (omitir ≡ null). Borrar reseña = omitir la clave review.
+ * OMITEN (omitir = null). Borrar Reseña = omitir la clave review.
  */
 function buildUpdateBody(
   entry: LibraryEntry,
@@ -57,11 +57,11 @@ function buildUpdateBody(
       : entry.recommendation;
   if (nextRecommendation) body.recommendation = nextRecommendation;
   if (patch.review === null) {
-    // Borrar reseña: omitir la clave (el backend escribe null).
+    // Borrar Reseña: omitir la clave (el backend escribe null).
   } else if (typeof patch.review === "string") {
     if (patch.review.trim().length > 0) body.review = patch.review.trim();
   } else if (entry.review) {
-    // Otros cambios: preservar la reseña vigente.
+    // Otros cambios: preservar la Reseña vigente.
     body.review = entry.review;
   }
   return Object.keys(body).length === 0 ? null : body;
@@ -85,9 +85,9 @@ export default function MyLibrary({ entries, update, remove }: MyLibraryProps) {
   return (
     <section>
       {entries === null ? (
-        <p className="muted">Cargando tu biblioteca...</p>
+        <p className="text-muted">Cargando tu biblioteca...</p>
       ) : entries.length === 0 ? (
-        <p className="muted">Todavía no has guardado ningún juego.</p>
+        <p className="text-muted">Todavía no has guardado ningún juego.</p>
       ) : (
         <>
           <div className="library-row">
@@ -102,7 +102,7 @@ export default function MyLibrary({ entries, update, remove }: MyLibraryProps) {
               >
                 <h3>{entry.games.title}</h3>
                 {entry.games.releaseYear ? (
-                  <p className="muted">{entry.games.releaseYear}</p>
+                  <p className="text-muted">{entry.games.releaseYear}</p>
                 ) : null}
                 <Image
                   src={entry.games.coverUrl || PLACEHOLDER}
@@ -138,10 +138,11 @@ type LibraryDetailProps = {
 
 function LibraryDetail({ entry, update, remove, onClose }: LibraryDetailProps) {
   // El remonte con key={game_id} (en el padre) reinicia el draft al
-  // cambiar de juego seleccionado — no hace falta effect.
+  // cambiar de juego seleccionado ? no hace falta effect.
   const [draft, setDraft] = useState(entry.review ?? "");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [isEditingReview, setIsEditingReview] = useState(false);
 
   async function commit(patch: LibraryEntryPatch) {
     if (busy) return;
@@ -150,7 +151,22 @@ function LibraryDetail({ entry, update, remove, onClose }: LibraryDetailProps) {
     setBusy(true);
     const ok = await update(entry.game_id, body);
     setBusy(false);
-    setNote(ok ? "Guardado." : "No se pudo guardar. Inténtalo de nuevo.");
+    if (ok) {
+      setIsEditingReview(false);
+      setNote("Guardado.");
+    } else {
+      setNote("No se pudo guardar. Int?ntalo de nuevo.");
+    }
+  }
+
+  function handleStartEdit() {
+    setDraft(entry.review ?? "");
+    setIsEditingReview(true);
+  }
+
+  function handleCancelEdit() {
+    setDraft(entry.review ?? "");
+    setIsEditingReview(false);
   }
 
   async function handleRemove() {
@@ -165,10 +181,6 @@ function LibraryDetail({ entry, update, remove, onClose }: LibraryDetailProps) {
     <div className="library-detail">
       <div className="game-info-layout">
         <div className="game-info-media">
-          <h3 className="game-info-title">{entry.games.title}</h3>
-          {entry.games.releaseYear ? (
-            <span className="game-info-year">{entry.games.releaseYear}</span>
-          ) : null}
           <Image
             src={entry.games.coverUrl || PLACEHOLDER_COVER}
             alt={entry.games.title}
@@ -178,6 +190,13 @@ function LibraryDetail({ entry, update, remove, onClose }: LibraryDetailProps) {
         </div>
 
         <div className="game-info-content">
+          <div className="game-info-header">
+            <h3 className="game-info-title">{entry.games.title}</h3>
+            {entry.games.releaseYear ? (
+              <span className="game-info-year">{entry.games.releaseYear}</span>
+            ) : null}
+          </div>
+
           <GameInfoBody game={entry.games} />
 
           <div>
@@ -188,9 +207,7 @@ function LibraryDetail({ entry, update, remove, onClose }: LibraryDetailProps) {
                   <button
                     key={status}
                     type="button"
-                    className={`button-secondary${
-                      entry.status === status ? " library-option-active" : ""
-                    }`}
+                    className={`library-option-text-btn${entry.status === status ? " library-option-active" : ""}`}
                     onClick={() => void commit({ status })}
                   >
                     {STATUS_LABELS[status]}
@@ -208,11 +225,7 @@ function LibraryDetail({ entry, update, remove, onClose }: LibraryDetailProps) {
                   <button
                     key={recommendation}
                     type="button"
-                    className={`button-secondary${
-                      entry.recommendation === recommendation
-                        ? " library-option-active"
-                        : ""
-                    }`}
+                    className={`library-option-btn${entry.recommendation === recommendation ? " library-option-active" : ""}`}
                     onClick={() => void commit({ recommendation })}
                   >
                     {RECOMMENDATION_LABELS[recommendation]}
@@ -224,35 +237,69 @@ function LibraryDetail({ entry, update, remove, onClose }: LibraryDetailProps) {
 
           <div>
             <span className="game-info-label">Reseña</span>
-            <textarea
-              className="library-review"
-              value={draft}
-              maxLength={1000}
-              placeholder="Escribe tu opinión sobre el juego..."
-              onChange={(event) => setDraft(event.target.value)}
-              aria-label="Tu reseña"
-            />
-            <div className="library-actions">
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={busy || draft.trim().length === 0}
-                onClick={() => void commit({ review: draft })}
-              >
-                Guardar reseña
-              </button>
-              {entry.review ? (
-                <button
-                  type="button"
-                  className="button-secondary"
-                  disabled={busy}
-                  onClick={() => void commit({ review: null })}
-                >
-                  Borrar reseña
-                </button>
-              ) : null}
-            </div>
-            {note ? <p className="muted">{note}</p> : null}
+            {isEditingReview ? (
+              <>
+                <textarea
+                  id="library-review-input"
+                  name="review"
+                  className="library-review"
+                  value={draft}
+                  maxLength={1000}
+                  placeholder="Escribe una reseña u opinión sobre este juego."
+                  onChange={(event) => setDraft(event.target.value)}
+                  aria-label="Tu reseña"
+                />
+                <div className="library-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={busy || draft.trim().length === 0}
+                    onClick={() => void commit({ review: draft })}
+                  >
+                    Guardar reseña
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={busy}
+                    onClick={handleCancelEdit}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {entry.review ? (
+                  <p className="library-review-text">{entry.review}</p>
+                ) : (
+                  <p className="library-review-text library-review-placeholder">
+                    Escribe una Reseña u opinión sobre este juego.
+                  </p>
+                )}
+                <div className="library-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={busy}
+                    onClick={handleStartEdit}
+                  >
+                    Editar Reseña
+                  </button>
+                  {entry.review ? (
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={busy}
+                      onClick={() => void commit({ review: null })}
+                    >
+                      Borrar Reseña
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )}
+            {note ? <p className="text-muted text-center library-note">{note}</p> : null}
           </div>
 
           <div className="library-actions">

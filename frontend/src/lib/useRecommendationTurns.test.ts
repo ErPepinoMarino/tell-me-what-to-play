@@ -10,7 +10,7 @@ import type {
 } from "@/types/Recommendation";
 
 type ApiOutcome =
-  | { ok: true }
+  | { ok: true, data: null }
   | { ok: false; status: number; message?: string; notice?: string };
 
 const intent: GameSearchIntent = {
@@ -27,7 +27,6 @@ const intent: GameSearchIntent = {
   yearFrom: null,
   yearTo: null,
   excluded: null,
-  relation: null,
   semantic: null,
 };
 
@@ -106,7 +105,7 @@ function makeFakeStream(outcome: ApiOutcome, events: RecommendationStreamEvent[]
 }
 
 async function sendAndFlush(
-  render: ReturnType<typeof renderHook>,
+  render: { result: { current: ReturnType<typeof useRecommendationTurns> } },
   message: string,
   action: "search" | "more" = "search",
 ) {
@@ -127,7 +126,7 @@ describe("useRecommendationTurns", () => {
         }),
       },
     ];
-    const { stream } = makeFakeStream({ ok: true }, events);
+    const { stream } = makeFakeStream({ ok: true, data: null }, events);
     const render = renderHook(() => useRecommendationTurns({ token: "t-1", stream }));
 
     await sendAndFlush(render, "quiero un shooter");
@@ -144,7 +143,7 @@ describe("useRecommendationTurns", () => {
   });
 
   it("send construye el body con contexto previo y pasa el token", async () => {
-    const { stream, call } = makeFakeStream({ ok: true }, [
+    const { stream, call } = makeFakeStream({ ok: true, data: null }, [
       {
         event: "done",
         response: response({
@@ -195,7 +194,7 @@ describe("useRecommendationTurns", () => {
 
   it("settle exitoso tras error reintroduce ready y limpia el failure", async () => {
     const failing = makeFakeStream({ ok: false, status: 502 });
-    const ok = makeFakeStream({ ok: true }, [
+    const ok = makeFakeStream({ ok: true, data: null }, [
       { event: "done", response: response({ results: [resultItem(3)] }) },
     ]);
     let currentStream = failing.stream;
@@ -233,7 +232,7 @@ describe("useRecommendationTurns", () => {
         }),
       },
     ];
-    const { stream } = makeFakeStream({ ok: true }, events);
+    const { stream } = makeFakeStream({ ok: true, data: null }, events);
     const render = renderHook(() => useRecommendationTurns({ token: null, stream }));
 
     await sendAndFlush(render, "más", "more");
@@ -243,7 +242,7 @@ describe("useRecommendationTurns", () => {
   });
 
   it("settle sin eventos (cierre limpio sin done) → ready", async () => {
-    const { stream } = makeFakeStream({ ok: true });
+    const { stream } = makeFakeStream({ ok: true, data: null });
     const render = renderHook(() => useRecommendationTurns({ token: null, stream }));
 
     await sendAndFlush(render, "hola");
@@ -268,7 +267,7 @@ describe("useRecommendationTurns", () => {
         response: response({ results: [resultItem(9)] }),
       },
     ];
-    const { stream } = makeFakeStream({ ok: true }, events);
+    const { stream } = makeFakeStream({ ok: true, data: null }, events);
     const render = renderHook(() => useRecommendationTurns({ token: null, stream }));
 
     await sendAndFlush(render, "algo");
@@ -305,7 +304,7 @@ describe("useRecommendationTurns", () => {
 
     expect(stream).toHaveBeenCalledTimes(1);
 
-    resolveFirst({ ok: true });
+    resolveFirst({ ok: true, data: null });
     await act(async () => {
       await firstPromise;
     });

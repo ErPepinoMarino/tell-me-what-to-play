@@ -84,26 +84,22 @@ export interface CacheLayer {
 
 export interface IntentExtractor {
   /*
-   * Extracción SIEMPRE fresca (sin contexto): el mensaje se interpreta con
-   * el contrato base. El segundo parámetro existe por compatibilidad con
-   * fakes/tests y se ignora.
+   * Interpretación de la intención: convierte el mensaje del usuario en un
+   * GameSearchIntent. Sin contexto conversacional.
    */
-  extract(
-    userText: string,
-    previousIntent?: GameSearchIntent,
-  ): Promise<GameSearchIntent>;
+  extract(userText: string): Promise<GameSearchIntent>;
   /*
-   * Clasificador de relación refine-vs-new: paso mínimo que solo decide, por
-   * INFERENCIA, si el mensaje afina la búsqueda anterior o empieza otra.
-   * Único punto de decisión para anon y logueado. Sin clasificador, el
-   * orquestador asume búsqueda nueva (fakes/tests).
+   * Clasificador de relación entre el mensaje actual y la intención previa.
+   * Responsabilidad separada de la extracción: recibe el mensaje y, si existe,
+   * la intención previa; devuelve únicamente new/refine/nonsensical.
+   * Es la autoridad de la relación.
    */
-  classifyRelation?(
+  classifyRelation(
     userText: string,
     previousIntent?: GameSearchIntent,
   ): Promise<"new" | "refine" | "nonsensical">;
   /*
-   * Delta del refinamiento: solo se llama tras classifyRelation = "refine".
+   * Delta del refinamiento: solo se llama cuando la relación es "refine".
    * Extrae qué añadir/quitar; el merge es determinista (applyRefineDelta).
    */
   extractRefineDelta?(

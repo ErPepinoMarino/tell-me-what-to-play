@@ -18,7 +18,6 @@ import {
   InMemoryQueryOffsetStore,
   type QueryOffsetStore,
 } from "../../src/orchestrator/queryOffsetStore.js";
-import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import { RECOMMENDATION_CONFIG } from "../../src/recommendation/constants.js";
 import type { IgdbGameRaw } from "../../src/igdb/types.js";
 import {
@@ -34,7 +33,6 @@ import {
 
 function makeSetup(
   opts: {
-    limits?: { igdb?: number; brave?: number; llm?: number };
     igdbResults?: Record<string, IgdbGameRaw[]>;
     igdbError?: Error;
     filteredResults?: IgdbGameRaw[];
@@ -50,18 +48,12 @@ function makeSetup(
   const enrichment = opts.enrichment ?? new FakeEnrichment();
   const cache = opts.cache ?? new InMemoryDiscoveryCacheRepository();
   const queryOffsets = opts.queryOffsets ?? new InMemoryQueryOffsetStore();
-  const budget = new InMemoryBudgetLedger({
-    igdb: opts.limits?.igdb ?? 100,
-    brave: opts.limits?.brave ?? 100,
-    llm: opts.limits?.llm ?? 100,
-  });
   const discovery = new DiscoveryManager(
     igdb,
     enrichment,
     catalog,
     cache,
     queryOffsets,
-    budget,
     RECOMMENDATION_CONFIG,
   );
   return {
@@ -69,7 +61,6 @@ function makeSetup(
     catalog,
     igdb,
     enrichment,
-    budget,
     cache,
     queryOffsets,
     // Estado de UNA ejecución: cada petición crea el suyo; los tests de
@@ -83,7 +74,7 @@ describe("DiscoveryManager.discoverByQuery", () => {
   it("crea hasta maxNew juegos, saltando los existentes y los DLC", async () => {
     const catalog = new FakeCatalogLayer();
     catalog.seed([makeGame({ id: 1 })]);
-    const { discovery, igdb, budget } = makeSetup({
+    const { discovery, igdb } = makeSetup({
       catalog,
       igdbResults: {
         pirates: [
@@ -100,32 +91,12 @@ describe("DiscoveryManager.discoverByQuery", () => {
 
     expect(attempt.outcome).toBe("ok");
     expect(attempt.newGames.map((game) => game.sourceId)).toEqual(["2", "3"]);
-    expect(attempt.budgetExhausted).toBe(false);
     // Límite de candidatos por búsqueda: margen para encontrar juegos NUEVOS
     expect(igdb.calls).toEqual([{ query: "pirates", limit: 30 }]);
-    // 1 IGDB + 2 enrich (2 Brave y 1 LLM cada uno)
-    expect(budget.remaining("igdb")).toBe(99);
-    expect(budget.remaining("brave")).toBe(96);
-    expect(budget.remaining("llm")).toBe(98);
   });
 
-  it("devuelve budget-exhausted sin llamar a IGDB si no hay presupuesto", async () => {
-    const { discovery, igdb } = makeSetup({ limits: { igdb: 0 } });
-
-    const attempt = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, createDiscoveryRun());
-
-    expect(attempt).toEqual({
-      outcome: "budget-exhausted",
-      newGames: [],
-      budgetExhausted: true,
-      variantExhausted: false,
-      enrichmentErrors: 0,
-    });
-    expect(igdb.calls).toHaveLength(0);
-  });
-
-  it("devuelve error y libera la reserva si IGDB falla", async () => {
-    const { discovery, budget } = makeSetup({
+  it("devuelve error si IGDB falla", async () => {
+    const { discovery } = makeSetup({
       igdbError: new Error("boom"),
     });
 
@@ -133,22 +104,6 @@ describe("DiscoveryManager.discoverByQuery", () => {
 
     expect(attempt.outcome).toBe("error");
     expect(attempt.newGames).toHaveLength(0);
-    expect(budget.remaining("igdb")).toBe(100);
-  });
-
-  it("aprovecha un presupuesto parcial para un enrich y marca budgetExhausted", async () => {
-    const { discovery } = makeSetup({
-      limits: { igdb: 100, brave: 2, llm: 100 },
-      igdbResults: {
-        pirates: [makeRaw(2, "A"), makeRaw(3, "B"), makeRaw(4, "C")],
-      },
-    });
-
-    const attempt = await discovery.discoverByQuery("pirates", 2, undefined, undefined, [], undefined, createDiscoveryRun());
-
-    expect(attempt.outcome).toBe("ok");
-    expect(attempt.newGames).toHaveLength(1);
-    expect(attempt.budgetExhausted).toBe(true);
   });
 
   it("reutiliza la lista de la misma query sin repetir la llamada IGDB", async () => {
@@ -190,7 +145,6 @@ describe("DiscoveryManager.discoverByQuery", () => {
     const { discovery, igdb, catalog } = makeSetup({
       cache,
       igdbResults: {},
-      limits: { igdb: 10, brave: 300, llm: 300 },
     });
 
     const runA = createDiscoveryRun();
@@ -251,7 +205,6 @@ describe("DiscoveryManager.discoverByQuery", () => {
     expect(exhausted).toEqual({
       outcome: "ok",
       newGames: [],
-      budgetExhausted: false,
       variantExhausted: true,
       enrichmentErrors: 0,
     });
@@ -554,7 +507,7 @@ describe("DiscoveryManager.discoverByName", () => {
   it("devuelve la ficha existente sin gastar enrichment", async () => {
     const catalog = new FakeCatalogLayer();
     catalog.seed([makeGame({ id: 7 })]);
-    const { discovery, enrichment, budget } = makeSetup({
+    const { discovery, enrichment } = makeSetup({
       catalog,
       igdbResults: { "Dark Souls III": [makeRaw(7, "Other Name")] },
     });
@@ -563,7 +516,6 @@ describe("DiscoveryManager.discoverByName", () => {
 
     expect(result).toEqual({ status: "found", game: catalog.get(7) });
     expect(enrichment.enrichCalls).toHaveLength(0);
-    expect(budget.remaining("brave")).toBe(100);
   });
 
   it("crea y enriquece la ficha cuando no existe", async () => {
@@ -594,21 +546,11 @@ describe("DiscoveryManager.discoverByName", () => {
   });
 
   it("devuelve not-found cuando IGDB no devuelve nada", async () => {
-    const { discovery, budget } = makeSetup({});
+    const { discovery } = makeSetup({});
 
     const result = await discovery.discoverByName("Nothing");
 
     expect(result.status).toBe("not-found");
-    expect(budget.remaining("igdb")).toBe(99);
-  });
-
-  it("devuelve budget-exhausted sin llamadas si no hay presupuesto IGDB", async () => {
-    const { discovery, igdb } = makeSetup({ limits: { igdb: 0 } });
-
-    const result = await discovery.discoverByName("Whatever");
-
-    expect(result.status).toBe("budget-exhausted");
-    expect(igdb.calls).toHaveLength(0);
   });
 });
 
@@ -798,14 +740,13 @@ describe("DiscoveryManager.reEnrich", () => {
 
   it("devuelve not-found cuando IGDB no encuentra el juego y consume la llamada", async () => {
     const game = makeGame({ id: 5, sourceId: "55", title: "Pirates!" });
-    const { discovery, budget } = makeSetup({
+    const { discovery } = makeSetup({
       igdbResults: { "Pirates!": [makeRaw(99, "Unrelated")] },
     });
 
     const result = await discovery.reEnrich(game);
 
     expect(result.status).toBe("not-found");
-    expect(budget.remaining("igdb")).toBe(99);
   });
 
   it("se salta cuando no hay updater disponible", async () => {
@@ -813,7 +754,6 @@ describe("DiscoveryManager.reEnrich", () => {
     const catalog = new FakeCatalogLayer();
     catalog.seed([game]);
     const igdb = new FakeIgdbClient({ "Pirates!": [makeRaw(55, "X")] });
-    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 10 });
     const discovery = new DiscoveryManager(
       igdb,
       {
@@ -824,14 +764,12 @@ describe("DiscoveryManager.reEnrich", () => {
       catalog,
       new InMemoryDiscoveryCacheRepository(),
       new InMemoryQueryOffsetStore(),
-      budget,
       RECOMMENDATION_CONFIG,
     );
 
     const result = await discovery.reEnrich(game);
 
     expect(result.status).toBe("skipped");
-    expect(budget.remaining("brave")).toBe(10);
   });
 });
 
@@ -902,7 +840,7 @@ describe("DiscoveryManager.discoverRelaxed", () => {
   });
 
   it("criba en cascada: lo que falla el must completo pasa al soltar themes", async () => {
-    const { discovery, catalog, igdb, budget } = makeSetup({
+    const { discovery, catalog, igdb } = makeSetup({
       filteredResults: [
         makeRaw(201, "Cowboy Action", {
           themes: [{ id: 1, name: "Action" }],
@@ -928,7 +866,6 @@ describe("DiscoveryManager.discoverRelaxed", () => {
     // (la rica no existe aquí: 1 raw < 2*8).
     expect(igdb.filteredCalls).toHaveLength(2);
     expect(catalog.createCalls).toBe(1);
-    expect(budget.remaining("igdb")).toBe(98);
   });
 
   it("sin red flags relajados: los excluidos nunca se crean", async () => {
@@ -971,21 +908,6 @@ describe("DiscoveryManager.discoverRelaxed", () => {
 
     expect(attempt.newGames).toHaveLength(0);
     expect(catalog.createCalls).toBe(0);
-  });
-
-  it("sin presupuesto IGDB no llama y marca budget-exhausted", async () => {
-    const { discovery, igdb } = makeSetup({ limits: { igdb: 0 } });
-
-    const attempt = await discovery.discoverRelaxed(
-      "cowboys",
-      8,
-      undefined,
-      COWBOYS_INTENT,
-    );
-
-    expect(attempt.outcome).toBe("budget-exhausted");
-    expect(attempt.budgetExhausted).toBe(true);
-    expect(igdb.filteredCalls).toHaveLength(0);
   });
 
   it("recicla la lista estricta y completa con amplia + where relajado", async () => {
@@ -1053,7 +975,6 @@ describe("DiscoveryManager.discoverRelaxed", () => {
     );
     const { discovery, igdb, run } = makeSetup({
       filteredResults: raws,
-      limits: { igdb: 10, brave: 300, llm: 300 },
     });
     const intent = makeIntent({ keywords: ["pirates"] });
 
@@ -1111,7 +1032,6 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     );
     const { discovery, igdb, queryOffsets } = makeSetup({
       filteredResults,
-      limits: { igdb: 10, brave: 1000, llm: 1000 },
     });
 
     const attempt = await discovery.discoverByQuery(
@@ -1136,7 +1056,6 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     );
     const { discovery, igdb, queryOffsets } = makeSetup({
       filteredResults,
-      limits: { igdb: 20, brave: 2000, llm: 2000 },
     });
 
     // Petición 1: promociona la primera página entera (el pool queda vacío).
@@ -1176,7 +1095,6 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     );
     const { discovery, igdb, queryOffsets } = makeSetup({
       filteredResults,
-      limits: { igdb: 20, brave: 2000, llm: 2000 },
     });
     const run = createDiscoveryRun();
 
@@ -1212,7 +1130,6 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     );
     const { discovery, queryOffsets } = makeSetup({
       filteredResults,
-      limits: { igdb: 10, brave: 1000, llm: 1000 },
     });
 
     const piratesRun = createDiscoveryRun();
@@ -1282,7 +1199,6 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     ];
     const { discovery, enrichment, catalog, igdb, queryOffsets } = makeSetup({
       filteredResults,
-      limits: { igdb: 20, brave: 5000, llm: 5000 },
     });
     const run = createDiscoveryRun();
 
@@ -1330,9 +1246,8 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
       { length: MAX_IGDB_LIST_RESULTS },
       (_, i) => makeRaw(900 + i, `Marooner ${i}`),
     );
-    const { discovery, igdb, budget, queryOffsets } = makeSetup({
+    const { discovery, igdb, queryOffsets } = makeSetup({
       filteredResults,
-      limits: { igdb: 30, brave: 5000, llm: 5000 },
     });
     const run = createDiscoveryRun();
 
@@ -1356,7 +1271,6 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
       expectedOffsets,
     );
     expect(await queryOffsets.getNextOffset(KEY)).toBe(MAX_IGDB_LIST_RESULTS);
-    expect(budget.remaining("igdb")).toBe(30 - pages);
 
     // La siguiente unidad en la misma ejecución: agotada, cero llamadas.
     const after = await discovery.discoverByQuery(
@@ -1371,7 +1285,6 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     expect(after.variantExhausted).toBe(true);
     expect(after.newGames).toHaveLength(0);
     expect(igdb.filteredCalls).toHaveLength(pages);
-    expect(budget.remaining("igdb")).toBe(30 - pages);
 
     // Y una petición NUEVA tampoco reproduce la llamada: el store ya marca
     // el techo y el arranque cross-request agota sin reservar.
@@ -1387,6 +1300,5 @@ describe("QueryOffsetStore (paginación cross-request)", () => {
     expect(newRequest.variantExhausted).toBe(true);
     expect(newRequest.newGames).toHaveLength(0);
     expect(igdb.filteredCalls).toHaveLength(pages);
-    expect(budget.remaining("igdb")).toBe(30 - pages);
   });
 });

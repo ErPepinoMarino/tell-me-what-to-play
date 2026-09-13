@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { randomBytes } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
-import { hashRefreshToken } from "../lib/refreshToken.js";
+import { hashRefreshToken, REFRESH_SESSION_TTL_MS } from "../lib/refreshToken.js";
 import { prismaSessionRepository } from "../repositories/prismaSessionRepository.js";
 import { prismaUserRepository } from "../repositories/prismaUserRepository.js";
 
@@ -33,7 +33,7 @@ export function createAuthService(
       };
     },
     async createAuthSession(userId: number) {
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + REFRESH_SESSION_TTL_MS);
 
       const existingSession = await sessionRepository.getByUserId(userId);
 
@@ -65,7 +65,7 @@ export function createAuthService(
         tokenHash,
         newRefreshToken.tokenHash,
         now,
-        new Date(now.getTime() + 24 * 60 * 60 * 1000),
+        new Date(now.getTime() + REFRESH_SESSION_TTL_MS),
       );
 
       if (result.status !== "rotated") {

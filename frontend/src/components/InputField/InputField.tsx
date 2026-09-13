@@ -38,8 +38,11 @@ export default function InputField({
   }
 
   return (
-    <section className="search-bar">
-      <form onSubmit={handleSubmit}>
+    <section className="flex flex-wrap items-center gap-2">
+      <form
+        onSubmit={handleSubmit}
+        className="flex min-w-0 flex-1 gap-2 max-[600px]:order-1 max-[600px]:[flex:1_1_100%]"
+      >
         <input
           type="text"
           value={value}
@@ -47,6 +50,7 @@ export default function InputField({
           placeholder="¿A qué te apetece jugar?"
           onChange={(event) => setValue(event.target.value)}
           aria-label="Tu petición"
+          className="min-w-0 flex-1 rounded-lg border border-[#444] bg-transparent px-[0.9rem] py-[0.6rem] text-inherit [font:inherit]"
         />
         <button
           type="submit"
@@ -63,7 +67,9 @@ export default function InputField({
         type="button"
         disabled={!canMore || busy}
         title="Más resultados con la misma intención"
-        className={`search-more${!canMore || busy ? "" : " border-glow-active"}`}
+        className={`shrink-0 max-[600px]:order-2 max-[600px]:[flex:1_1_100%]${
+          !canMore || busy ? "" : " border-glow-active"
+        }`}
         onClick={onMore}
       >
         Mostrar más juegos

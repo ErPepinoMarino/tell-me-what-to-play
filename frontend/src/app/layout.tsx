@@ -24,13 +24,7 @@ export default function RootLayout({
   return (
     <html lang="es" className={orbitron.variable}>
       <body>
-        <div className="bg-decor" aria-hidden="true">
-          <div className="bg-glow">
-            <span className="bg-circle bg-circle-1" />
-            <span className="bg-circle bg-circle-2" />
-            <span className="bg-circle bg-circle-3" />
-          </div>
-        </div>
+        <div className="bg-decor" aria-hidden="true" />
         {children}
       </body>
     </html>

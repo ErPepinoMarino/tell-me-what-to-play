@@ -1,5 +1,4 @@
 import { keywordStem } from "../matching/keywords.js";
-import type { BudgetLedger } from "../budget/budgetLedger.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 /*
@@ -336,8 +335,6 @@ export interface KeywordLexiconServiceDeps {
   // Carga del diccionario (tabla keyword_lexicon). Inyectable para tests.
   loader: () => Promise<LexiconRow[]>;
   embedder: Embedder;
-  // Opcional: sin presupuesto declarado, los embeddings caen al fallback.
-  budget?: BudgetLedger;
 }
 
 interface LoadedEntry {
@@ -426,27 +423,18 @@ export class KeywordLexiconService {
       result.push({ term, canonical: term, method: "unmapped" }); // placeholder
     }
 
-    if (needsVector.length > 0 && this.entries.length > 0) {
-      // Presupuesto: 1 llamada de embedding por canonicalize con vectores nuevos.
-      const budget = this.deps.budget;
-      const hasBudget = !budget || budget.tryReserve("embedding", 1);
-      if (hasBudget) {
-        try {
-          const vectors = await this.deps.embedder.embed(
-            needsVector.map((item) => item.term),
-          );
-          budget?.commit("embedding", 1);
-          needsVector.forEach((item, position) => {
-            const vector = vectors[position];
-            this.unknownVectors.set(item.term, vector);
-            result[item.index] = this.resolveByEmbedding(item.term, vector);
-          });
-        } catch {
-          // Fallback degradado: sin embeddings, literal+stem ya se aplicaron.
-          budget?.release("embedding", 1);
-          this.embedderDisabled = true;
-        }
-      } else {
+if (needsVector.length > 0 && this.entries.length > 0) {
+      try {
+        const vectors = await this.deps.embedder.embed(
+          needsVector.map((item) => item.term),
+        );
+        needsVector.forEach((item, position) => {
+          const vector = vectors[position];
+          this.unknownVectors.set(item.term, vector);
+          result[item.index] = this.resolveByEmbedding(item.term, vector);
+        });
+      } catch {
+        // Fallback degradado: sin embeddings, literal+stem ya se aplicaron.
         this.embedderDisabled = true;
       }
     }

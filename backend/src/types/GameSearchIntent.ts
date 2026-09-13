@@ -9,14 +9,20 @@ import {
 
 /*
  * Los Zod schemas se derivan de los enums de Prisma (fuente de verdad).
- * z.nativeEnum() acepta el const object generado por Prisma y preserva
- * los tipos literales para inferencia de TypeScript.
+ * z.enum() con Object.values() acepta el const object generado por Prisma
+ * y preserva los tipos literales para inferencia de TypeScript.
  */
-export const GenreSchema = z.nativeEnum(Genre);
-export const ThemeSchema = z.nativeEnum(Theme);
-export const PlatformSchema = z.nativeEnum(Platform);
-export const GameModeSchema = z.nativeEnum(GameMode);
-export const PerspectiveSchema = z.nativeEnum(Perspective);
+export const GenreSchema = z.enum(Object.values(Genre) as [Genre, ...Genre[]]);
+export const ThemeSchema = z.enum(Object.values(Theme) as [Theme, ...Theme[]]);
+export const PlatformSchema = z.enum(
+  Object.values(Platform) as [Platform, ...Platform[]]
+);
+export const GameModeSchema = z.enum(
+  Object.values(GameMode) as [GameMode, ...GameMode[]]
+);
+export const PerspectiveSchema = z.enum(
+  Object.values(Perspective) as [Perspective, ...Perspective[]]
+);
 
 const SemanticScore = z.number().min(0).max(1).nullable();
 
@@ -84,8 +90,6 @@ export const GameSearchIntentSchema = z.object({
   yearTo: z.number().int().nullable(),
   // Elementos excluidos explícitamente (red flags)
   excluded: ExcludedSchema.nullable(),
-  // Relación con la búsqueda anterior (si hay): refine, new o nonsensical.
-  relation: z.enum(["new", "refine", "nonsensical"]).nullable().default(null),
   // Dimensiones semánticas (0..1, null = no mencionado)
   semantic: SemanticSchema.nullable(),
 });
@@ -94,7 +98,7 @@ export type GameSearchIntent = z.infer<typeof GameSearchIntentSchema>;
 
 /*
  * ¿Que diferenci hay entre esto en GameSearchintent?
- * Que aqui no se incluye GameReferenced, ni relation, ni excluded. Solo lo que se puede añadir o quitar.
+ * Que aqui no se incluye GameReferenced, ni excluded. Solo lo que se puede añadir o quitar.
  */
 const RefineAddSchema = z.object({
   keywords: z.array(z.string()).nullable(),

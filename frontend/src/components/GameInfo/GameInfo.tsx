@@ -24,6 +24,14 @@ export default function GameInfo({ game, onAddToLibrary }: GameInfoProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Limpiar feedback y estado de carga al cambiar de juego seleccionado.
+  const [prevGame, setPrevGame] = useState(game);
+  if (prevGame !== game) {
+    setFeedback(null);
+    setBusy(false);
+    setPrevGame(game);
+  }
+
   if (!game) {
     // Sin ficha seleccionada no se renderiza nada.
     return null;
@@ -63,7 +71,7 @@ export default function GameInfo({ game, onAddToLibrary }: GameInfoProps) {
           <h3 className="game-info-heading">
             {game.title}
             {game.releaseYear ? (
-              <span className="muted"> ({game.releaseYear})</span>
+              <span className="text-muted"> ({game.releaseYear})</span>
             ) : null}
           </h3>
 
@@ -80,12 +88,12 @@ export default function GameInfo({ game, onAddToLibrary }: GameInfoProps) {
                 {busy ? "Añadiendo..." : "Añadir a la lista"}
               </button>
               {feedback ? (
-                <p className="muted game-info-feedback">{feedback}</p>
+                <p className="text-muted game-info-feedback">{feedback}</p>
               ) : null}
             </div>
           ) : (
             <div className="game-info-cta">
-              <p className="muted">
+              <p className="text-muted">
                 Inicia sesión para añadir este juego a tu biblioteca.
               </p>
               <button

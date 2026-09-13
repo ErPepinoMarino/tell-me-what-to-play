@@ -10,14 +10,13 @@ import {
   intentService,
   applyRefineDelta,
   classifyRelation,
-  createBudgetedIntentExtractor,
+  createIntentExtractor,
 } from "../../src/services/intentService.js";
 import { gameIntentAIModel, gameRelationAIModel } from "../../src/lib/ai.js";
 import type {
   GameSearchIntent,
   RefineDelta,
 } from "../../src/types/GameSearchIntent.js";
-import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import { makeIntent, NULL_SEMANTIC } from "../helpers/fakes.js";
 
 const fakeIntent: GameSearchIntent = {
@@ -28,7 +27,6 @@ const fakeIntent: GameSearchIntent = {
   yearFrom: null,
   yearTo: null,
   excluded: null,
-  relation: null,
   semantic: null,
 };
 //Puesto que basicamente devuelve lo que le pasamos ha poco que testear:
@@ -56,48 +54,8 @@ describe("intentService.extractIntent", () => {
       "model unavailable",
     );
   });
-});
 
-describe("createBudgetedIntentExtractor", () => {
-  it("returns the intent and commits 1 LLM call", async () => {
-    vi.mocked(gameIntentAIModel).mockReturnValue({
-      invoke: vi.fn().mockResolvedValue(fakeIntent),
-    } as never);
-    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 5 });
-    const extractor = createBudgetedIntentExtractor(budget);
-
-    const result = await extractor.extract("quiero un RPG de piratas");
-
-    expect(result).toEqual(fakeIntent);
-    expect(budget.remaining("llm")).toBe(4);
-  });
-
-  it("releases the reservation when the model fails", async () => {
-    vi.mocked(gameIntentAIModel).mockReturnValue({
-      invoke: vi.fn().mockRejectedValue(new Error("model down")),
-    } as never);
-    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 5 });
-    const extractor = createBudgetedIntentExtractor(budget);
-
-    await expect(extractor.extract("anything")).rejects.toThrow("model down");
-    expect(budget.remaining("llm")).toBe(5);
-  });
-
-  it("throws without calling the model when the LLM budget is dry", async () => {
-    const invoke = vi.fn();
-    vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
-    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 0 });
-    const extractor = createBudgetedIntentExtractor(budget);
-
-    await expect(extractor.extract("anything")).rejects.toThrow(
-      "LLM daily budget exhausted",
-    );
-    expect(invoke).not.toHaveBeenCalled();
-  });
-});
-
-describe("intentService fresh extraction", () => {
-  it("extraction is ALWAYS fresh: no session context in the system message", async () => {
+  it("envía el mensaje del usuario tal cual al modelo (sin contexto)", async () => {
     const invoke = vi.fn().mockResolvedValue(fakeIntent);
     vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
 
@@ -107,13 +65,137 @@ describe("intentService fresh extraction", () => {
       role: string;
       content: string;
     }[];
-    const system = messages.find((m) => m.role === "system");
-    // Reglas base del contrato presenteâ€¦
-    expect(system?.content).toContain("SEMANTIC attributes, NEVER keywords");
-    // Principio de género literal (vaqueros→cowboys, sin expansión).
-    expect(system?.content).toContain("Inclusive gender expansion is FORBIDDEN");
-    // â€¦y el contexto de sesiÃ³n vive en el clasificador/delta, no aquÃ­.
-    expect(system?.content).not.toContain("Conversation context");
+    expect(messages[0].role).toBe("system");
+    expect(messages[1].role).toBe("user");
+    expect(messages[1].content).toBe("un RPG de piratas");
+  });
+
+  it("extractIntent acepta únicamente el mensaje (aridad 1)", () => {
+    expect(intentService.extractIntent.length).toBe(1);
+  });
+});
+
+describe("createIntentExtractor", () => {
+  it("delegates extract to intentService", async () => {
+    vi.mocked(gameIntentAIModel).mockReturnValue({
+      invoke: vi.fn().mockResolvedValue(fakeIntent),
+    } as never);
+    const extractor = createIntentExtractor();
+
+    const result = await extractor.extract("quiero un RPG de piratas");
+
+    expect(result).toEqual(fakeIntent);
+  });
+
+  it("propaga los errores del modelo", async () => {
+    vi.mocked(gameIntentAIModel).mockReturnValue({
+      invoke: vi.fn().mockRejectedValue(new Error("model down")),
+    } as never);
+    const extractor = createIntentExtractor();
+
+    await expect(extractor.extract("anything")).rejects.toThrow("model down");
+  });
+});
+
+/*
+ * Contrato de classifyRelation: formatea el contexto (con/sin intent previo),
+ * pasa el mensaje al modelo y devuelve la relación del modelo. El modelo está
+ * mockeado (sin llamadas reales): la relación esperada es la que devuelve el
+ * mock; aquí se verifica el contrato del servicio.
+ */
+describe("classifyRelation", () => {
+  const previous = makeIntent({
+    objective: {
+      genres: ["ROLE_PLAYING_RPG"],
+      themes: null,
+      platforms: ["SWITCH"],
+      gameModes: null,
+      perspectives: null,
+    },
+  });
+
+  function mockRelation(relation: "new" | "refine" | "nonsensical") {
+    const invoke = vi.fn().mockResolvedValue({ relation });
+    vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
+    return invoke;
+  }
+
+  function messagesOf(invoke: ReturnType<typeof vi.fn>) {
+    return invoke.mock.calls[0][0] as { role: string; content: string }[];
+  }
+
+  it('sin intención previa → "new"', async () => {
+    const invoke = mockRelation("new");
+
+    const relation = await classifyRelation("Quiero un RPG para Switch");
+
+    expect(relation).toBe("new");
+    const messages = messagesOf(invoke);
+    expect(messages[0].role).toBe("system");
+    expect(messages[1].content).toContain("No previous search context");
+    expect(messages[1].content).toContain("Quiero un RPG para Switch");
+  });
+
+  it('con intención previa y ajuste → "refine"', async () => {
+    const invoke = mockRelation("refine");
+
+    const relation = await classifyRelation("que sea más tranquilo", previous);
+
+    expect(relation).toBe("refine");
+    const messages = messagesOf(invoke);
+    expect(messages[1].content).toContain("Previous search intent");
+    expect(messages[1].content).toContain(JSON.stringify(previous));
+    expect(messages[1].content).toContain("que sea más tranquilo");
+  });
+
+  it('con intención previa y tema distinto → "new"', async () => {
+    const invoke = mockRelation("new");
+
+    const relation = await classifyRelation(
+      "mejor busca juegos de terror",
+      previous,
+    );
+
+    expect(relation).toBe("new");
+    const messages = messagesOf(invoke);
+    expect(messages[1].content).toContain("Previous search intent");
+    expect(messages[1].content).toContain("mejor busca juegos de terror");
+  });
+
+  it('con intención previa y mensaje sin sentido → "nonsensical"', async () => {
+    const invoke = mockRelation("nonsensical");
+
+    const relation = await classifyRelation("asdf qwerty 123", previous);
+
+    expect(relation).toBe("nonsensical");
+    const messages = messagesOf(invoke);
+    expect(messages[1].content).toContain("Previous search intent");
+    expect(messages[1].content).toContain("asdf qwerty 123");
+  });
+
+  it('con intención previa y criterio añadido → "refine"', async () => {
+    const invoke = mockRelation("refine");
+
+    const relation = await classifyRelation(
+      "y que tenga buena historia",
+      previous,
+    );
+
+    expect(relation).toBe("refine");
+    const messages = messagesOf(invoke);
+    expect(messages[1].content).toContain("Previous search intent");
+    expect(messages[1].content).toContain("y que tenga buena historia");
+  });
+
+  it('sin intención previa y mensaje sin sentido → "nonsensical"', async () => {
+    const invoke = mockRelation("nonsensical");
+
+    const relation = await classifyRelation("asdf qwerty 123");
+
+    expect(relation).toBe("nonsensical");
+    const messages = messagesOf(invoke);
+    expect(messages[1].content).toContain("No previous search context");
+    expect(messages[1].content).toContain("asdf qwerty 123");
   });
 });
 
@@ -132,7 +214,6 @@ describe("applyRefineDelta", () => {
     yearFrom: null,
     yearTo: null,
     excluded: null,
-    relation: null,
     semantic: null,
   };
 
@@ -168,11 +249,10 @@ describe("applyRefineDelta", () => {
     ...overrides,
   });
 
-  it("delta vacÃ­o = intent previo intacto (relation refine)", () => {
+  it("delta vacÃ­o = intent previo intacto", () => {
     const out = applyRefineDelta(PREVIOUS, delta());
     expect(out.keywords).toEqual(["pirates"]);
     expect(out.objective?.genres).toEqual(["ROLE_PLAYING_RPG"]);
-    expect(out.relation).toBe("refine");
   });
 
   it("add keywords: uniÃ³n sin duplicados y conserva lo previo", () => {
@@ -322,7 +402,6 @@ describe("applyRefineDelta", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     };
     const out = applyRefineDelta(
@@ -345,57 +424,132 @@ describe("applyRefineDelta", () => {
   });
 });
 
+/*
+ * Casos representativos de Prompt 1.
+ *
+ * AVISO: con el modelo mockeado NO se puede observar la interpretación REAL
+ * del LLM — el mock devuelve exactamente lo que se le pasa. Estos tests fijan
+ * el CONTRATO determinista del extractor:
+ *   1. el mensaje en lenguaje natural llega literal al modelo;
+ *   2. la salida estructurada se devuelve sin transformar;
+ *   3. el system prompt (Prompt 1) contiene las reglas que gobiernan la
+ *      interpretación (no inferencia, inglés canónico).
+ * La validación semántica (¿devuelve "farming"? ¿añade KIDS?) exige una
+ * ejecución real contra el modelo, fuera del alcance determinista.
+ */
+const PROMPT1_CASES = [
+  "¿algún juego de gestión muy tranquilo tipo granja?",
+  "Quiero un juego de granjas muy relajado.",
+  "Busco un juego de gestión tranquilo.",
+  "Quiero algo cozy donde pueda cultivar y gestionar una granja.",
+];
 
-describe("classifyRelation", () => {
-  it("devuelve la relaciÃ³n que decide el modelo", async () => {
-    const invoke = vi.fn().mockResolvedValue({ relation: "refine" });
-    vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
+function captureMessages(invoke: ReturnType<typeof vi.fn>) {
+  return invoke.mock.calls[0][0] as { role: string; content: string }[];
+}
 
-    const relation = await classifyRelation(
-      "mÃ¡s violento",
-      makeIntent({ keywords: ["violence"] }),
+describe("Prompt 1 — contrato de interpretación (modelo mockeado)", () => {
+  for (const [index, message] of PROMPT1_CASES.entries()) {
+    it(`caso ${index + 1}: envía el mensaje literal al modelo`, async () => {
+      const invoke = vi.fn().mockResolvedValue(fakeIntent);
+      vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
+
+      await intentService.extractIntent(message);
+
+      const messages = captureMessages(invoke);
+      expect(messages[0].role).toBe("system");
+      expect(messages[1].role).toBe("user");
+      expect(messages[1].content).toContain(message);
+    });
+  }
+
+  it("devuelve la salida estructurada del modelo sin transformarla", async () => {
+    // Sonda de plumbing con valores sintéticos A PROPÓSITO: comprueba que el
+    // extractor no reinterpreta ni reescribe keywords/objective/semantic.
+    // NO representa una interpretación esperada de ningún caso.
+    const structured = makeIntent({
+      keywords: ["sentinel-a", "sentinel-b"],
+      objective: {
+        genres: ["SIMULATOR"],
+        themes: null,
+        platforms: null,
+        gameModes: null,
+        perspectives: null,
+      },
+      semantic: { ...NULL_SEMANTIC, coziness: 0.9 },
+    });
+    const invoke = vi.fn().mockResolvedValue(structured);
+    vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
+
+    const result = await intentService.extractIntent(PROMPT1_CASES[0]);
+
+    // Identidad: la salida no se transforma en el camino.
+    expect(result).toBe(structured);
+  });
+
+  it("el system prompt prohíbe inferir KIDS/COMEDY/OPEN_WORLD y exige inglés canónico", async () => {
+    const invoke = vi.fn().mockResolvedValue(fakeIntent);
+    vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
+
+    await intentService.extractIntent(PROMPT1_CASES[0]);
+    const system =
+      captureMessages(invoke).find((m) => m.role === "system")?.content ?? "";
+
+    // No inferencia no solicitada (farming ≠ KIDS/BUSINESS/COMEDY; open-world ≠ SANDBOX).
+    expect(system).toContain("farming does not imply KIDS");
+    expect(system).toContain(
+      "a request for farming does not automatically mean KIDS, BUSINESS or COMEDY",
     );
-
-    expect(relation).toBe("refine");
-    const messages = invoke.mock.calls[0][0] as { role: string; content: string }[];
-    expect(messages[0].role).toBe("system");
-    expect(messages[1].content).toContain("Previous search intent");
-    expect(messages[1].content).toContain("mÃ¡s violento");
-  });
-
-  it("el prompt ordena 'solo X' como búsqueda nueva aunque el tema coincida", async () => {
-    const invoke = vi.fn().mockResolvedValue({ relation: "new" });
-    vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
-
-    await classifyRelation(
-      "solo juegos de cowboys",
-      makeIntent({ keywords: ["cowboys"] }),
+    expect(system).toContain("open-world does not imply SANDBOX");
+    // Inglés canónico ANTES del léxico/embeddings.
+    expect(system).toContain(
+      "The canonical English representation must be produced BEFORE the intent reaches the lexicon and embedding system",
     );
-
-    const messages = invoke.mock.calls[0][0] as { role: string; content: string }[];
-    const system = messages.find((m) => m.role === "system")?.content ?? "";
-    expect(system).toContain("solo");
-    expect(system).toContain("ALWAYS means");
   });
 
-  it("el extractor con presupuesto clasifica y gasta 1 llamada LLM", async () => {
-    const invoke = vi.fn().mockResolvedValue({ relation: "new" });
-    vi.mocked(gameRelationAIModel).mockReturnValue({ invoke } as never);
-    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 5 });
-    const extractor = createBudgetedIntentExtractor(budget);
+  it("el system prompt fija el contrato de keywords y no depende de relation/previousIntent", async () => {
+    const invoke = vi.fn().mockResolvedValue(fakeIntent);
+    vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
 
-    const relation = await extractor.classifyRelation!("futbol", makeIntent());
+    await intentService.extractIntent(PROMPT1_CASES[0]);
+    const system =
+      captureMessages(invoke).find((m) => m.role === "system")?.content ?? "";
 
-    expect(relation).toBe("new");
-    expect(budget.remaining("llm")).toBe(4);
+    // roguelite -> keywords; no existe campo secondaryTags.
+    expect(system).toContain('return "roguelite" in keywords');
+    expect(system).toContain("Do not invent a secondaryTags field");
+    expect(system).toContain(
+      'There is no separate "secondary tags" field in the schema',
+    );
+    expect(system).not.toContain("return ROGUELITE");
+    expect(system).not.toContain("Secondary tags represent");
+
+    // Ya no hay responsabilidad de relation/refine/nonsensical/previousIntent.
+    expect(system).not.toContain("relation");
+    expect(system).not.toContain("refine");
+    expect(system).not.toContain("nonsensical");
+    expect(system).not.toContain("previous intent");
+    expect(system).not.toContain("Previous search intent");
   });
 
-  it("sin presupuesto de LLM asume bÃºsqueda nueva (no bloquea la bÃºsqueda fresca)", async () => {
-    const budget = new InMemoryBudgetLedger({ igdb: 10, brave: 10, llm: 0 });
-    const extractor = createBudgetedIntentExtractor(budget);
+  it("la salida cumple las invariantes de forma del schema", async () => {
+    const structured = makeIntent({
+      keywords: ["sentinel-a", "sentinel-b"],
+      semantic: { ...NULL_SEMANTIC, coziness: 0.9, pace: 0.2 },
+    });
+    const invoke = vi.fn().mockResolvedValue(structured);
+    vi.mocked(gameIntentAIModel).mockReturnValue({ invoke } as never);
 
-    const relation = await extractor.classifyRelation!("mÃ¡s violento", makeIntent());
+    const result = await intentService.extractIntent(PROMPT1_CASES[3]);
 
-    expect(relation).toBe("new");
+    for (const keyword of result.keywords ?? []) {
+      expect(keyword).toBe(keyword.toLowerCase());
+    }
+    for (const value of Object.values(result.semantic ?? {})) {
+      if (value !== null) {
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });

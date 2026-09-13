@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { createAuthService } from "../services/authService.js";
+import { REFRESH_SESSION_TTL_SECONDS } from "../lib/refreshToken.js";
 import { prismaSessionRepository } from "../repositories/prismaSessionRepository.js";
 import { prismaUserRepository } from "../repositories/prismaUserRepository.js";
 import crypto from "node:crypto";
@@ -42,10 +43,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     if (cookieToken !== undefined) {
       reply.setCookie("refresh_token", result.refreshToken, {
         httpOnly: true,
-        secure: false, // true cuando usemos HTTPS
+        secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/api/auth",
-        maxAge: 60 * 60,
+        maxAge: REFRESH_SESSION_TTL_SECONDS,
       });
 
       return {
@@ -161,10 +162,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
         reply.setCookie("refresh_token", result.refreshToken, {
           httpOnly: true,
-          secure: false, // true con HTTPS
+          secure: process.env.NODE_ENV === "production",
           sameSite: "lax",
           path: "/api/auth",
-          maxAge: 60 * 60,
+          maxAge: REFRESH_SESSION_TTL_SECONDS,
         });
 
         /*

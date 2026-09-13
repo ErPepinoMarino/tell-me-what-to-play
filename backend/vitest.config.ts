@@ -31,6 +31,7 @@ export default defineConfig({
             "tests/lib/**/*.test.ts",
             "tests/services/**/*.test.ts",
             "tests/data/**/*.test.ts",
+            "tests/igdb/**/*.test.ts",
           ],
         },
       },

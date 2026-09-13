@@ -7,15 +7,15 @@ import PanelTitle from "@/components/PanelTitle";
  */
 export default function Footer() {
   return (
-    <footer className="app-footer">
-      <div className="app-footer-info">
+    <footer className="grid grid-cols-2 items-center gap-6 text-[0.85rem] text-muted max-[700px]:grid-cols-1">
+      <div className="flex flex-col gap-1">
         <PanelTitle primary="TMWTP" secondary="Studio" />
         <p>
           Tell Me What To Play — recomendaciones de videojuegos guiadas por IA.
           Datos de catálogo vía IGDB.
         </p>
       </div>
-      <div className="app-footer-session">
+      <div className="flex justify-end max-[700px]:justify-start">
         <Login />
       </div>
     </footer>

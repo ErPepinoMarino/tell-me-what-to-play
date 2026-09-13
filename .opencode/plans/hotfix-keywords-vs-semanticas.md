@@ -60,4 +60,4 @@ Diseño acordado con el usuario (su propuesta, refinada):
 - **Fallback** a matching literal si el servicio de embeddings no responde.
 - **Almacenamiento**: tabla/JSON + cosine en memoria (sin pgvector en V1).
 - **Backfill** de asimilación sobre keywords existentes del catálogo.
-- Cuenta como competencia "Embeddings" del módulo IA (ESTADO_CURSO).
+

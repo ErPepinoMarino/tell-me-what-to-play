@@ -40,9 +40,9 @@ export default function RecommendationResults({
     <section className="recommendation-results">
       {" "}
       {results.length === 0 ? (
-        <p className="muted">Sin resultados de calidad todavía...</p>
+        <p className="text-muted">Sin resultados de calidad todavía...</p>
       ) : (
-        <div className="results-grid">
+        <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2 min-[900px]:grid-cols-3">
           {results.map((item) => (
             <RecommendationCard
               key={item.game.id}

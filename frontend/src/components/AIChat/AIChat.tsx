@@ -54,22 +54,29 @@ export default function AIChat({
 
   return (
     <section
-      className={`chat${status === "searching" ? " searching" : ""}`}
+      className={`chat relative min-h-32 ${
+        status === "searching" ? "searching" : ""
+      }`}
       aria-live="polite"
     >
-      <div className="chat-transcript" ref={transcriptRef}>
+      <div
+        className="max-h-[420px] overflow-y-auto scroll-smooth pr-1"
+        ref={transcriptRef}
+      >
         {transcript.map((message, index) => (
           <div
             key={index}
             className={
-              message.role === "user" ? "bubble-user" : "bubble-assistant"
+              message.role === "user"
+                ? "my-2 ml-auto max-w-[85%] rounded-[10px] bg-accent-purple px-4 py-3 leading-[1.45] text-white"
+                : "my-2 max-w-[85%] rounded-[10px] bg-[#262626] px-4 py-3 leading-[1.45]"
             }
           >
             {message.text}
             {message.role === "assistant" &&
             index === transcript.length - 1 &&
             summary.length > 0 ? (
-              <p className="intent-summary">
+              <p className="mt-2 text-[0.85rem] text-[#a5b4fc]">
                 He entendido:{" "}
                 {summary.map((chip, chipIndex) => (
                   <span
@@ -85,13 +92,13 @@ export default function AIChat({
         ))}
 
         {status === "searching" ? (
-          <div className="bubble-assistant bubble-searching">
+          <div className="bubble-searching my-2 max-w-[85%] rounded-[10px] bg-[#262626] px-4 py-3 leading-[1.45]">
             Buscando resultados...
           </div>
         ) : null}
 
         {shownNotices.map((notice) => (
-          <p key={notice} className="notice">
+          <p key={notice} className="py-1 text-[0.9rem] text-[#fbbf24]">
             {notice === "RELAXED_FILTERS"
               ? relaxedFiltersMessage(relaxedFilters)
               : NOTICE_MESSAGES[notice]}

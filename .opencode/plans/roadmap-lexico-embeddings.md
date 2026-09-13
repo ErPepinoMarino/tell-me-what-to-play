@@ -1,7 +1,6 @@
 # HOJA DE RUTA — Léxico de keywords con embeddings
 
 Diccionario canónico minado → supervisado → migración de la BD → integración en caliente.
-(Tras esta ronda: competencia "Embeddings" del módulo IA, ESTADO_CURSO.)
 
 ## Principio de diseño (acordado)
 
@@ -115,7 +114,6 @@ hasta tu aprobación del diccionario.
   fallback, presupuesto.
 - Integration: tabla `keyword_lexicon` (migración Prisma + CRUD).
 - E2E: búsqueda "juego de infectados" → matchea fichas etiquetadas "zombies".
-- `ESTADO_CURSO.json`: marcar competencia **Embeddings** al cerrar.
 - Política documentada en los headers de los scripts.
 
 ## Orden y tamaño estimado
@@ -127,7 +125,7 @@ hasta tu aprobación del diccionario.
 | 2 | Golden set + umbral | corta |
 | 3 | Migración BD + informe + borrado script | 1 sesión |
 | 4 | Servicio + 3 puntos de integración + fallback | 1 sesión |
-| 5 | Tests e2e + cierre + ESTADO_CURSO | corta |
+| 5 | Tests e2e + cierre | corta |
 
 ## Riesgos y mitigaciones
 

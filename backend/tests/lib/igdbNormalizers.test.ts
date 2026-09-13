@@ -191,7 +191,6 @@ describe("redirectKeywordsToEnumFields", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     });
     expect(out.objective?.themes).toEqual(["HORROR"]);
@@ -207,7 +206,6 @@ describe("redirectKeywordsToEnumFields", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     });
     expect(out.objective?.genres).toEqual(["ROLE_PLAYING_RPG"]);
@@ -227,7 +225,6 @@ describe("redirectKeywordsToEnumFields", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     });
     expect(out.keywords).toEqual(["steampunk", "pirates"]);
@@ -243,7 +240,6 @@ describe("redirectKeywordsToEnumFields", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     });
     expect(out.objective?.themes).toEqual(["HORROR"]);
@@ -259,7 +255,6 @@ describe("redirectKeywordsToEnumFields", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     };
     expect(redirectKeywordsToEnumFields(intent)).toBe(intent);
@@ -274,7 +269,6 @@ describe("redirectKeywordsToEnumFields", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     });
     expect(out.keywords).toEqual(["sport fishing"]);

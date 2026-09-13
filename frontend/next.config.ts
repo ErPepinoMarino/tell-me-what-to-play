@@ -3,8 +3,9 @@ import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // El repo raíz tiene su propio package-lock (monorepo del curso):
-  // fijamos la raíz de Turbopack a esta app para silenciar el warning.
+  // La raíz del monorepo tiene su propio package-lock (backend y frontend
+  // son aplicaciones independientes): fijamos la raíz de Turbopack a esta
+  // app para silenciar el warning.
   turbopack: {
     root: path.dirname(fileURLToPath(import.meta.url)),
   },

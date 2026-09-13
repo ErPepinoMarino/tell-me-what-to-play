@@ -1,12 +1,6 @@
 import { concludeGameToPersist, mapToCandidate } from "../igdb/mappers.js";
 import { shouldSkipNonIndependentGame } from "../igdb/gameType.js";
-import {
-  genreIgbNames,
-  platformIgbNames,
-  perspectiveIgbNames,
-  themeIgbId,
-} from "../igdb/normalizers.js";
-import type { IgdbClient, FilteredSearchOptions, IgdbGameRaw } from "../igdb/types.js";
+import type { IgdbClient, IgdbGameRaw } from "../igdb/types.js";
 import type { Candidate, Game } from "../types/Game.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 import type { EnrichmentEditable } from "../types/GameEnrichment.js";
@@ -19,36 +13,23 @@ import type {
   EnrichmentUpdater,
 } from "../services/enrichmentService.js";
 import { mergeKeywords } from "../services/enrichmentService.js";
-import type { BudgetLedger } from "../budget/budgetLedger.js";
 import {
   RECOMMENDATION_CONFIG,
   type RecommendationConfig,
 } from "../recommendation/constants.js";
 import { SEMANTIC_FIELDS } from "../matching/constants.js";
 import { withTimeout } from "../lib/withTimeout.js";
-import { createTrace, type Trace } from "../lib/logger.js";
+import { createTrace } from "../lib/logger.js";
 import type { CatalogLayer, ReEnrichPatch } from "./types.js";
 import type { DiscoveryCacheRepository } from "./discoveryCache.js";
 import type { QueryOffsetStore } from "./queryOffsetStore.js";
+import { DiscoveryQueryBuilder } from "./discoveryQueryBuilder.js";
 
-export type DiscoveryAttemptOutcome = "ok" | "budget-exhausted" | "error";
-
-// Enum TMWTP -> nombre IGDB de game_mode (resolución por nombre en el
-// cliente). COMPETITIVE no existe en IGDB -> null (cae con trace).
-const GAME_MODE_IGB_NAMES: Record<string, string | null> = {
-  SINGLE_PLAYER: "Single player",
-  MULTIPLAYER: "Multiplayer",
-  COOPERATIVE: "Co-operative",
-  COMPETITIVE: null,
-  MASSIVELY_MULTIPLAYER: "Massively Multiplayer Online (MMO)",
-  UNKNOWN: null,
-};
+export type DiscoveryAttemptOutcome = "ok" | "error";
 
 export interface DiscoveryAttempt {
   outcome: DiscoveryAttemptOutcome;
   newGames: Game[];
-  // La unidad se cortó por presupuesto tras haber empezado bien
-  budgetExhausted: boolean;
   // La query no tiene más candidatos sin procesar: el orquestador puede
   // avanzar a la siguiente variante sin contar unidad ni gastar.
   variantExhausted: boolean;
@@ -68,14 +49,12 @@ export type DiscoveryProgress = (
 export type AnchorDiscoveryResult =
   | { status: "found"; game: Game }
   | { status: "not-found" }
-  | { status: "budget-exhausted" }
   | { status: "error" };
 
 export type ReEnrichResult =
   | { status: "updated"; game: Game }
   | { status: "not-found" }
   | { status: "skipped" }
-  | { status: "budget-exhausted" }
   | { status: "error" };
 
 /*
@@ -199,7 +178,6 @@ export interface RelaxedAttempt {
   relaxedIntent: GameSearchIntent;
   // Grupos soltados hasta crear el ÚLTIMO juego (orden de soltado).
   droppedGroups: RelaxGroup[];
-  budgetExhausted: boolean;
   enrichmentErrors: number;
 }
 
@@ -289,7 +267,6 @@ export class DiscoveryManager {
     // una búsqueda que reaparece en otra petición sin candidatos. Estado
     // separado del pool: aquí cero contenido, solo posición.
     private queryOffsets: QueryOffsetStore,
-    private budget: BudgetLedger,
     private config: RecommendationConfig = RECOMMENDATION_CONFIG,
     // Opcional (FASE 4): canonicalización + resolución canónico → id IGDB
     // contra el diccionario local (el descubrimiento NO consulta /v4/keywords).
@@ -297,7 +274,12 @@ export class DiscoveryManager {
       canonicalizeTerms(terms: string[]): Promise<string[]>;
       resolveIds(terms: string[]): Promise<Map<string, number | null>>;
     },
-  ) {}
+  ) {
+    this.queryBuilder = new DiscoveryQueryBuilder(igdb, config, lexicon);
+  }
+
+  // Construcción y ejecución de la búsqueda IGDB (filteredSearch/broadSearch).
+  private readonly queryBuilder: DiscoveryQueryBuilder;
 
   /*
    * Términos de la query que actúa como pista de contexto (pre-filtro y
@@ -319,90 +301,6 @@ export class DiscoveryManager {
         ? [normalizedQuery, ...queryWords]
         : [];
     return mintSearchKeywords(terms);
-  }
-
-  // Canónicos → IDs numéricos de IGDB desde el léxico local (keyword_lexicon.
-  // igdb_id). Sin léxico (tests) no hay IDs locales → sin filtro de keywords
-  // en el where de IGDB.
-  private async resolveKeywordIds(terms: string[]): Promise<number[]> {
-    if (terms.length === 0) return [];
-    if (!this.lexicon) return [];
-    const ids = await this.lexicon.resolveIds(terms);
-    return terms
-      .map((term) => ids.get(term.trim().toLowerCase()))
-      .filter((id): id is number => id !== null && id !== undefined);
-  }
-
-  /*
-   * Descubrimiento FILTRADO: la consulta a IGDB pasa a `where` por atributos
-   * combinando TODA la información del intent — keywords (IDs del léxico),
-   * themes (mapa fijo), géneros/plataformas/modos/perspectivas (por nombre) y
-   * años (exacto + rangos), y NEGANDO los red flags — ordenada por valoración
-   * de la comunidad. Sin intent, text-search como antes.
-   */
-  private async filteredSearch(
-    intent: GameSearchIntent,
-    trace?: Trace | null,
-    offset = 0,
-  ): Promise<IgdbGameRaw[]> {
-    const keywordIds = await this.resolveKeywordIds(intent.keywords ?? []);
-    const themeIds = (intent.objective?.themes ?? [])
-      .map((theme) => themeIgbId(theme))
-      .filter((id): id is number => id !== null);
-    const excludeKeywordIds = await this.resolveKeywordIds(
-      intent.excluded?.keywords ?? [],
-    );
-    const excludeThemeIds = (intent.excluded?.themes ?? [])
-      .map((theme) => themeIgbId(theme))
-      .filter((id): id is number => id !== null);
-
-    const options: FilteredSearchOptions = {
-      keywordIds,
-      genreIgbNames: (intent.objective?.genres ?? [])
-        .filter((genre) => genre !== "UNKNOWN")
-        .flatMap((genre) => genreIgbNames(genre)),
-      themeIds,
-      perspectiveIgbNames: (intent.objective?.perspectives ?? [])
-        .filter((perspective) => perspective !== "UNKNOWN")
-        .flatMap((perspective) => perspectiveIgbNames(perspective)),
-      gameModeIgbNames: (intent.objective?.gameModes ?? [])
-        .filter((mode) => mode !== "UNKNOWN")
-        .map((mode) => GAME_MODE_IGB_NAMES[mode])
-        .filter((name): name is string => name !== null),
-      platformIgbNames: (intent.objective?.platforms ?? [])
-        .filter((platform) => platform !== "UNKNOWN")
-        .flatMap((platform) => platformIgbNames(platform)),
-      releaseYear: intent.releaseYear ?? undefined,
-      yearFrom: intent.yearFrom ?? undefined,
-      yearTo: intent.yearTo ?? undefined,
-      excludeKeywordIds,
-      excludeThemeIds,
-      excludeGenreIgbNames: (intent.excluded?.genres ?? [])
-        .filter((genre) => genre !== "UNKNOWN")
-        .flatMap((genre) => genreIgbNames(genre)),
-      excludePlatformIgbNames: (intent.excluded?.platforms ?? [])
-        .filter((platform) => platform !== "UNKNOWN")
-        .flatMap((platform) => platformIgbNames(platform)),
-      excludePerspectiveIgbNames: (intent.excluded?.perspectives ?? [])
-        .filter((perspective) => perspective !== "UNKNOWN")
-        .flatMap((perspective) => perspectiveIgbNames(perspective)),
-      limit: this.config.igdbSearchLimit,
-      // Offset solo en páginas >0: la primera página no cambia.
-      ...(offset > 0 ? { offset } : {}),
-      /*
-       * Visibilidad de los drops de taxonomía: un término que no resuelve a
-       * ID de IGDB se deja fuera del where — nunca en silencio (decisión
-       * tras el bug del género ACTION, que caía sin traza).
-       */
-      onFilterDropped: (details) => {
-        trace?.("taxonomy-unresolved", details);
-      },
-    };
-
-    // LOG: ver qué opciones se pasan a IGDB
-    console.log(`[DISCOVERY-FILTERED] genres=${JSON.stringify(options.genreIgbNames)} themes=${JSON.stringify(options.themeIds)} keywords=${JSON.stringify(options.keywordIds)} platforms=${JSON.stringify(options.platformIgbNames)} perspectives=${JSON.stringify(options.perspectiveIgbNames)} gameModes=${JSON.stringify(options.gameModeIgbNames)} year=${options.releaseYear ?? `${options.yearFrom}-${options.yearTo}`}`);
-
-    return this.igdb.filteredSearch(options);
   }
 
   /*
@@ -447,14 +345,12 @@ export class DiscoveryManager {
       const canPage =
         intent !== undefined &&
         run.raws.length >= run.limit &&
-        nextOffset < MAX_IGDB_LIST_RESULTS &&
-        this.budget.tryReserve("igdb", 1);
+        nextOffset < MAX_IGDB_LIST_RESULTS;
       if (!canPage) {
         trace?.("igdb-list-exhausted", { query, offset: nextOffset });
         return {
           outcome: "ok",
           newGames: [],
-          budgetExhausted: false,
           variantExhausted: true,
           enrichmentErrors: 0,
         };
@@ -462,27 +358,23 @@ export class DiscoveryManager {
       let page: IgdbGameRaw[];
       try {
         page = await withTimeout(
-          this.filteredSearch(intent, trace, nextOffset),
+          this.queryBuilder.filteredSearch(intent, trace, nextOffset),
           this.config.unitTimeoutMs,
           "IGDB search",
         );
       } catch {
-        this.budget.release("igdb", 1);
         return {
           outcome: "error",
           newGames: [],
-          budgetExhausted: false,
           variantExhausted: false,
           enrichmentErrors: 0,
         };
       }
-      this.budget.commit("igdb", 1);
       if (page.length === 0) {
         trace?.("igdb-list-exhausted", { query, offset: nextOffset });
         return {
           outcome: "ok",
           newGames: [],
-          budgetExhausted: false,
           variantExhausted: true,
           enrichmentErrors: 0,
         };
@@ -563,23 +455,13 @@ export class DiscoveryManager {
           ? await this.queryOffsets.getNextOffset(queryKey)
           : 0;
         if (intent && nextOffset >= MAX_IGDB_LIST_RESULTS) {
-          // Límite alcanzado en peticiones anteriores: agotado sin reservar
-          // ni gastar — no se insiste en un nicho ya barrido.
+          // Límite alcanzado en peticiones anteriores: agotado sin insistir
+          // en un nicho ya barrido.
           trace?.("igdb-list-exhausted", { query, offset: nextOffset });
           return {
             outcome: "ok",
             newGames: [],
-            budgetExhausted: false,
             variantExhausted: true,
-            enrichmentErrors: 0,
-          };
-        }
-        if (!this.budget.tryReserve("igdb", 1)) {
-          return {
-            outcome: "budget-exhausted",
-            newGames: [],
-            budgetExhausted: true,
-            variantExhausted: false,
             enrichmentErrors: 0,
           };
         }
@@ -588,7 +470,7 @@ export class DiscoveryManager {
         try {
           raws = await withTimeout(
             intent
-              ? this.filteredSearch(intent, trace, nextOffset)
+              ? this.queryBuilder.filteredSearch(intent, trace, nextOffset)
               : this.igdb.searchGames(
                   query,
                   this.config.igdbSearchLimit,
@@ -597,16 +479,13 @@ export class DiscoveryManager {
             "IGDB search",
           );
         } catch {
-          this.budget.release("igdb", 1);
           return {
             outcome: "error",
             newGames: [],
-            budgetExhausted: false,
             variantExhausted: false,
             enrichmentErrors: 0,
           };
         }
-        this.budget.commit("igdb", 1);
         if (raws.length > 0) {
           await this.cache.addMany(raws);
           if (intent) {
@@ -659,7 +538,6 @@ export class DiscoveryManager {
     }
 
     const newGames: Game[] = [];
-    let budgetExhausted = false;
     let enrichmentErrors = 0;
 
     while (run.cursor < run.raws.length && newGames.length < maxNew) {
@@ -706,32 +584,24 @@ export class DiscoveryManager {
         continue;
       }
 
-      if (!this.reserveEnrichmentBudget()) {
-        // La ficha no se procesó: vuelve a la lista para la siguiente unidad.
-        run.cursor--;
-        budgetExhausted = true;
-        break;
-      }
-
-        try {
-          const result = await withTimeout(
-            this.enrichment.enrich(candidate),
-            this.config.unitTimeoutMs,
-            "enrichment",
-          );
-          this.commitEnrichmentBudget();
-          // La ficha se concluye SOLO con lo que el campo editable expone;
-          // las keywords salen intactas del candidate (vocabulario IGDB).
-          const enriched = concludeGameToPersist(candidate, result.editable);
-          /*
-           * NOTA de diseño: la ficha enriquecida se ALMACENA SIEMPRE que
-           * aporta valor (enrichmentAddsValue) aunque falle los gates
-           * semánticos de ESTE intent — el coste del enrichment ya está
-           * hundido y la ficha con semánticas reales es un activo para
-           * búsquedas futuras. Los gates deciden qué se MUESTRA (el re-rank
-           * con el pool actualizado la excluye de esta respuesta), no qué
-           * se guarda.
-           */
+      try {
+        const result = await withTimeout(
+          this.enrichment.enrich(candidate),
+          this.config.unitTimeoutMs,
+          "enrichment",
+        );
+        // La ficha se concluye SOLO con lo que el campo editable expone;
+        // las keywords salen intactas del candidate (vocabulario IGDB).
+        const enriched = concludeGameToPersist(candidate, result.editable);
+        /*
+         * NOTA de diseño: la ficha enriquecida se ALMACENA SIEMPRE que
+         * aporta valor (enrichmentAddsValue) aunque falle los gates
+         * semánticos de ESTE intent — el coste del enrichment ya está
+         * hundido y la ficha con semánticas reales es un activo para
+         * búsquedas futuras. Los gates deciden qué se MUESTRA (el re-rank
+         * con el pool actualizado la excluye de esta respuesta), no qué
+         * se guarda.
+         */
         /*
          * Garantía de calidad del catálogo: si el enrichment no aporta
          * NINGUNA semántica conocida NI keywords adicionales, la ficha es
@@ -752,28 +622,25 @@ export class DiscoveryManager {
         onProgress?.([...newGames], intent);
       } catch (error) {
         // El intento pudo haber consumido llamadas de Brave a mitad: se
-        // contabilizan igual (pesimista) y se sigue con el siguiente raw.
-        // Trazable: sin esto, un 402 de Brave fallaba en silencio.
+        // sigue con el siguiente raw. Trazable: sin esto, un 402 de Brave
+        // fallaba en silencio.
         trace?.("enrichment-error", {
           slug: candidate.slug,
           query,
           error: error instanceof Error ? error.message : String(error),
         });
         enrichmentErrors++;
-        this.commitEnrichmentBudget();
       }
     }
 
     trace?.("discovery-attempt", {
       query,
       created: newGames.map((game) => game.slug),
-      budgetExhausted,
     });
 
     return {
       outcome: "ok",
       newGames,
-      budgetExhausted,
       variantExhausted: run.cursor >= run.raws.length,
       enrichmentErrors,
     };
@@ -801,7 +668,6 @@ export class DiscoveryManager {
       newGames: [],
       relaxedIntent: intent,
       droppedGroups: [],
-      budgetExhausted: false,
       enrichmentErrors: 0,
     };
     if (maxNew <= 0) return empty;
@@ -819,8 +685,7 @@ export class DiscoveryManager {
     //  3. where relajado en el primer grupo con señal (trae lo que el
     //     estricto excluye por un filtro de más).
     // Un fallo de fase no tumba el rescate: se sigue con lo reunido (la
-    // criba honesta dirá si basta). Sin ninguna llamada por presupuesto,
-    // budget-exhausted como antes.
+    // criba honesta dirá si basta).
     const allRaws: IgdbGameRaw[] = [];
     const seenRawIds = new Set<number>();
     const collectUnique = (list: IgdbGameRaw[]): void => {
@@ -848,28 +713,19 @@ export class DiscoveryManager {
     // la criba tiene de dónde elegir ni compensan más llamadas. Una lista
     // rica (21 para 8 huecos) no gasta de más.
     const needRaws = maxNew * 2;
-    let fetchedAny = false;
-    let fetchBlockedByBudget = false;
 
     if (allRaws.length < needRaws) {
-      if (this.budget.tryReserve("igdb", 1)) {
-        try {
-          const broad = await withTimeout(
-            this.broadSearch(query, intent, trace),
-            this.config.unitTimeoutMs,
-            "IGDB broad search",
-          );
-          this.budget.commit("igdb", 1);
-          fetchedAny = true;
-          trace?.("igdb-broad", { query, results: broad.length });
-          collectUnique(broad);
-          await this.cache.addMany(broad);
-        } catch {
-          this.budget.release("igdb", 1);
-          trace?.("igdb-phase-error", { phase: "broad", query });
-        }
-      } else {
-        fetchBlockedByBudget = true;
+      try {
+        const broad = await withTimeout(
+          this.queryBuilder.broadSearch(query, intent, trace),
+          this.config.unitTimeoutMs,
+          "IGDB broad search",
+        );
+        trace?.("igdb-broad", { query, results: broad.length });
+        collectUnique(broad);
+        await this.cache.addMany(broad);
+      } catch {
+        trace?.("igdb-phase-error", { phase: "broad", query });
       }
     }
 
@@ -877,34 +733,24 @@ export class DiscoveryManager {
       relaxGroupHasSignal(intent, group),
     );
     if (firstGroup && allRaws.length < needRaws) {
-      if (this.budget.tryReserve("igdb", 1)) {
-        try {
-          const relaxed = await withTimeout(
-            this.filteredSearch(dropRelaxGroup(intent, firstGroup), trace),
-            this.config.unitTimeoutMs,
-            "IGDB relaxed search",
-          );
-          this.budget.commit("igdb", 1);
-          fetchedAny = true;
-          trace?.("igdb-relaxed-where", {
-            query,
-            droppedGroup: firstGroup,
-            results: relaxed.length,
-          });
-          collectUnique(relaxed);
-          await this.cache.addMany(relaxed);
-        } catch {
-          this.budget.release("igdb", 1);
-          trace?.("igdb-phase-error", { phase: "relaxed-where", query });
-        }
-      } else {
-        fetchBlockedByBudget = true;
+      try {
+        const relaxed = await withTimeout(
+          this.queryBuilder.filteredSearch(dropRelaxGroup(intent, firstGroup), trace),
+          this.config.unitTimeoutMs,
+          "IGDB relaxed search",
+        );
+        trace?.("igdb-relaxed-where", {
+          query,
+          droppedGroup: firstGroup,
+          results: relaxed.length,
+        });
+        collectUnique(relaxed);
+        await this.cache.addMany(relaxed);
+      } catch {
+        trace?.("igdb-phase-error", { phase: "relaxed-where", query });
       }
     }
 
-    if (allRaws.length === 0 && fetchBlockedByBudget && !fetchedAny) {
-      return { ...empty, outcome: "budget-exhausted", budgetExhausted: true };
-    }
     const raws = allRaws;
 
     // Pistas de la query + gates baratos, una sola vez para todas las pasadas.
@@ -922,7 +768,6 @@ export class DiscoveryManager {
     let relaxed = intent;
     let lastCreationPass = -1;
     let effectiveRelaxed = intent;
-    let budgetExhausted = false;
     let enrichmentErrors = 0;
 
     // Pasada 0 = must completo; pasada N suelta RELAX_ORDER[N-1].
@@ -958,14 +803,10 @@ export class DiscoveryManager {
           });
           continue;
         }
-        if (await this.existsInCatalog(candidate.sourceId, candidate.slug)) {
+if (await this.existsInCatalog(candidate.sourceId, candidate.slug)) {
           seen.add(candidate.slug);
           await this.cache.remove(candidate.sourceId);
           continue;
-        }
-        if (!this.reserveEnrichmentBudget()) {
-          budgetExhausted = true;
-          break;
         }
         try {
           const result = await withTimeout(
@@ -973,10 +814,9 @@ export class DiscoveryManager {
             this.config.unitTimeoutMs,
             "enrichment",
           );
-          this.commitEnrichmentBudget();
           const enriched = concludeGameToPersist(candidate, result.editable);
           if (!enrichmentAddsValue(result.editable, result.additionalKeywords)) {
-seen.add(candidate.slug);
+            seen.add(candidate.slug);
             continue;
           }
           newGames.push(await this.catalog.createIgdb(enriched));
@@ -993,11 +833,9 @@ seen.add(candidate.slug);
             error: error instanceof Error ? error.message : String(error),
           });
           enrichmentErrors++;
-          this.commitEnrichmentBudget();
         }
         seen.add(candidate.slug);
       }
-      if (budgetExhausted) break;
     }
 
     // Grupos efectivamente soltados: solo hasta la pasada donde se creó el
@@ -1008,7 +846,6 @@ seen.add(candidate.slug);
       query,
       created: newGames.map((game) => game.slug),
       droppedGroups: effectiveDropped,
-      budgetExhausted,
     });
 
     return {
@@ -1016,55 +853,8 @@ seen.add(candidate.slug);
       newGames,
       relaxedIntent: effectiveRelaxed,
       droppedGroups: effectiveDropped,
-      budgetExhausted,
       enrichmentErrors,
     };
-  }
-
-  /*
-   * Llamada AMPLIA (último recurso, sin caché útil): coincide CUALQUIERA,
-   * solo filtra lo prohibido (red flags). Texto = PRIMER keyword (un solo
-   * término: la búsqueda por texto de IGDB con frases multi-término
-   * devuelve vacío). Sin atributos en el `where`: la exigencia la pone
-   * la criba local, no IGDB.
-   */
-  private async broadSearch(
-    query: string,
-    intent: GameSearchIntent,
-    trace?: Trace | null,
-  ): Promise<IgdbGameRaw[]> {
-    const firstKeyword = (intent.keywords ?? [])
-      .map((k) => k.trim())
-      .find((k) => k.length > 0);
-    const text =
-      firstKeyword ?? (query.trim().length > 0 ? query.trim() : undefined);
-    const excludeKeywordIds = await this.resolveKeywordIds(
-      intent.excluded?.keywords ?? [],
-    );
-    const excludeThemeIds = (intent.excluded?.themes ?? [])
-      .map((theme) => themeIgbId(theme))
-      .filter((id): id is number => id !== null);
-
-    const options: FilteredSearchOptions = {
-      text,
-      excludeKeywordIds,
-      excludeThemeIds,
-      excludeGenreIgbNames: (intent.excluded?.genres ?? [])
-        .filter((genre) => genre !== "UNKNOWN")
-        .flatMap((genre) => genreIgbNames(genre)),
-      excludePlatformIgbNames: (intent.excluded?.platforms ?? [])
-        .filter((platform) => platform !== "UNKNOWN")
-        .flatMap((platform) => platformIgbNames(platform)),
-      excludePerspectiveIgbNames: (intent.excluded?.perspectives ?? [])
-        .filter((perspective) => perspective !== "UNKNOWN")
-        .flatMap((perspective) => perspectiveIgbNames(perspective)),
-      limit: this.config.igdbBroadSearchLimit,
-      onFilterDropped: (details) => {
-        trace?.("taxonomy-unresolved", details);
-      },
-    };
-
-    return this.igdb.filteredSearch(options);
   }
 
   /*
@@ -1087,9 +877,6 @@ seen.add(candidate.slug);
     traceId?: string,
   ): Promise<AnchorDiscoveryResult> {
     const trace = traceId ? createTrace(traceId) : null;
-    if (!this.budget.tryReserve("igdb", 1)) {
-      return { status: "budget-exhausted" };
-    }
 
     let raws: IgdbGameRaw[];
     try {
@@ -1099,10 +886,8 @@ seen.add(candidate.slug);
         "IGDB anchor search",
       );
     } catch {
-      this.budget.release("igdb", 1);
       return { status: "error" };
     }
-    this.budget.commit("igdb", 1);
     trace?.("anchor-search", { title, results: raws.length });
 
     const raw = raws.find((r) => !shouldSkipNonIndependentGame(r));
@@ -1117,24 +902,18 @@ seen.add(candidate.slug);
       return { status: "found", game: existing };
     }
 
-    if (!this.reserveEnrichmentBudget()) {
-      return { status: "budget-exhausted" };
-    }
-
     try {
       const { editable } = await withTimeout(
         this.enrichment.enrich(candidate),
         this.config.unitTimeoutMs,
         "anchor enrichment",
       );
-      this.commitEnrichmentBudget();
       const created = await this.catalog.createIgdb(
         concludeGameToPersist(candidate, editable),
       );
       trace?.("anchor-created", { slug: created.slug });
       return { status: "found", game: created };
     } catch (error) {
-      this.commitEnrichmentBudget();
       trace?.("enrichment-error", {
         slug: candidate.slug,
         step: "anchor-enrichment",
@@ -1158,10 +937,6 @@ seen.add(candidate.slug);
     const trace = traceId ? createTrace(traceId) : null;
     const adoptObjective = game.sourceId === null;
 
-    if (!this.budget.tryReserve("igdb", 1)) {
-      return { status: "budget-exhausted" };
-    }
-
     let raws: IgdbGameRaw[];
     try {
       raws = await withTimeout(
@@ -1170,10 +945,8 @@ seen.add(candidate.slug);
         "IGDB re-enrich search",
       );
     } catch {
-      this.budget.release("igdb", 1);
       return { status: "error" };
     }
-    this.budget.commit("igdb", 1);
 
     // Clave de comparación de títulos: minúsculas sin puntuación y con
     // numerales romanos a dígitos — IGDB usa apóstrofes tipográficos
@@ -1217,10 +990,6 @@ seen.add(candidate.slug);
     const updater = this.enrichment.enrichForUpdate;
     if (!updater) return { status: "skipped" };
 
-    if (!this.reserveEnrichmentBudget()) {
-      return { status: "budget-exhausted" };
-    }
-
     try {
       const candidate = mapToCandidate(raw);
       const enrichment = await withTimeout(
@@ -1228,7 +997,6 @@ seen.add(candidate.slug);
         this.config.unitTimeoutMs,
         "re-enrichment",
       );
-      this.commitEnrichmentBudget();
 
       /*
        * PATCH sin keywords (ReEnrichPatch.keywords?: never): el re-enrichment
@@ -1275,7 +1043,6 @@ seen.add(candidate.slug);
       });
       return { status: "updated", game: updatedGame };
     } catch (error) {
-      this.commitEnrichmentBudget();
       trace?.("enrichment-error", {
         slug: game.slug,
         step: "re-enrichment",
@@ -1293,29 +1060,6 @@ seen.add(candidate.slug);
       (await this.catalog.getBySourceId(sourceId)) !== undefined ||
       (await this.catalog.getBySlug(slug)) !== undefined
     );
-  }
-
-  // Reserva atómica del coste de un enrich: si falla alguna de las dos
-  // partes, se libera lo reservado para no bloquear saldo ajeno.
-  private reserveEnrichmentBudget(): boolean {
-    const braveReserved = this.budget.tryReserve(
-      "brave",
-      this.config.braveQueriesPerEnrichment,
-    );
-    if (!braveReserved) return false;
-
-    const llmReserved = this.budget.tryReserve("llm", 1);
-    if (!llmReserved) {
-      this.budget.release("brave", this.config.braveQueriesPerEnrichment);
-      return false;
-    }
-
-    return true;
-  }
-
-  private commitEnrichmentBudget(): void {
-    this.budget.commit("brave", this.config.braveQueriesPerEnrichment);
-    this.budget.commit("llm", 1);
   }
 }
 

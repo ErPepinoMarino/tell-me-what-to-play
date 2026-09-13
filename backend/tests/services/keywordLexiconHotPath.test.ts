@@ -3,7 +3,6 @@ import {
   createKeywordLexiconService,
   type LexiconRow,
 } from "../../src/services/keywordLexiconService.js";
-import type { BudgetLedger } from "../../src/budget/budgetLedger.js";
 import type { GameSearchIntent } from "../../src/types/GameSearchIntent.js";
 
 /*
@@ -40,20 +39,11 @@ const LEXICON_ROWS: LexiconRow[] = [
 
 const loader = async (): Promise<LexiconRow[]> => LEXICON_ROWS;
 
-function makeBudget(remaining: number): BudgetLedger {
-  return {
-    remaining: (service) => (service === "embedding" ? remaining : 999),
-    tryReserve: (service, cost) => (service === "embedding" ? remaining >= cost : true),
-    commit: () => {},
-    release: () => {},
-  };
-}
-
 describe("KeywordLexiconService.canonicalize", () => {
   it("literal: el canónico se queda tal cual sin gastar embeddings", async () => {
     const embedder = fakeEmbedder({ zombies: 0 });
     const embed = vi.spyOn(embedder, "embed");
-    const service = createKeywordLexiconService({ loader, embedder, budget: makeBudget(10) });
+    const service = createKeywordLexiconService({ loader, embedder });
 
     const result = await service.canonicalize(["zombies"]);
 
@@ -67,7 +57,6 @@ describe("KeywordLexiconService.canonicalize", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({}),
-      budget: makeBudget(10),
     });
 
     const result = await service.canonicalize(["infected"]);
@@ -81,7 +70,6 @@ describe("KeywordLexiconService.canonicalize", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({ zombis: 0.15 }),
-      budget: makeBudget(10),
     });
 
     const result = await service.canonicalize(["zombis"]);
@@ -102,7 +90,6 @@ describe("KeywordLexiconService.canonicalize", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({ painting: Math.PI }),
-      budget: makeBudget(10),
     });
 
     const result = await service.canonicalize(["painting"]);
@@ -125,25 +112,12 @@ describe("KeywordLexiconService.canonicalize", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({}, true),
-      budget: makeBudget(10),
     });
 
     const result = await service.canonicalize(["infected", "painting"]);
 
     expect(result.map((item) => item.canonical)).toEqual(["zombies", "painting"]);
     expect(result.every((item) => item.method !== "embedding")).toBe(true);
-  });
-
-  it("fallback: sin presupuesto de embedding degrada a literal+stem", async () => {
-    const service = createKeywordLexiconService({
-      loader,
-      embedder: fakeEmbedder({}),
-      budget: makeBudget(0),
-    });
-
-    const result = await service.canonicalize(["painting"]);
-
-    expect(result[0].method).toBe("unmapped");
   });
 });
 
@@ -183,7 +157,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({}),
-      budget: makeBudget(10),
     });
 
     const intent: GameSearchIntent = {
@@ -193,7 +166,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
       releaseYear: null,
       yearFrom: null,
       yearTo: null,
-      relation: null,
       excluded: {
         keywords: ["undead"],
         genres: null,
@@ -220,7 +192,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({ gardening: Math.PI }),
-      budget: makeBudget(10),
     });
 
     const intent: GameSearchIntent = {
@@ -231,7 +202,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     };
 
@@ -247,7 +217,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({ zombies: 0, undead: 0.3, and: Math.PI }),
-      budget: makeBudget(10),
     });
 
     // "undead" es alias del léxico (embedding) y "and" es irrelevante.
@@ -259,7 +228,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     };
 
@@ -273,7 +241,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
     const service = createKeywordLexiconService({
       loader,
       embedder: fakeEmbedder({}),
-      budget: makeBudget(10),
     });
 
     const intent: GameSearchIntent = {
@@ -284,7 +251,6 @@ describe("KeywordLexiconService.canonicalizeIntent", () => {
       yearFrom: null,
       yearTo: null,
       excluded: null,
-      relation: null,
       semantic: null,
     };
 

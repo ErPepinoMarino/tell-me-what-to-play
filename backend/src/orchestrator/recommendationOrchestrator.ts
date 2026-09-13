@@ -69,6 +69,11 @@ export interface OrchestrationOutcome {
 }
 
 interface IntentResolution {
+  /*
+   * Relación decidida por classifyRelation (autoridad única). Para "more" no
+   * hay clasificador: se marca "new" (continuación explícita del cliente).
+   */
+  relation: "new" | "refine" | "nonsensical";
   intent: GameSearchIntent;
   /*
    * El cliente es el dueño del ciclo de vida conversacional: con "reset" el
@@ -97,7 +102,7 @@ interface IntentResolution {
 }
 
 type StopReason =
-  "budget" | "error" | "no-query" | "catalog-full" | "games-cap" | "deadline";
+  "error" | "no-query" | "catalog-full" | "games-cap" | "deadline";
 
 export class RecommendationOrchestrator {
   constructor(
@@ -178,7 +183,7 @@ export class RecommendationOrchestrator {
       yearFrom: base.intent.yearFrom,
       yearTo: base.intent.yearTo,
       excluded: base.intent.excluded,
-      relation: base.intent.relation ?? null,
+      relation: base.relation,
       semantic: base.intent.semantic,
     });
     // Streaming: el intent viaja en cuanto se resuelve (chips inmediatos).
@@ -189,7 +194,7 @@ export class RecommendationOrchestrator {
      * relación con buscar videojuegos. Se rechaza sin gastar en descubrimiento
      * ni explicación, aplicable a anon y logueado por igual.
      */
-    if (base.intent.relation === "nonsensical") {
+    if (base.relation === "nonsensical") {
       notices.add("SENSELESS_INPUT");
       const response = {
         results: [],
@@ -220,7 +225,7 @@ export class RecommendationOrchestrator {
      * cliente): el refinamiento es feature de sesión → CTA de login, sin
      * gastar descubrimiento ni explicación.
      */
-    if (request.actor.kind === "anon" && base.intent.relation === "refine") {
+    if (request.actor.kind === "anon" && base.relation === "refine") {
       notices.add("REFINE_REQUIRES_LOGIN");
       const response = {
         results: [],
@@ -295,11 +300,6 @@ export class RecommendationOrchestrator {
     });
     for (const name of unresolved) {
       const result = await this.deps.discovery.discoverByName(name, traceId);
-      if (result.status === "budget-exhausted") {
-        notices.add("DISCOVERY_BUDGET_EXHAUSTED");
-        notices.add("ANCHOR_NOT_FOUND");
-        break;
-      }
       if (result.status === "error") {
         notices.add("DISCOVERY_UNAVAILABLE");
         notices.add("ANCHOR_NOT_FOUND");
@@ -465,13 +465,6 @@ export class RecommendationOrchestrator {
             ),
           discoveryRun,
         );
-        if (attempt.outcome === "budget-exhausted") {
-          // Un intento bloqueado por presupuesto no consume nada: no cuenta
-          // como unidad ni como llamada.
-          notices.add("DISCOVERY_BUDGET_EXHAUSTED");
-          stopReason = "budget";
-          break;
-        }
         if (attempt.outcome === "error") {
           notices.add("DISCOVERY_UNAVAILABLE");
           stopReason = "error";
@@ -505,12 +498,6 @@ export class RecommendationOrchestrator {
           validSoFar: countValid(ranked, this.config),
           variantExhausted: attempt.variantExhausted,
         });
-        if (attempt.budgetExhausted) {
-          // El presupuesto de enriquecimiento se secó a mitad: más
-          // intentos fallarían igual, paramos esta petición.
-          notices.add("DISCOVERY_BUDGET_EXHAUSTED");
-          stopReason = "budget";
-        }
       }
 
       if (countValid(ranked, this.config) >= slots) stopReason = undefined;
@@ -555,10 +542,7 @@ export class RecommendationOrchestrator {
           ),
       );
       fillEnrichmentErrors += rescue.enrichmentErrors;
-      if (rescue.outcome === "budget-exhausted") {
-        notices.add("DISCOVERY_BUDGET_EXHAUSTED");
-        stopReason = "budget";
-      } else if (rescue.outcome === "error") {
+      if (rescue.outcome === "error") {
         notices.add("DISCOVERY_UNAVAILABLE");
         stopReason = "error";
       } else if (rescue.newGames.length > 0) {
@@ -681,6 +665,7 @@ export class RecommendationOrchestrator {
       const context = request.contextIntent;
       if (!context || isEmptyIntent(context)) {
         return {
+          relation: "new",
           intent: { ...EMPTY_INTENT },
           lifecycle: "continue",
           shownGameIds,
@@ -688,6 +673,7 @@ export class RecommendationOrchestrator {
         };
       }
       return {
+        relation: "new",
         intent: context,
         lifecycle: "continue",
         shownGameIds,
@@ -697,14 +683,14 @@ export class RecommendationOrchestrator {
 
     /*
      * search: el contexto previo es el contextIntent del cliente para TODOS
-     * los actores (el servidor ya no guarda sesión). Se clasifica SIEMPRE:
-     * el clasificador decide entre refine, new y nonsensical — el nonsensical
-     * se devuelve temprano para rechazarlo sin gastar en descubrimiento ni
+     * los actores (el servidor ya no guarda sesión). El clasificador de
+     * relación es la autoridad: new, refine o nonsensical. El nonsensical se
+     * devuelve temprano para rechazarlo sin gastar en descubrimiento ni
      * explicación.
      */
     const previousIntent = request.contextIntent ?? undefined;
 
-    const relation = await this.classifyRelationStep(
+    const relation = await this.deps.intents.classifyRelation(
       request.message,
       previousIntent,
     );
@@ -722,7 +708,8 @@ export class RecommendationOrchestrator {
 
     if (relation === "nonsensical") {
       return {
-        intent: { ...EMPTY_INTENT, relation: "nonsensical" },
+        relation: "nonsensical",
+        intent: { ...EMPTY_INTENT },
         lifecycle: "continue",
         shownGameIds,
         excludeShown: false,
@@ -733,7 +720,8 @@ export class RecommendationOrchestrator {
       if (request.actor.kind === "anon") {
         // El gate de refine vive en handle(): aquí solo dejamos la señal.
         return {
-          intent: { ...(previousIntent ?? EMPTY_INTENT), relation: "refine" },
+          relation: "refine",
+          intent: { ...(previousIntent ?? EMPTY_INTENT) },
           lifecycle: "continue",
           shownGameIds,
           excludeShown: false,
@@ -765,6 +753,7 @@ export class RecommendationOrchestrator {
       const excludeShown =
         isDeltaEmpty(sanitizedDelta) || isSameIntent(intent, previousIntent!);
       return {
+        relation: "refine",
         intent,
         lifecycle: "continue",
         shownGameIds,
@@ -778,10 +767,10 @@ export class RecommendationOrchestrator {
     }
 
     /*
-     * "new": extracción fresca, el intent previo es irrelevante. Si la
-     * extracción queda vacía y el cliente traía contexto, se hereda
-     * (INTENT_UNCHANGED): el mensaje no aportó señal nueva y el hilo de
-     * búsqueda no cambia → lifecycle "continue" (no se resetean mostrados).
+     * "new": se extrae la intención del mensaje actual. Si la extracción queda
+     * vacía y el cliente traía contexto, se hereda (INTENT_UNCHANGED): el
+     * mensaje no aportó señal nueva y el hilo de búsqueda no cambia →
+     * lifecycle "continue" (no se resetean mostrados).
      */
     const extracted = await this.extractWithRetry(request.message);
     let intent = extracted;
@@ -793,29 +782,12 @@ export class RecommendationOrchestrator {
     }
 
     return {
+      relation: "new",
       intent,
       lifecycle: unchanged ? "continue" : "reset",
       shownGameIds,
       excludeShown: false,
     };
-  }
-
-  /*
-   * Clasificación refine-vs-new-vs-nonsensical. Usa el paso dedicado
-   * (classifyRelation) cuando el extractor lo provee; sin clasificador se
-   * asume búsqueda nueva (fakes/tests): el refinamiento es el caso que exige
-   * el clasificador. El previousIntent es opcional: sin contexto, el
-   * clasificador decide entre new y nonsensical.
-   */
-  private async classifyRelationStep(
-    message: string,
-    previousIntent?: GameSearchIntent,
-  ): Promise<"new" | "refine" | "nonsensical"> {
-    const classifier = this.deps.intents.classifyRelation;
-    if (classifier) {
-      return classifier(message, previousIntent);
-    }
-    return "new";
   }
 
   private async extractDeltaWithRetry(
@@ -889,7 +861,6 @@ export class RecommendationOrchestrator {
       for (const game of incomplete) {
         if (units >= this.config.organicUnitsPerRequest) return;
         const result = await this.deps.discovery.reEnrich(game, traceId);
-        if (result.status === "budget-exhausted") return;
         if (result.status !== "skipped") units++;
       }
 
@@ -1019,7 +990,6 @@ const EMPTY_INTENT: GameSearchIntent = {
   yearFrom: null,
   yearTo: null,
   excluded: null,
-  relation: null,
   semantic: null,
 };
 
@@ -1054,9 +1024,9 @@ function isEmptyIntent(intent: GameSearchIntent): boolean {
 }
 
 /*
- * ¿El refine es un no-op? Dos intents son el mismo si coinciden en todo
- * menos en `relation`: listas como conjuntos (orden-insensible, null ≡ []),
- * años y semánticas valor a valor (undefined ≡ null).
+ * ¿El refine es un no-op? Dos intents son el mismo si coinciden en todo:
+ * listas como conjuntos (orden-insensible, null ≡ []), años y semánticas
+ * valor a valor (undefined ≡ null).
  */
 export function isSameIntent(
   a: GameSearchIntent,

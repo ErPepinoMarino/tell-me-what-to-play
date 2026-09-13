@@ -24,7 +24,6 @@ const intent: GameSearchIntent = {
   yearFrom: null,
   yearTo: null,
   excluded: null,
-  relation: null,
   semantic: null,
 };
 
@@ -233,7 +232,7 @@ describe("recommendationTurnsReducer", () => {
     expect(base.shownGameIds).toEqual([1, 2, 3]);
   });
 
-  it("done sin resultados conserva contexto: sin intent nuevo ni reset de mostrados", () => {
+  it("done sin resultados conserva contexto y añade la explicación del assistant", () => {
     const prior: TurnState = {
       ...initialTurnState(),
       status: "searching",
@@ -249,8 +248,25 @@ describe("recommendationTurnsReducer", () => {
 
     expect(state.shownGameIds).toEqual([7, 8]);
     expect(state.intent).toEqual(intent);
-    expect(state.transcript).toEqual([{ role: "user", text: "x" }]);
+    expect(state.transcript).toEqual([
+      { role: "user", text: "x" },
+      { role: "assistant", text: "vacio" },
+    ]);
     expect(state.status).toBe("ready");
+  });
+
+  it("done sin resultados y sin explicación → no añade mensaje del assistant", () => {
+    const prior: TurnState = {
+      ...initialTurnState(),
+      status: "searching",
+      transcript: [{ role: "user", text: "x" }],
+    };
+    const state = recommendationTurnsReducer(prior, {
+      type: "DONE",
+      response: response({ results: [], explanation: "" }),
+    });
+
+    expect(state.transcript).toEqual([{ role: "user", text: "x" }]);
   });
 
   it("lifecycle reset sin resultados no limpia los mostrados", () => {

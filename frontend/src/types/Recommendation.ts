@@ -110,8 +110,6 @@ export interface GameSearchIntent {
     yearFrom: number | null;
     yearTo: number | null;
   } | null;
-  // Relación con la intención previa (solo con contexto): refine | new | nonsensical | null
-  relation: "new" | "refine" | "nonsensical" | null;
   semantic: Partial<Record<string, number | null>> | null;
 }
 

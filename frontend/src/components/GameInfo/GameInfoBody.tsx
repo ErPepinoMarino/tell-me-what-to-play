@@ -19,9 +19,12 @@ function chipGroup(label: string, values: string[], labels?: Record<string, stri
   return (
     <div className="game-info-row">
       <strong className="game-info-inline-label">{label}:</strong>
-      <ul className="reason-chips">
+      <ul className="m-0 mt-1 flex list-none flex-wrap justify-center gap-[0.35rem] p-0">
         {values.map((value) => (
-          <li key={value} className="reason-chip">
+          <li
+            key={value}
+            className="rounded-full border border-[#3f3f46] px-2 py-[0.2rem] text-[0.78rem]"
+          >
             {labels ? (labels[value] ?? value) : value}
           </li>
         ))}
@@ -58,10 +61,10 @@ export default function GameInfoBody({ game }: { game: Game }) {
       <div className="game-info-flow">
         <p className="game-info-description">{description}</p>
         {game.developers.length > 0 ? (
-          <p className="muted">Desarrollado por {game.developers.join(", ")}.</p>
+          <p className="text-muted">Desarrollado por {game.developers.join(", ")}.</p>
         ) : null}
         {game.publishers.length > 0 ? (
-          <p className="muted">Publicado por {game.publishers.join(", ")}.</p>
+          <p className="text-muted">Publicado por {game.publishers.join(", ")}.</p>
         ) : null}
 
         {filled.map((group) => chipGroup(group.label, group.values, group.labels))}
@@ -70,9 +73,12 @@ export default function GameInfoBody({ game }: { game: Game }) {
       {game.keywords.length > 0 ? (
         <div className="game-info-keywords">
           <span className="game-info-label">Temas / Keywords</span>
-          <ul className="reason-chips">
+          <ul className="m-0 mt-1 flex list-none flex-wrap justify-center gap-[0.35rem] p-0">
             {game.keywords.map((keyword) => (
-              <li key={keyword} className="reason-chip">
+              <li
+                key={keyword}
+                className="rounded-full border border-[#3f3f46] px-2 py-[0.2rem] text-[0.78rem]"
+              >
                 {keyword}
               </li>
             ))}

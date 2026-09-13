@@ -79,6 +79,7 @@ export function recommendationTurnsReducer(
     case "DONE": {
       const response = action.response;
       const hasResults = response.results.length > 0;
+      const hasExplanation = response.explanation.length > 0;
       const thisTurnShown = thisTurnShownIds(response);
       // El status lo decide STREAM_SETTLED (el hook, tras resolver el
       // transporte), igual que el código original decide tras el await.
@@ -88,7 +89,9 @@ export function recommendationTurnsReducer(
         requestedGames: response.requestedGames,
         meta: response.meta,
         notices: response.notices,
-        transcript: hasResults
+        // La burbuja del assistant depende de la explicación, no de que haya
+        // resultados: una búsqueda válida sin juegos también debe explicarse.
+        transcript: hasExplanation
           ? [
               ...state.transcript,
               { role: "assistant", text: response.explanation },

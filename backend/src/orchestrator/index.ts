@@ -1,10 +1,9 @@
 import { createIgdbClient } from "../igdb/index.js";
 import { createEnrichmentService } from "../services/enrichmentService.js";
-import { createBudgetedIntentExtractor } from "../services/intentService.js";
+import { createIntentExtractor } from "../services/intentService.js";
 import { createExplanationComposer } from "../services/explanationService.js";
 import { createKeywordEmbedder } from "../lib/embeddings.js";
 import { createKeywordLexiconService } from "../services/keywordLexiconService.js";
-import { InMemoryBudgetLedger } from "../budget/budgetLedger.js";
 import { RECOMMENDATION_CONFIG } from "../recommendation/constants.js";
 import { DiscoveryManager } from "./discovery.js";
 import { RecommendationOrchestrator } from "./recommendationOrchestrator.js";
@@ -18,8 +17,7 @@ let singleton: RecommendationOrchestrator | undefined;
 
 /*
  * Construcción perezosa: el server arranca aunque falten credenciales de
- * IGDB/Brave y la ruta responde 503 hasta que existan. El presupuesto es
- * singleton por proceso (memoria).
+ * IGDB/Brave y la ruta responde 503 hasta que existan.
  */
 export function createRecommendationOrchestrator(): RecommendationOrchestrator {
   let igdb;
@@ -32,26 +30,17 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     throw new MissingRecommendationCredentialsError();
   }
 
-  const budget = new InMemoryBudgetLedger({
-    igdb: RECOMMENDATION_CONFIG.igdbDailyLimit,
-    brave: RECOMMENDATION_CONFIG.braveDailyLimit,
-    llm: RECOMMENDATION_CONFIG.llmDailyLimit,
-    embedding: RECOMMENDATION_CONFIG.embeddingDailyLimit,
-  });
-
   /*
    * Léxico de keywords: diccionario completo de IGDB (ver
    * scripts/seedKeywordDictionary.ts). Carga perezosa de keyword_lexicon y
    * canonicalización de las keywords del usuario y de las pistas de búsqueda
    * (SearchContext.hints). Política CONSERVADORA: lo que no matchea
    * (literal/stem/embedding) se DROP — el diccionario es cerrado, nunca
-   * crece. Con el servicio de embeddings caído o presupuesto seco degrada a
-   * literal.
+   * crece. Con el servicio de embeddings caído degrada a literal.
    */
   const lexicon = createKeywordLexiconService({
     loader: async () => prisma.keyword_lexicon.findMany(),
     embedder: createKeywordEmbedder(),
-    budget,
   });
 
   /*
@@ -73,17 +62,16 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
     prismaCatalogLayer,
     discoveryCache,
     queryOffsets,
-    budget,
     RECOMMENDATION_CONFIG,
     lexicon,
   );
 
   return new RecommendationOrchestrator({
-    intents: createBudgetedIntentExtractor(budget),
+    intents: createIntentExtractor(),
     cache: jsonCacheLayer,
     catalog: prismaCatalogLayer,
     discovery,
-    explainer: createExplanationComposer(budget),
+    explainer: createExplanationComposer(),
     lexicon,
   });
 }

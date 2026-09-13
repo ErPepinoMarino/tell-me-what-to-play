@@ -83,27 +83,6 @@ export const RECOMMENDATION_CONFIG = {
     7,
   ),
 
-  // Presupuesto diario de APIs (ley dura)
-  igdbDailyLimit: intFromEnv("IGDB_DAILY_LIMIT", 300),
-  braveDailyLimit: intFromEnv("BRAVE_DAILY_LIMIT", 600),
-  /*
-   * LLM por interacción: 1 interpretación (0 en "more") + 1 por juego
-   * enriquecido (hasta 2 por unidad de descubrimiento: normal ~4, peor
-   * caso 8 unidades → hasta 16) + 1 por re-enriquecimiento + 1 explicación
-   * por respuesta. Los enriquecimientos ya están acotados por el techo
-   * de IGDB (300 unidades → ≤ 600 llamadas); el límite LLM es la guarda
-   * contra spam de búsquedas cuando el catálogo ya responde sin
-   * descubrimiento.
-   */
-  llmDailyLimit: intFromEnv("LLM_DAILY_LIMIT", 2000),
-
-  /*
-   * Embeddings (léxico de keywords): 1 por canonicalize() que necesite
-   * vectores de términos desconocidos (cacheados). Son llamadas muy baratas;
-   * el límite es la guarda contra bucles patológicos.
-   */
-  embeddingDailyLimit: intFromEnv("EMBEDDING_DAILY_LIMIT", 2000),
-
   // Límite superior del catálogo propio
   maxCatalogSize: intFromEnv("RECOMMENDATION_MAX_CATALOG_SIZE", 350000),
 } as const;

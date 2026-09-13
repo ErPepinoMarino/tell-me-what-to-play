@@ -9,7 +9,6 @@ import {
   fallbackExplanation,
   type ExplanationInput,
 } from "../../src/services/explanationService.js";
-import { InMemoryBudgetLedger } from "../../src/budget/budgetLedger.js";
 import { makeIntent } from "../helpers/fakes.js";
 
 const PIRATES_INTENT = makeIntent({ keywords: ["pirates"] });
@@ -34,21 +33,14 @@ function makeInput(
   };
 }
 
-function makeComposer(
-  options: { text?: string; error?: boolean; llmLimit?: number } = {},
-) {
+function makeComposer(options: { text?: string; error?: boolean } = {}) {
   const invoke = vi.fn(async () => {
     if (options.error) throw new Error("model down");
     return { content: options.text ?? "Texto del modelo" };
   });
   vi.mocked(gameExplanationAIModel).mockReturnValue({ invoke } as never);
-  const budget = new InMemoryBudgetLedger({
-    igdb: 10,
-    brave: 10,
-    llm: options.llmLimit ?? 10,
-  });
-  const composer = createExplanationComposer(budget);
-  return { composer, budget, invoke };
+  const composer = createExplanationComposer();
+  return { composer, invoke };
 }
 
 describe("createExplanationComposer", () => {
@@ -56,8 +48,8 @@ describe("createExplanationComposer", () => {
     vi.resetAllMocks();
   });
 
-  it("devuelve el texto del LLM y contabiliza el presupuesto", async () => {
-    const { composer, budget, invoke } = makeComposer({
+  it("devuelve el texto del LLM", async () => {
+    const { composer, invoke } = makeComposer({
       text: "Te recomiendo Pirates Cove.",
     });
 
@@ -65,17 +57,15 @@ describe("createExplanationComposer", () => {
 
     expect(text).toBe("Te recomiendo Pirates Cove.");
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(budget.remaining("llm")).toBe(9);
   });
 
-  it("fallback determinista si el modelo falla, con presupuesto liberado", async () => {
-    const { composer, budget, invoke } = makeComposer({ error: true });
+  it("fallback determinista si el modelo falla", async () => {
+    const { composer, invoke } = makeComposer({ error: true });
 
     const text = await composer.compose(makeInput());
 
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(text).toContain("He entendido");
-    expect(budget.remaining("llm")).toBe(10);
   });
 
   it("fallback determinista si el modelo devuelve texto vacío", async () => {
@@ -84,15 +74,6 @@ describe("createExplanationComposer", () => {
     const text = await composer.compose(makeInput());
 
     expect(text).toContain("He entendido");
-  });
-
-  it("fallback sin llamar al modelo cuando no hay presupuesto LLM", async () => {
-    const { composer, invoke } = makeComposer({ llmLimit: 0 });
-
-    const text = await composer.compose(makeInput());
-
-    expect(text).toContain("He entendido");
-    expect(invoke).not.toHaveBeenCalled();
   });
 });
 

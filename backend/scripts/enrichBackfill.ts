@@ -25,7 +25,6 @@ import { prismaCatalogLayer } from "../src/orchestrator/adapters.js";
 import { prismaGameRepository } from "../src/repositories/prismaGameRepository.js";
 import { createIgdbClient } from "../src/igdb/index.js";
 import { createEnrichmentService } from "../src/services/enrichmentService.js";
-import { InMemoryBudgetLedger } from "../src/budget/budgetLedger.js";
 import {
   RECOMMENDATION_CONFIG,
 } from "../src/recommendation/constants.js";
@@ -53,18 +52,12 @@ async function main(): Promise<void> {
 
   const igdb = createIgdbClient();
   const enrichment = createEnrichmentService();
-  const budget = new InMemoryBudgetLedger({
-    igdb: RECOMMENDATION_CONFIG.igdbDailyLimit,
-    brave: RECOMMENDATION_CONFIG.braveDailyLimit,
-    llm: RECOMMENDATION_CONFIG.llmDailyLimit,
-  });
   const discovery = new DiscoveryManager(
     igdb,
     enrichment,
     prismaCatalogLayer,
     new InMemoryDiscoveryCacheRepository(),
     new InMemoryQueryOffsetStore(),
-    budget,
     RECOMMENDATION_CONFIG,
   );
 
@@ -105,10 +98,6 @@ async function main(): Promise<void> {
       case "not-found":
         notFound++;
         console.log(`# ? ${game.slug}: sin match en IGDB`);
-        break;
-      case "budget-exhausted":
-        console.error("# ERROR: presupuesto diario agotado; se detiene.");
-        process.exit(1);
         break;
       case "skipped":
         console.log(`# - ${game.slug}: sin updater disponible`);

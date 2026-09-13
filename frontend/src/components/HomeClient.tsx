@@ -144,7 +144,7 @@ function HomeFlow({ initialGame }: HomeClientProps) {
       )}
 
       {turns.failure ? (
-        <p className="notice notice-error">
+        <p className="py-1 text-[0.9rem] text-[#f87171]">
           {describeRecommendationFailure(turns.failure.status)}
         </p>
       ) : null}
@@ -176,7 +176,7 @@ function HomeFlow({ initialGame }: HomeClientProps) {
       />
       <Footer />
 
-      <div className="demo-toggle">
+      <div className="flex justify-end">
         <button
           type="button"
           className="button-secondary"

@@ -19,9 +19,8 @@ export function gameIntentAIModel() {
 }
 
 /*
- * Clasificador de relación refine-vs-new-vs-nonsensical: un modelo dedicado
- * con output mínimo — solo decide si el mensaje AFINA la búsqueda anterior,
- * EMPIEZA OTRA o es SIN SENTIDO. Ver classifyRelation en intentService.
+ * Clasificador de relación entre el mensaje actual y la intención previa.
+ * Output mínimo: solo decide new/refine/nonsensical. No extrae intención.
  */
 const RelationSchema = z.object({
   relation: z.enum(["new", "refine", "nonsensical"]),
@@ -36,10 +35,10 @@ export function gameRelationAIModel() {
 }
 
 /*
- * Extracción delta del refinamiento: el usuario YA decidió refinar (paso
- * classifyRelation); este modelo solo extrae qué se AÑADE/AJUSTA, qué se
- * QUITA y qué exclusiones nuevas trae el mensaje. Nunca regenera el intent
- * completo: el merge es determinista (applyRefineDelta).
+ * Extracción delta del refinamiento: el usuario YA decidió refinar (relación
+ * decidida por el extractor de intención); este modelo solo extrae qué se
+ * AÑADE/AJUSTA, qué se QUITA y qué exclusiones nuevas trae el mensaje. Nunca
+ * regenera el intent completo: el merge es determinista (applyRefineDelta).
  */
 const refineDeltaModel = model.withStructuredOutput(RefineDeltaSchema, {
   strict: true,
