@@ -21,7 +21,6 @@ import {
 import type {
   IntentExtractor,
   CatalogLayer,
-  CacheLayer,
   RecommendationRequest,
 } from "./types.js";
 import {
@@ -50,7 +49,6 @@ import type { KeywordLexiconService } from "../services/keywordLexiconService.js
 
 export interface OrchestratorDeps {
   intents: IntentExtractor;
-  cache: CacheLayer;
   catalog: CatalogLayer;
   discovery: DiscoveryManager;
   explainer: ExplanationComposer;
@@ -282,11 +280,7 @@ export class RecommendationOrchestrator {
     const unresolved: string[] = [];
     for (const name of base.intent.gameReferenced ?? []) {
       try {
-        const found = await findAnchorByTitle(
-          name,
-          this.deps.cache,
-          this.deps.catalog,
-        );
+        const found = await findAnchorByTitle(name, this.deps.catalog);
         if (found) anchors.push(found);
         else unresolved.push(name);
       } catch {
@@ -352,18 +346,17 @@ export class RecommendationOrchestrator {
       });
     }
 
-    // GATHER pool local (pre-filtro PG + cache canonicalizada)
+    // GATHER pool local desde PG.
     let pool: Game[];
     try {
       pool = await gatherCandidates(
-        this.deps.cache,
         this.deps.catalog,
         base.intent,
         this.config,
       );
     } catch {
       notices.add("PG_DEGRADED");
-      pool = await this.cacheOnlyPool();
+      pool = [];
     }
     trace("pool", { candidates: pool.length });
 
@@ -880,11 +873,6 @@ export class RecommendationOrchestrator {
     })().catch((error) => {
       console.error("[organic] background work failed:", error);
     });
-  }
-
-  private async cacheOnlyPool(): Promise<Game[]> {
-    const cacheGames = await this.deps.cache.getAll();
-    return cacheGames.slice(0, this.config.matchPoolCap);
   }
 
   private async composeResponse(params: {

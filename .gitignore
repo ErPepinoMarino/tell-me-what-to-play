@@ -8,8 +8,5 @@ dist/
 .env*
 !.env.example
 
-# Artefactos regenerables del l�xico (la autoridad es la tabla keyword_lexicon)
-backend/reports/
-
 # Material personal de seguimiento del curso (fuera del repositorio)
 curso/

@@ -98,7 +98,7 @@ Fastify 5 API (Node 22 · TypeScript)
 │    ├─ Ranker: tier assignment
 │    └─ Explainer: LLM explanation with template fallback
 ├─ Services: enrichment, research, keyword lexicon, auth, user library
-├─ Repositories: Prisma behind CatalogLayer / CacheLayer interfaces
+├─ Repositories: Prisma behind CatalogLayer interface
 └─ Discovery cache + pagination offset store (in-memory, interface-based)
 
 PostgreSQL 18 · Prisma 7 · keyword_lexicon (embeddings)
@@ -107,7 +107,7 @@ PostgreSQL 18 · Prisma 7 · keyword_lexicon (embeddings)
 Key boundaries:
 
 - **Routes** only translate HTTP/SSE to application calls and validate requests. No business logic.
-- **The orchestrator depends on interfaces, never on concrete implementations.** It receives an `IntentExtractor`, a `CatalogLayer`, a `CacheLayer`, a `DiscoveryManager`, and an `ExplanationComposer`. This is what makes the pipeline testable without Prisma, HTTP, or a real LLM.
+- **The orchestrator depends on interfaces, never on concrete implementations.** It receives an `IntentExtractor`, a `CatalogLayer`, a `DiscoveryManager`, and an `ExplanationComposer`. This is what makes the pipeline testable without Prisma, HTTP, or a real LLM.
 - **Matching is a pure function**: `intent + game → score + reasons`. Identical inputs produce identical outputs; there is no nondeterminism to debug.
 - **Discovery is owned by components behind interfaces.** The IGDB client, the discovery cache, and the pagination offset store are all replaceable implementations of small contracts — the in-memory versions can be swapped for distributed stores without touching callers.
 - **Repositories isolate the database.** Prisma queries are contained in one layer; domain types never leak through.

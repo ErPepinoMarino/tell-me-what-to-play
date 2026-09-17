@@ -3,7 +3,7 @@ import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 import { GENRE_QUERY_TERMS } from "../services/enrichmentService.js";
 import { passesHardFilters } from "../matching/matchGame.js";
 import type { RecommendationConfig } from "../recommendation/constants.js";
-import type { CacheLayer, CatalogLayer } from "./types.js";
+import type { CatalogLayer } from "./types.js";
 
 // Señales objetivas del intent para el pre-filtro SQL. Con el contrato de
 // filtros duros, TODO lo pedido debe estar: el pre-filtro es conjuntivo
@@ -152,48 +152,29 @@ export function dedupeBySlug(games: Game[]): Game[] {
 }
 
 /*
- * Pool de candidatos de las capas locales: pre-filtro SQL (canónico) +
- * JSON cache resuelta contra PG por slug. Entradas de cache sin ficha en
- * PG son proyección obsoleta y se descartan (identidad incoherente).
+ * Pool de candidatos desde PG: pre-filtro SQL canonico + filtro duro en memoria.
  */
 export async function gatherCandidates(
-  cache: CacheLayer,
   catalog: CatalogLayer,
   intent: GameSearchIntent,
   config: RecommendationConfig,
 ): Promise<Game[]> {
   const filter = buildPoolFilter(intent);
 
-  const [pgGames, cacheGames] = await Promise.all([
-    catalog.findCandidates({ ...filter, limit: config.matchPoolCap }),
-    cache.getAll(),
-  ]);
+  const pgGames = await catalog.findCandidates({
+    ...filter,
+    limit: config.matchPoolCap,
+  });
 
-  const pgBySlug = new Set(pgGames.map((g) => g.slug));
-  const cacheOnlySlugs = [
-    ...new Set(
-      cacheGames.map((g) => g.slug).filter((slug) => !pgBySlug.has(slug)),
-    ),
-  ];
-  const canonicalized = await catalog.getBySlugs(cacheOnlySlugs);
-
-  const pool = dedupeBySlug([...pgGames, ...canonicalized.values()]);
-  /*
-   * La cache es proyección y el pre-filtro SQL solo aplica a PG: sin este
-   * filtro, un intent con must estricto llenaría el pool de condenados
-   * (p. ej. el pre-filtro SQL devuelve 0 y entran TODAS las de cache).
-   * El filtro duro es puro y barato: se aplica a TODO el pool.
-   */
+  const pool = dedupeBySlug([...pgGames]);
+  // El pre-filtro SQL es aproximado: el filtro duro se aplica a TODO el pool.
   const filtered = pool.filter((game) => passesHardFilters(intent, game));
   return filtered.slice(0, config.matchPoolCap);
 }
 
-// Resolución de ancla por título: catálogo primero, cache como atajo.
-// Se prefiere coincidencia exacta de título; el resultado siempre queda
-// canonicalizado a la identidad de PG.
+// Resolucion de ancla por titulo contra el catalogo PG.
 export async function findAnchorByTitle(
   title: string,
-  cache: CacheLayer,
   catalog: CatalogLayer,
 ): Promise<Game | undefined> {
   const normalized = title.trim().toLowerCase();
@@ -203,11 +184,5 @@ export async function findAnchorByTitle(
   const exact = fromCatalog.find(
     (game) => game.title.toLowerCase() === normalized,
   );
-  const fromPg = exact ?? fromCatalog[0];
-  if (fromPg) return fromPg;
-
-  const fromCache = (await cache.searchByTitle(title))[0];
-  if (!fromCache) return undefined;
-
-  return catalog.getBySlug(fromCache.slug);
+  return exact ?? fromCatalog[0];
 }

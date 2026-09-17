@@ -54,9 +54,8 @@ export interface ReEnrichPatch {
 }
 
 /*
- * Capa de catálogo canónica: TODA identidad de juego (ids de sesión,
- * resultados, exclusiones) nace de aquí. El JSON cache es una proyección
- * y se canonicaliza contra esta capa antes de entrar al matcher.
+ * Capa de catalogo canonica: TODA identidad de juego (ids de sesion,
+ * resultados, exclusiones) nace de PG.
  *
  * Escritura de keywords: SOLO dos operaciones semánticamente explícitas
  * (createIgdb, syncCatalogKeywords). No existe ningún `create`/`update`
@@ -74,12 +73,6 @@ export interface CatalogLayer {
   updateReEnrich(game: Game, patch: ReEnrichPatch): Promise<Game>;
   incrementSearchCounts(ids: number[]): Promise<void>;
   countGames(): Promise<number>;
-}
-
-// Capa caliente: proyección de los más populares. Nunca autoridad de ids.
-export interface CacheLayer {
-  getAll(): Promise<Game[]>;
-  searchByTitle(query: string): Promise<Game[]>;
 }
 
 export interface IntentExtractor {

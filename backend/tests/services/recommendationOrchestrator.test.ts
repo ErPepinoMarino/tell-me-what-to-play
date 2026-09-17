@@ -19,7 +19,6 @@ import type {
   RefineDelta,
 } from "../../src/types/GameSearchIntent.js";
 import {
-  FakeCacheLayer,
   FakeCatalogLayer,
   FakeEnrichment,
   FakeIgdbClient,
@@ -56,7 +55,6 @@ const PIRATES_GAME = makeGame({
 
 interface SetupOptions {
   catalogGames?: Game[];
-  cacheGames?: Game[];
   intent: GameSearchIntent;
   igdbResults?: Record<string, IgdbGameRaw[]>;
   enrichment?: FakeEnrichment;
@@ -82,7 +80,6 @@ interface SetupOptions {
 function setup(options: SetupOptions) {
   const catalog = new FakeCatalogLayer();
   catalog.seed(options.catalogGames ?? []);
-  const cache = new FakeCacheLayer(options.cacheGames ?? []);
   const extract = options.extract
     ? vi.fn(options.extract)
     : vi.fn(async () => options.intent);
@@ -113,7 +110,6 @@ function setup(options: SetupOptions) {
   const orchestrator = new RecommendationOrchestrator(
     {
       intents,
-      cache,
       catalog,
       discovery,
       explainer: { compose: composeExplanation },
@@ -129,7 +125,6 @@ function setup(options: SetupOptions) {
   return {
     orchestrator,
     catalog,
-    cache,
     extract,
     classifyRelation,
     igdb,
@@ -1292,19 +1287,9 @@ describe("RecommendationOrchestrator", () => {
     expect(updated.keywords).not.toContain("treasure");
   });
 
-  it("PG caída: degrada al pool del JSON cache con notice", async () => {
+  it("PG caida: pool vacio con notice PG_DEGRADED", async () => {
     const broken = setup({
       catalogGames: [PIRATES_GAME],
-      cacheGames: [
-        makeGame({
-          id: 50,
-          slug: "cached-pirates",
-          title: "Cached Pirates",
-          genres: ["ROLE_PLAYING_RPG"],
-          keywords: ["pirates"],
-          ...FULL_SEMANTIC,
-        }),
-      ],
       intent: PIRATES_INTENT,
     });
     broken.catalog.findCandidates = async () => {
@@ -1318,9 +1303,7 @@ describe("RecommendationOrchestrator", () => {
     });
 
     expect(response.notices).toContain("PG_DEGRADED");
-    expect(response.results.map((item) => item.game.slug)).toEqual([
-      "cached-pirates",
-    ]);
+    expect(response.results).toEqual([]);
   });
 
   it("circuito cerrado: lo descubierto matchea la intención que lo descubrió", async () => {

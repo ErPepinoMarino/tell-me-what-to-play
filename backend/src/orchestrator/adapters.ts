@@ -1,9 +1,7 @@
 import { prismaGameRepository } from "../repositories/prismaGameRepository.js";
-import { jsonGameRepository } from "../repositories/jsonGameRepository.js";
-import type { CatalogLayer, CacheLayer } from "./types.js";
+import type { CatalogLayer } from "./types.js";
 
-// Adaptadores finos: el orquestador depende de interfaces, nunca de Prisma
-// ni del cache directamente. Mismo principio que matching/ y ResearchProvider.
+// Adaptador fino: el orquestador depende de la interfaz, nunca de Prisma.
 export const prismaCatalogLayer: CatalogLayer = {
   findCandidates: (filter) => prismaGameRepository.findCandidates(filter),
   getBySlugs: (slugs) => prismaGameRepository.getBySlugs(slugs),
@@ -18,9 +16,4 @@ export const prismaCatalogLayer: CatalogLayer = {
   incrementSearchCounts: (ids) =>
     prismaGameRepository.incrementSearchCounts(ids),
   countGames: () => prismaGameRepository.countGames(),
-};
-
-export const jsonCacheLayer: CacheLayer = {
-  getAll: () => jsonGameRepository.getAll(),
-  searchByTitle: (query) => jsonGameRepository.search(query),
 };

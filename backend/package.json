@@ -17,10 +17,8 @@
     "lexicon:mine": "tsx scripts/mineLexicon.ts",
     "lexicon:accept": "tsx scripts/acceptLexicon.ts",
     "lexicon:calibrate": "tsx scripts/calibrateLexicon.ts",
-    "lexicon:seed": "tsx scripts/seedKeywordDictionary.ts",
     "backfill:themes": "tsx scripts/backfillThemes.ts",
     "ratings:backfill": "tsx scripts/backfillRatings.ts",
-    "import:games": "tsx scripts/importGames.ts",
     "repair:catalog": "tsx scripts/repairCatalog.ts"
   },
   "keywords": [],

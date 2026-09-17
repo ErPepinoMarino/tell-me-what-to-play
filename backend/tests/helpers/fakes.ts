@@ -24,7 +24,7 @@ import type {
   EnrichmentService,
   EnrichmentUpdater,
 } from "../../src/services/enrichmentService.js";
-import type { CatalogLayer, CacheLayer, ReEnrichPatch } from "../../src/orchestrator/types.js";
+import type { CatalogLayer, ReEnrichPatch } from "../../src/orchestrator/types.js";
 
 export const FULL_SEMANTIC: Semantic = {
   difficulty: 0.6,
@@ -280,21 +280,6 @@ export class FakeCatalogLayer implements CatalogLayer {
 
   async countGames(): Promise<number> {
     return this.byId.size;
-  }
-}
-
-export class FakeCacheLayer implements CacheLayer {
-  constructor(public games: Game[] = []) {}
-
-  async getAll(): Promise<Game[]> {
-    return [...this.games];
-  }
-
-  async searchByTitle(query: string): Promise<Game[]> {
-    const normalized = query.toLowerCase();
-    return this.games.filter((game) =>
-      game.title.toLowerCase().includes(normalized),
-    );
   }
 }
 

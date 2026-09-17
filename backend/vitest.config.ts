@@ -17,7 +17,6 @@ export default defineConfig({
       exclude: [
         "src/generated/**",
         "src/data/**",
-        "src/repositories/jsonGameRepository.ts",
         "tests/**",
         "**/*.d.ts",
       ],

@@ -8,7 +8,7 @@ import { RECOMMENDATION_CONFIG } from "../recommendation/constants.js";
 import { DiscoveryManager } from "./discovery.js";
 import { RecommendationOrchestrator } from "./recommendationOrchestrator.js";
 import { MissingRecommendationCredentialsError } from "./errors.js";
-import { prismaCatalogLayer, jsonCacheLayer } from "./adapters.js";
+import { prismaCatalogLayer } from "./adapters.js";
 import { InMemoryDiscoveryCacheRepository } from "./discoveryCache.js";
 import { InMemoryQueryOffsetStore } from "./queryOffsetStore.js";
 import { prisma } from "../lib/prisma.js";
@@ -31,8 +31,7 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
   }
 
   /*
-   * Léxico de keywords: diccionario completo de IGDB (ver
-   * scripts/seedKeywordDictionary.ts). Carga perezosa de keyword_lexicon y
+   * Léxico de keywords: tabla keyword_lexicon. Carga perezosa y
    * canonicalización de las keywords del usuario y de las pistas de búsqueda
    * (SearchContext.hints). Política CONSERVADORA: lo que no matchea
    * (literal/stem/embedding) se DROP — el diccionario es cerrado, nunca
@@ -68,7 +67,6 @@ export function createRecommendationOrchestrator(): RecommendationOrchestrator {
 
   return new RecommendationOrchestrator({
     intents: createIntentExtractor(),
-    cache: jsonCacheLayer,
     catalog: prismaCatalogLayer,
     discovery,
     explainer: createExplanationComposer(),
