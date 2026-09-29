@@ -1,6 +1,5 @@
 /*
  * FASE 1 del roadmap del léxico: MINADO del diccionario canónico.
- * (.opencode/plans/roadmap-lexico-embeddings.md)
  *
  * Agrega las keywords de todas las fichas del catálogo con frecuencias y
  * ejecuta la asimilación greedy (talo gratis, embeddings text-embedding-3-small

@@ -120,7 +120,7 @@ model refresh_tokens {
  * Un término nuevo se ASIMILA a un canónico (alias) o entra como entrada
  * nueva si es suficientemente distinto (similitud de embeddings < umbral).
  * El matcher sigue comparando talos literales: el léxico normaliza el DATO,
- * nunca el matching. Ver .opencode/plans/roadmap-lexico-embeddings.md.
+ * nunca el matching.
  */
 model keyword_lexicon {
   id         Int      @id @default(autoincrement())

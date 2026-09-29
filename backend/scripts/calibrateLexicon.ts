@@ -1,6 +1,5 @@
 /*
  * FASE 2 del roadmap del léxico: CALIBRACIÓN del umbral de asimilación.
- * (.opencode/plans/roadmap-lexico-embeddings.md)
  *
  * Embeds los pares dorados con text-embedding-3-small y verifica que el
  * umbral separa "mismo concepto" (≥ umbral) de "concepto distinto" (< umbral).

@@ -10,3 +10,10 @@ dist/
 
 # Material personal de seguimiento del curso (fuera del repositorio)
 curso/
+
+# Notas locales de agentes (OpenCode, AGENTS.md): no forman parte del proyecto
+.opencode/
+Agents.md
+AGENTS.md
+agents.md
+

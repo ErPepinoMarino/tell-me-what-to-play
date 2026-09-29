@@ -74,7 +74,7 @@ export const TECH_NOISE = new Set([
 export const KEYWORD_FRAGMENTS = new Set(["hack", "slash", "wash", "age"]);
 
 /*
- * Léxico de keywords canónicas (ver .opencode/plans/roadmap-lexico-embeddings.md).
+ * Léxico de keywords canónicas.
  *
  * Algoritmo de asimilación greedy: candidatas ordenadas por frecuencia; una
  * candidata se convierte en ALIAS de un canónico si coincide por talo (gratis)
