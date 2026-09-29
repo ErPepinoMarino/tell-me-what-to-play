@@ -30,20 +30,11 @@ export const AGREEMENT_BONUS_THRESHOLD = 0.5;
 export const ABSENCE_GATE_MIN = 0.5;
 
 /*
- * Gate de presencia (decisión de producto): una demanda semántica MAXIMAL
- * (intent ≥ SEMANTIC_DEMAND_GATE_MIN = 0.9) es un requisito — el juego debe
- * APROBAR (game ≥ SEMANTIC_PASS_MIN = 0.5); suspenso (< 0.5) o sin dato
- * (null = no verificable) → fuera. Demandas medias (0.2-0.89) solo rankean;
- * 0 exacto = ausencia (gate absence-violated existente).
- *
- * POR QUÉ 0.9 Y NO 0.7: los dos escenarios calibrados lo exigen (los tests
- * lo demostraron). S1 "piratas oscuro" (darkness 0.8): el gate a 0.7
- * excluiría al "pirata algo menos oscuro" (0.4) que DEBE ganar. S4 "cozy"
- * (coziness 1.0): el gate a 0.9 excluye suspenso y desconocidos. La LLM
- * emite 1.0 cuando el atributo ES la petición central y ~0.8 cuando es un
- * modificador — el umbral 0.9 distingue ambos. Consecuencia asumida: la
- * cobertura de semánticas del catálogo se vuelve crítica (el enrichment
- * re-enrich la hace crecer).
+ * Gate de presencia: demanda semántica MAXIMAL (intent ≥ 0.9) es requisito → el
+ * juego debe APROBAR (game ≥ SEMANTIC_PASS_MIN); suspenso o sin dato → fuera.
+ * Demandas medias (0.2-0.89) solo rankean; 0 exacto = ausencia (gate existente).
+ * POR QUÉ 0.9: a 0.7 el caso "piratas oscuro" (darkness 0.8) excluiría al 0.4
+ * que debe ganar; la LLM emite 1.0 si el atributo ES la petición central.
  */
 export const SEMANTIC_DEMAND_GATE_MIN = 0.9;
 export const SEMANTIC_PASS_MIN = 0.5;

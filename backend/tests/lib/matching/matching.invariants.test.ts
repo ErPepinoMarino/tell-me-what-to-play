@@ -8,8 +8,7 @@ import { FIXTURES } from "./fixtures.js";
  * - I1: score = Σ contributions (exacto, orden de inserción tras el sort).
  * - I2: el score vive en su rango natural [-1, 1].
  * - I3: gates ⇒ invalid; sin gates ⇒ valid | excellent (nunca weak).
- * - I4: determinismo — dos evaluaciones idénticas producen resultados
- *   idénticos (profundidad completa).
+ * - I4: determinismo — dos evaluaciones idénticas dan resultados idénticos.
  */
 describe("matchGame — invariantes (sobre todos los fixtures)", () => {
   for (const fixture of FIXTURES) {

@@ -1,13 +1,8 @@
 /*
- * FASE 2 del roadmap del léxico: CALIBRACIÓN del umbral de asimilación.
- *
- * Embeds los pares dorados con text-embedding-3-small y verifica que el
- * umbral separa "mismo concepto" (≥ umbral) de "concepto distinto" (< umbral).
- * Incluye el caso que motivó la supervisión: awarded ≠ nominee (los embeddings
- * los fusionaron erróneamente a 0.87; el umbral debe RECHAZARLOS).
- *
- * Uso: npm run lexicon:calibrate   (requiere OPENAI_API_KEY)
- * Exit 1 si algún par sale del lado equivocado.
+ * FASE 2 léxico: CALIBRACIÓN del umbral de asimilación con pares dorados,
+ * embedados con text-embedding-3-small. El umbral debe separar "mismo
+ * concepto" (≥) de "concepto distinto" (<), incluido awarded ≠ nominee.
+ * Uso: npm run lexicon:calibrate (requiere OPENAI_API_KEY). Exit 1 si un par falla.
  */
 import "./env.js";
 import { createKeywordEmbedder } from "../src/lib/embeddings.js";
@@ -16,17 +11,10 @@ import { cosineSimilarity } from "../src/services/keywordLexiconService.js";
 const THRESHOLD = 0.58;
 
 /*
- * Calibración empírica (text-embedding-3-small, términos sueltos):
- *  - Sinónimos conceptuales reales ("undead"/"zombies") puntúan 0.61-0.77.
- *  - Variantes ortográficas ("cozy"/"cosy", "open world"/"open-world") 0.83-0.95.
- *  - Conceptos distintos: ≤ 0.44 (incluido awarded/nominee, el caso que
- *    motivó la supervisión).
- * Banda válida: (0.44, 0.61] → 0.58.
- *
- * EXCEPCIÓN DOCUMENTADA — pares cross-lingual ("infectados"/"zombies" ≈ 0.35):
- * NO asimilan por embedding y ES CORRECTO: la traducción español→inglés es
- * responsabilidad del PROMPT del intent (normaliza a inglés canónico antes
- * de tocar el léxico), no del léxico. Separación de responsabilidades.
+ * Calibración empírica: sinónimos 0.61-0.77, variantes ortográficas 0.83-0.95,
+ * conceptos distintos ≤ 0.44 (awarded/nominee). Banda válida (0.44, 0.61] → 0.58.
+ * Cross-lingual (infectados/zombies ≈ 0.35) NO asimila a propósito: la
+ * traducción ES→EN la resuelve el prompt del intent, no el léxico.
  */
 
 const SAME_CONCEPT: [string, string][] = [

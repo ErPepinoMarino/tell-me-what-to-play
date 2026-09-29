@@ -1,19 +1,11 @@
 import type { IgdbGameRaw } from "../igdb/types.js";
 
 /*
- * Pool global de raws de IGDB descubiertos y aún no consumidos. A diferencia
- * de la caché por (query, intent) del DiscoveryRun (estado de UNA ejecución),
- * este pool es compartido entre peticiones: lo que un request descubrió queda
- * disponible para futuras búsquedas sin repetir llamadas IGDB.
- *
- * Contrato mínima. Sin TTL, LRU, Redis, PostgreSQL, locks ni estados de
- * procesamiento:
- *  - clave: sourceId = String(raw.id);
- *  - un mismo sourceId no puede duplicarse (first-write-wins: el primer raw
- *    que entra conserva su versión, los posteriores con el mismo id se ignoran);
- *  - un raw SOLO se elimina tras detectar que ya existe en PostgreSQL o al
- *    completar correctamente su promoción a PostgreSQL (gestión del gestor);
- *  - readAll no promete orden.
+ * Pool global de raws de IGDB descubiertos y aún no consumidos. Compartido
+ * entre peticiones (a diferencia de la caché por (query, intent) del
+ * DiscoveryRun): lo que un request descubrió queda disponible sin repetir IGDB.
+ * Contrato mínimo, sin TTL/LRU/Redis/locks: clave = sourceId, sin duplicados
+ * (first-write-wins), un raw solo se borra al confirmarlo en PostgreSQL.
  */
 export interface DiscoveryCacheRepository {
   readAll(): Promise<IgdbGameRaw[]>;

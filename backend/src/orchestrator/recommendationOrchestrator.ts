@@ -306,12 +306,10 @@ export class RecommendationOrchestrator {
     if (anchors.length > 0) notices.add("EXPLICIT_GAME_REQUESTED");
 
     /*
-     * Herencia de perfil del ancla ("algo similar a X" sin más señal): la
-     * ficha del ancla define la búsqueda — sus géneros como must y su
-     * perfil semántico como ranking, CAPADO a 0.8 para no disparar el gate
-     * de presencia (las semánticas heredadas son referencia, no exigencia).
-     * Las keywords del ancla NO se heredan como must (el problema "kratos"):
-     * el parecido por keywords lo resuelve el gate de overlap del matcher.
+     * Herencia de perfil del ancla ("algo similar a X" sin más señal): sus
+     * géneros como must y su perfil semántico como ranking, CAPADO a 0.8 para
+     * no disparar el gate de presencia (es referencia, no exigencia). Las
+     * keywords NO se heredan (el problema "kratos"): lo resuelve el overlap.
      */
     if (
       anchors.length > 0 &&
@@ -502,12 +500,10 @@ export class RecommendationOrchestrator {
     }
 
     /*
-     * Rescate relajado (RAMA "more": el botón la trae siempre, y el refine
-     * sin cambios equivale a pulsarlo): si lo estricto no creó nada y
-     * faltan resultados, criba en cascada (recicla la lista estricta del
-     * turno o, sin caché, una llamada amplia). El resto del tiempo somos
-     * estrictos y honestos. La sesión guarda el intent ORIGINAL; el
-     * efectivo (relajado) solo rankea y responde este turno.
+     * Rescate relajado (RAMA "more": el botón la trae siempre, y el refine sin
+     * cambios equivale a pulsarlo): si lo estricto no creó nada y faltan
+     * resultados, criba en cascada. El resto del tiempo somos estrictos. La
+     * sesión guarda el intent ORIGINAL; el efectivo (relajado) solo rankea.
      */
     let effectiveIntent = base.intent;
     let relaxedGroups: string[] = [];

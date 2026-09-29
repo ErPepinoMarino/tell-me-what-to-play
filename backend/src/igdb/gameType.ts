@@ -1,12 +1,6 @@
-// Pure function: decide if an IGDB raw record is a non-independent game
-// that should not become a candidate (DLC, bundle, mod, port, update, ...).
-// No HTTP, no Prisma, no AI. Fully deterministic and testable offline.
-//
-// Regla de producto: NUNCA deduplicar por título/año/parte del nombre.
-// Remakes, remasters, secuelas y ediciones que IGDB considera juegos
-// independientes SON legítimos. Solo se descarta un candidato cuando IGDB lo
-// clasifica explícitamente con un tipo no independiente; ante duda o campo
-// ausente se conserva.
+// Regla de producto: NUNCA deduplicar por título/año/parte del nombre — los
+// remakes/secuelas que IGDB considera independientes son legítimos; solo se
+// descarta un tipo explícitamente no independiente (ante duda, se conserva).
 
 import type { IgdbGameRaw } from "./types.js";
 

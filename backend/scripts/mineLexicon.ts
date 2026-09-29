@@ -1,14 +1,8 @@
 /*
- * FASE 1 del roadmap del léxico: MINADO del diccionario canónico.
- *
- * Agrega las keywords de todas las fichas del catálogo con frecuencias y
- * ejecuta la asimilación greedy (talo gratis, embeddings text-embedding-3-small
- * para el resto). NO escribe en la tabla keyword_lexicon: produce un DRAFT +
- * informe para SUPERVISIÓN del usuario. Tras revisar/editar el draft:
- *   npm run lexicon:accept   → importa el draft aprobado a la tabla.
- *
- * Uso: npm run lexicon:mine
- * Env: LEXICON_MIN_FREQUENCY (default 4), LEXICON_SIMILARITY_THRESHOLD (default 0.82)
+ * FASE 1 léxico: MINADO del diccionario canónico. Agrega las keywords del catálogo
+ * con frecuencias y asimila por greedy (talo gratis + embeddings). NO escribe en
+ * keyword_lexicon: saca un DRAFT para supervisión, que se importa con lexicon:accept.
+ * Env: LEXICON_MIN_FREQUENCY (4), LEXICON_SIMILARITY_THRESHOLD (0.82)
  */
 import "./env.js";
 import fs from "node:fs";
@@ -47,16 +41,10 @@ function floatFromEnv(name: string, fallback: number): number {
 }
 
 /*
- * Política de supervisión (FASE 1, decisiones del usuario):
- *
- * 1. STOPWORDS y FRAGMENTOS: "and", "hack", "slash", "wash", "age"… nunca
- *    entran al diccionario (los stopwords también se filtran en el siembra).
- * 2. RUIDO TECH/PLATAFORMA: keywords de IGDB que son metadatos de plataforma
- *    o distribución, no conceptos temáticos de juego → fuera del diccionario.
- * 3. PREMIOS GENÉRICOS: nada de "the game awards - <categoría> - <resultado>":
- *    se generalizan a DOS conceptos canónicos, "awarded" (ganador) y
- *    "nominee" (nominado), preservando la distinción winner ≠ nominee que
- *    los embeddings fusionaron erróneamente (0.87).
+ * Política de supervisión (FASE 1): stopwords/fragmentos nunca entran; el ruido
+ * tech/plataforma de IGDB (metadatos de distribución) se descarta; los premios
+ * genéricos se generalizan en DOS canónicos, "awarded" y "nominee", preservando
+ * el winner ≠ nominee que los embeddings fusionaban mal (0.87).
  */
 // Fragmentos y ruido tech: definiciones compartidas en keywordLexiconService.
 const FRAGMENT_EXCLUSIONS = KEYWORD_FRAGMENTS;

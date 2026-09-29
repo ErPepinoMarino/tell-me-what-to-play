@@ -104,11 +104,9 @@ export function buildQueryVariants(intent: GameSearchIntent): string[] {
   }
   /*
    * Fallback: los intents sin keywords ni géneros (p. ej. solo tema + modo,
-   * como "mmo de fantasía") también deben llegar a IGDB. La búsqueda
-   * filtrada aplica TODOS los campos del intent en el `where`, así que
-   * cualquier texto no vacío vale como clave de la unidad de
-   * descubrimiento — se construye con el resto de señales para que las
-   * pistas de búsqueda de la query sigan teniendo sentido.
+   * como "mmo de fantasía") también deben llegar a IGDB. El `where` aplica
+   * TODOS los campos del intent, así que cualquier texto no vacío vale como
+   * clave de la unidad de descubrimiento.
    */
   if (variants.length === 0) {
     const themeTerms = (intent.objective?.themes ?? [])

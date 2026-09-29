@@ -1,23 +1,9 @@
 /*
- * SCRIPT TEMPORAL de reparación del catálogo: resincroniza los campos
- * propiedad de IGDB de las fichas con source_id, usando IGDB como fuente de
- * verdad. Dry-run por defecto; `--apply` escribe.
- *
- *  - Identidad SIEMPRE por source_id (nunca búsqueda por título).
- *  - Reutiliza mapToCandidate (mappers), extractIgdbKeywords (keywords) y las
- *    transformaciones existentes. No duplica lógica.
- *  - All-or-nothing por juego: si IGDB no devuelve el juego completo o sus
- *    ratings, se hace skip y NO se escribe nada de ese juego.
- *  - keywords se escriben como [...extractIgdbKeywords(raw)] (mint sellado):
- *    excepción puntual y limitada a este script temporal.
- *  - Un único UPDATE por juego con todos los campos a resincronizar.
- *  - Idempotente: re-ejecutar tras apply produce 0 cambios.
- *
- * NO modifica: slug, source_id, description_es/en, semánticas, search_count,
- * updated_at.
- *
- * Uso: npm run repair:catalog          → dry-run (solo reporte)
- *      npm run repair:catalog -- --apply → escribe
+ * SCRIPT TEMPORAL: resincroniza con IGDB (fuente de verdad) los campos propiedad
+ * de IGDB de las fichas con source_id. Identidad siempre por source_id, un único
+ * UPDATE por juego, all-or-nothing (IGDB incompleto = skip) e idempotente.
+ * NO toca slug, source_id, descripciones, semánticas ni search_count.
+ * Uso: npm run repair:catalog (dry-run)  |  npm run repair:catalog -- --apply
  */
 import "./env.js";
 import { prisma } from "../src/lib/prisma.js";

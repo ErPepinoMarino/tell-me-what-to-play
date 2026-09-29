@@ -1,12 +1,8 @@
 /*
- * Exporta de vuelta a games_seed.json las fichas del seed:
- * mantiene la forma del fixture (mismas claves y orden) y refresca en sitio
- * los campos rehabilitados desde IGDB + enrichment
- * (identidad, clasificaciones, portada, año, keywords, semánticas, descripciones).
- *
- * Uso: npm run seed:export   (desde backend/, tras npm run enrich:backfill)
- *      Tras la reparación de catálogo, regenerar regenera las keywords del
- *      archivo con las de IGDB (única semántica de Game.keywords).
+ * Exporta las fichas del seed de vuelta a games_seed.json: mantiene la forma
+ * del fixture y refresca en sitio los campos rehabilitados (identidad,
+ * clasificaciones, portada, año, keywords, semánticas, descripciones).
+ * Uso: npm run seed:export   (tras npm run enrich:backfill)
  */
 import "./env.js";
 import fs from "node:fs";

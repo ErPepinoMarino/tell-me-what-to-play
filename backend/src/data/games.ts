@@ -1,16 +1,11 @@
 import type { Game } from "../types/Game.js";
 
 /*
- * Fichas del seed (catálogo frío de arranque). Cada una tiene source_id y su
+ * Fichas del seed (catálogo frío de arranque): cada una con source_id y su
  * identidad/clasificaciones/descripciones propias.
- *
- * NOTA sobre las arrays `keywords` de estas fichas: son vocabulario LEGADO
- * (curado a mano) que ya NO se persiste ni se sirve. Game.keywords tiene una
- * única semántica — keywords de IGDB — y el seed se crea con keywords vacías
- * (seedCatalogService) hasta que la reparación de catálogo (repairCatalog /
- * syncCatalogKeywords) las rellene desde IGDB. Estas arrays se conservan en
- * el archivo hasta que se regenere desde IGDB (npm run seed:export tras la
- * reparación); el runtime no las lee.
+ * Las arrays `keywords` son vocabulario LEGADO curado a mano: el runtime no las
+ * lee (Game.keywords = keywords de IGDB, sembradas vacías y rellenadas desde
+ * IGDB por repairCatalog / syncCatalogKeywords).
  */
 export type GameSeed = Omit<Game, "keywords"> & {
   keywords: string[];

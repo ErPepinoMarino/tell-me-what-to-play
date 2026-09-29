@@ -3,13 +3,10 @@ import type { Game } from "@/types/Game";
 
 /*
  * Ficha completa de un juego vía GET /api/games/:slug (público, sin auth).
- * Solo se llama cuando la selección provino de un card de resultados
- * (cuyo DTO no trae developers/publishers/semánticas); el deep-link ?game=
- * ya llega completo por SSR y no dispara fetch. En fallo de red el
- * preview parcial se conserva tal cual (degradación honesta).
- *
- * loading se DERIVA (no hay setState en el cuerpo del effect): true
- * mientras el slug pendiente aún no tenga resultado resuelto.
+ * Solo se llama cuando la selección vino de un card de resultados (su DTO no
+ * trae developers/publishers/semánticas); el deep-link ?game= ya llega completo
+ * por SSR. En fallo de red se conserva el preview parcial (degradación honesta).
+ * loading se DERIVA: true mientras el slug pendiente no tenga resultado.
  */
 interface DetailOutcome {
   slug: string;

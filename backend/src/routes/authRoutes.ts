@@ -15,10 +15,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post("/api/auth/refresh", async (request, reply) => {
     /*
      * Transporte dual (API pública multiplataforma):
-     * - Web: cookie httpOnly (path /api/auth) → el refresh token NUNCA va
-     *   en el body para no exponerlo a JS.
-     * - Nativo (Android/iOS): body { refreshToken } → tokens en JSON para
-     *   guardarlos en Keystore/Keychain. Sin cookie, sin CORS.
+     * - Web: cookie httpOnly (path /api/auth) → el refresh token nunca ve JS.
+     * - Nativo (Android/iOS): body { refreshToken } → JSON para Keystore/Keychain.
      * Si llegan ambos, la cookie tiene prioridad (cliente navegador).
      */
     const cookieToken = request.cookies.refresh_token;

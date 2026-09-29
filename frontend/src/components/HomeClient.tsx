@@ -24,13 +24,11 @@ type HomeClientProps = {
 };
 
 /*
- * Compositor de la página y dueño del ÚNICO estado compartido que no
- * pertenece a un hook (Decisión 3): la ficha seleccionada. `complete`
- * distingue la ficha del deep-link SSR (datos totales) de la vista
- * preliminar procedente de un card (el detalle la completa o el mismo
- * hook la obtiene vía GET /api/games/:slug). El shell (columna con
- * max-inline-size estable) jamás se desmonta: las secciones
- * aparecen/desaparecen verticalmente, nunca horizontalmente.
+ * Compositor de la página y dueño del ÚNICO estado compartido fuera de un hook
+ * (Decisión 3): la ficha seleccionada. `complete` distingue el deep-link SSR
+ * (datos totales) de la vista preliminar de un card. El shell (columna con
+ * max-inline-size estable) jamás se desmonta: las secciones van y vienen en
+ * vertical, nunca en horizontal.
  */
 type Selection = { game: Game; complete: boolean };
 

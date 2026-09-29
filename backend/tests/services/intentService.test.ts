@@ -425,17 +425,11 @@ describe("applyRefineDelta", () => {
 });
 
 /*
- * Casos representativos de Prompt 1.
- *
- * AVISO: con el modelo mockeado NO se puede observar la interpretación REAL
- * del LLM — el mock devuelve exactamente lo que se le pasa. Estos tests fijan
- * el CONTRATO determinista del extractor:
- *   1. el mensaje en lenguaje natural llega literal al modelo;
- *   2. la salida estructurada se devuelve sin transformar;
- *   3. el system prompt (Prompt 1) contiene las reglas que gobiernan la
- *      interpretación (no inferencia, inglés canónico).
- * La validación semántica (¿devuelve "farming"? ¿añade KIDS?) exige una
- * ejecución real contra el modelo, fuera del alcance determinista.
+ * Casos representativos de Prompt 1. Con el modelo mockeado NO se observa la
+ * interpretación REAL del LLM: estos tests fijan el CONTRATO determinista del
+ * extractor — el mensaje llega literal al modelo, la salida estructurada se
+ * devuelve sin transformar y el system prompt contiene las reglas (no
+ * inferencia, inglés canónico). La validación semántica exige ejecución real.
  */
 const PROMPT1_CASES = [
   "¿algún juego de gestión muy tranquilo tipo granja?",

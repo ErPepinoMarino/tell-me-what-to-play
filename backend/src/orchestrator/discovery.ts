@@ -59,30 +59,21 @@ export type ReEnrichResult =
 
 /*
  * Contexto de búsqueda EFÍMERO de UNA ejecución de discovery: los términos
- * (canonicalizados) de la query que encontró el juego, usados SOLO como
- * overlay de la vista MatchableGame del pre-filtro y del matcher. NUNCA
- * llegan al candidato persistido: las keywords de la BDD solo contienen
- * vocabulario IGDB (invariante de tipos Game.keywords: IgdbKeyword[]).
- * Son SearchKeyword: vocabulario de búsqueda, no asignable a IgdbKeyword[].
+ * (canonicalizados) de la query, usados SOLO como overlay de la vista
+ * MatchableGame del pre-filtro y del matcher. NUNCA llegan al candidato
+ * persistido: las keywords de la BDD solo llevan vocabulario IGDB.
+ * Son SearchKeyword, no asignables a IgdbKeyword[].
  */
 export interface SearchContext {
   hints: readonly SearchKeyword[];
 }
 
 /*
- * Tope de raws acumulados por lista (query+intent) — tanto la paginación
- * intrarun como el cursor cross-request (QueryOffsetStore) la comparten.
- *
- * ¿Por qué 300? IGDB solo documenta el máximo por REQUEST (limit ≤ 500) y
- * no fija techo para offset (el motor legado dejaba de paginar ~10.000
- * filas por offset; más allá exige scroll). Aquí no buscamos hecho
- * científico, sino nuestra regla "hacemos cuanto sea razonable, pero no
- * garantizamos encontrar resultados": 300 candidatos = 10 páginas de
- * igdbSearchLimit (30) ≈ 3,3% del presupuesto IGDB diario gastado en UNA
- * (query, intent) concreta. El orden por valoración comunitaria pone lo
- * mejor al principio; lo que asoma al final de la cola son títulos de
- * larga cola con señal mínima (isLowQualityRaw los cribaría igualmente).
- * Más profundo que esto es insistir.
+ * Tope de raws acumulados por lista (query+intent): lo comparten la paginación
+ * intrarun y el cursor cross-request (QueryOffsetStore). ¿Por qué 300? IGDB solo
+ * fija el máximo por request (limit ≤ 500), no el offset; es nuestra regla
+ * "hacemos cuanto sea razonable": 300 = 10 páginas de igdbSearchLimit (30) ≈
+ * 3,3% del presupuesto diario en UNA (query, intent). Más profundo es insistir.
  */
 export const MAX_IGDB_LIST_RESULTS = 300;
 
@@ -182,18 +173,10 @@ export interface RelaxedAttempt {
 }
 
 /*
- * Estado de UNA ejecución de descubrimiento (la petición que atiende
- * handle()): la última búsqueda IGDB y por dónde va su consumo. Una query
- * suele devolver ~10 candidatos y cada unidad solo enriquece 2. En lugar de
- * repetir la llamada (mismos resultados) o rendirnos al agotar las
- * variantes, las unidades siguientes CONSUMEN la lista guardada sin gastar
- * IGDB. La lista se clavea por (query, intent): la devuelta depende del
- * `where` (filtros del intent), así que un intent estricto que agota la
- * suya no bloquea el refetch de otro más laxo con el mismo texto.
- *
- * Vive en el contexto de la ejecución, NO en el gestor: dos peticiones
- * concurrentes tienen cada una la suya y no pueden entrelazarse el cursor
- * ni pisarse la lista a través de un `await`.
+ * Estado de UNA ejecución de descubrimiento (handle()): la última búsqueda IGDB y
+ * su consumo. Una query devuelve ~10 candidatos y cada unidad enriquece 2, así que
+ * las siguientes CONSUMEN la lista guardada (query+intent) en vez de repetir IGDB.
+ * Vive en el contexto de la ejecución, NO en el gestor: nada se pisa entre runs.
  */
 export interface DiscoveryRun {
   // Query e intent de la lista en curso (null = aún no hay lista).
@@ -333,13 +316,10 @@ export class DiscoveryManager {
       run.query === query && run.intentKey === intentKey;
     if (sameQuery && run.cursor >= run.raws.length) {
       /*
-       * Paginación intrarun: la misma pregunta agotada pide la página
-       * siguiente (hasta MAX_IGDB_LIST_RESULTS en total por lista) en vez de
-       * rendirse para siempre — "buscar más" debe poder traer títulos nuevos
-       * de IGDB. La profundidad se comparte con el store cross-request: un
-       * run nuevo retoma donde el store diga. Sin presupuesto para la página,
-       * agotado sin ruido (no es un error de descubrimiento, es fin de lista
-       * por hoy).
+       * Paginación intrarun: la misma pregunta agotada pide la página siguiente
+       * (hasta MAX_IGDB_LIST_RESULTS por lista) en vez de rendirse — "buscar
+       * más" debe traer títulos nuevos. La profundidad se comparte con el store
+       * cross-request. Sin presupuesto: agotado sin ruido (fin de lista por hoy).
        */
       const nextOffset = run.offset;
       const canPage =
@@ -444,12 +424,10 @@ export class DiscoveryManager {
         trace?.("pool-reuse", { query, results: poolCompatibles.length });
       } else {
         /*
-         * Paginación cross-request: si esta (query, intent) ya se pidió sin
-         * nada compatible, retomamos la lista por donde se quedó en lugar de
-         * repetir la página 0. El cursor lo lleva QueryOffsetStore (solo la
-         * posición: ni contenido ni historial); el pool global sigue siendo
-         * la única memoria de raws. La búsqueda de texto sin intent no
-         * pagina, así que ahí el offset es siempre 0.
+         * Paginación cross-request: si esta (query, intent) ya se pidió sin nada
+         * compatible, se retoma la lista en vez de repetir la página 0. El cursor
+         * lo lleva QueryOffsetStore (solo la posición); el pool global es la única
+         * memoria de raws. Sin intent no hay where → el offset siempre es 0.
          */
         const nextOffset = intent
           ? await this.queryOffsets.getNextOffset(queryKey)
@@ -550,13 +528,10 @@ export class DiscoveryManager {
 
       /*
        * Pre-filtro must: el candidato se evalúa con su vista MatchableGame
-       * (keywords IGDB + pistas de la query como overlay EFÍMERO). Si falla
-       * los filtros duros del intent, está condenado a invalid — no merece
-       * existsInCatalog ni Brave/LLM. Trade-off asumido: no se almacena; si
-       * encaja en búsquedas futuras cuyo intent lo admita, se redescubrirá
-       * entonces con las keywords correctas. Los GATES SEMÁNTICOS se omiten
-       * aquí: el candidato aún no tiene semánticas (las escribirá el
-       * enrichment) — se re-evalúa después.
+       * (keywords IGDB + pistas de la query como overlay EFÍMERO). Si falla los
+       * filtros duros está condenado a invalid: no merece existsInCatalog ni
+       * Brave/LLM. Trade-off: no se almacena; se redescubrirá en una búsqueda
+       * futura que lo admita. Los gates semánticos se omiten (aún no los tiene).
        */
       if (
         intent &&
@@ -594,19 +569,15 @@ export class DiscoveryManager {
         // las keywords salen intactas del candidate (vocabulario IGDB).
         const enriched = concludeGameToPersist(candidate, result.editable);
         /*
-         * NOTA de diseño: la ficha enriquecida se ALMACENA SIEMPRE que
-         * aporta valor (enrichmentAddsValue) aunque falle los gates
-         * semánticos de ESTE intent — el coste del enrichment ya está
-         * hundido y la ficha con semánticas reales es un activo para
-         * búsquedas futuras. Los gates deciden qué se MUESTRA (el re-rank
-         * con el pool actualizado la excluye de esta respuesta), no qué
-         * se guarda.
+         * NOTA de diseño: la ficha enriquecida se ALMACENA SIEMPRE que aporta
+         * valor (enrichmentAddsValue) aunque fallen los gates de ESTE intent: el
+         * coste ya está hundido y las semánticas reales son un activo para
+         * búsquedas futuras. Los gates deciden qué se MUESTRA, no qué se guarda.
          */
         /*
-         * Garantía de calidad del catálogo: si el enrichment no aporta
-         * NINGUNA semántica conocida NI keywords adicionales, la ficha es
-         * inservible para el matching (todo null = no comparable) y solo
-         * ensucia la BDD. Se gasta el Brave (ya consumido) pero NO se
+         * Garantía de calidad: si el enrichment no aporta NINGUNA semántica
+         * conocida NI keywords adicionales, la ficha es inservible para el
+         * matching (todo null = no comparable). Se gasta el Brave pero NO se
          * persiste.
          */
         if (
@@ -647,12 +618,10 @@ export class DiscoveryManager {
   }
 
   /*
-   * Rescate relajado (rama "more"): criba local en cascada — pasada 0 con
-   * must completo, luego soltando un grupo por pasada (RELAX_ORDER) hasta
-   * llenar maxNew o agotar grupos. Solo se enriquece a los ≤maxNew
-   * supervivientes. Reutiliza raws del pool global (gratis); solo si no hay
-   * raws compatibles hace UNA o DOS llamadas de pago (amplia + where
-   * relajado).
+   * Rescate relajado (rama "more"): criba local en cascada — pasada 0 con must
+   * completo, luego soltando un grupo por pasada (RELAX_ORDER) hasta llenar
+   * maxNew o agotar grupos; solo se enriquece a los supervivientes. Reutiliza
+   * raws del pool global; sin raws hace UNA o DOS llamadas de pago.
    */
   async discoverRelaxed(
     query: string,
@@ -682,10 +651,8 @@ export class DiscoveryManager {
     // Fases de fetch (tope: 2 llamadas de pago por rescate):
     //  1. reutilizar raws compatibles del pool global (gratis);
     //  2. amplia de texto (trae títulos que el where no ve);
-    //  3. where relajado en el primer grupo con señal (trae lo que el
-    //     estricto excluye por un filtro de más).
-    // Un fallo de fase no tumba el rescate: se sigue con lo reunido (la
-    // criba honesta dirá si basta).
+    //  3. where relajado en el primer grupo con señal.
+    // Un fallo de fase no tumba el rescate: se sigue con lo reunido.
     const allRaws: IgdbGameRaw[] = [];
     const seenRawIds = new Set<number>();
     const collectUnique = (list: IgdbGameRaw[]): void => {
@@ -926,12 +893,9 @@ if (await this.existsInCatalog(candidate.sourceId, candidate.slug)) {
   /*
    * Re-enrichment de una ficha existente: null del enrichment = sin evidencia
    * nueva → se conserva el valor previo (nunca se degrada una ficha conocida).
-   *
-   * Fichas incompletas (p. ej. las del seed sin source_id): el match contra
-   * IGDB se hace también por título normalizado y, si la ficha no tiene
-   * source_id, se ADOPTAN los datos objetivos del candidato (identidad,
-   * clasificaciones, portada, año) además de semánticas y keywords. Así una
-   * ficha "casi vacía" queda rehabilitada de una pasada.
+   * Fichas incompletas (p. ej. del seed sin source_id): el match contra IGDB es
+   * también por título normalizado y se ADOPTAN sus datos objetivos (identidad,
+   * clasificaciones, portada, año) — la ficha queda rehabilitada de una pasada.
    */
   async reEnrich(game: Game, traceId?: string): Promise<ReEnrichResult> {
     const trace = traceId ? createTrace(traceId) : null;

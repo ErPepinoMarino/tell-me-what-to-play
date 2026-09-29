@@ -1,19 +1,8 @@
 /*
- * Progreso de paginación IGDB cross-request. Para cada (query normalizada +
- * intent filtrado) recuerda el offset acumulado de la última página con
- * resultados, de modo que "buscar más" en una petición NUEVA no repita la
- * misma lista: retoma por donde se quedó la anterior.
- *
- * Es estado MÍNIMO y separado del pool global de raws: aquí SOLO vive un
- * cursor monotónico (qué página pedir), nunca contenido ni historial del
- * usuario. El contenido descubierto lo guarda DiscoveryCacheRepository; este
- * store únicamente evita repetir la MISMA consulta a IGDB cuando no había
- * nada compatible.
- *
- * Monotónico por diseño: el offset solo avanza con páginas no vacías (una
- * página vacía no mueve el cursor, igual que las listas vacías no se cachean
- * como agotadas). Sin expiración en v1: reiniciar por tiempo queda para una
- * fase con Redis/proceso compartido.
+ * Progreso de paginación IGDB cross-request: guarda el offset de la última página
+ * con resultados por (query normalizada + intent), para que "buscar más" no repita
+ * la misma lista. Solo un cursor monotónico —nunca contenido ni historial del
+ * usuario—, que avanza con páginas no vacías y no expira en v1.
  */
 export interface QueryOffsetStore {
   // Siguiente offset a pedir para la clave (0 si aún no se ha paginado).

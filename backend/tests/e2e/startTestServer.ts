@@ -3,16 +3,9 @@ import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
 
 /*
- * Helper compartido de los e2e black-box:
- *  1. elige un PUERTO LIBRE (delegamos al SO: listen(0) y lo leemos);
- *  2. lanza el server REAL (src/server.ts vía tsx) con PORT env = ese puerto;
- *  3. espera a que /api/health responda 200;
- *  4. devuelve baseUrl + stop para matar el proceso.
- *
- * Con esto cada e2e se vuelve autocontenido: ya no choca con el puerto fijo
- * 3001 del backend Docker (arriba o abajo da igual). Se comparte entre
- * health, gameRoutes, authGoogle, authRefresh y userGamesAuthorization para
- * no duplicar el bloque de spawn/wait.
+ * Helper e2e black-box: puerto LIBRE (listen(0)), server REAL (src/server.ts vía
+ * tsx), espera 200 en /api/health y devuelve baseUrl + stop. Cada e2e queda
+ * autocontenido (olvidaos del 3001 fijo del backend Docker) y comparte el spawn.
  */
 
 const DEFAULT_TIMEOUT_MS = 10_000;

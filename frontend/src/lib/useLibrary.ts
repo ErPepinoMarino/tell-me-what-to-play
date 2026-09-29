@@ -6,13 +6,10 @@ import type { LibraryEntry } from "@/types/Library";
 export type AddToLibraryOutcome = "added" | "exists" | "error";
 
 /*
- * Biblioteca del usuario autenticado. Un ÚNICO hook por página (instancia
- * de HomeClient) para que el añadir desde GameInfo y la lista de
- * MyLibrary compartan la misma fuente de verdad.
- *
- * Nota de contrato PUT: el backend escribe TODOS los campos (missing →
- * null). El cuerpo siempre lleva el triple completo con los valores
- * vigentes; los campos null vigentes se OMITEN (omitir ≡ null en la BD).
+ * Biblioteca del usuario autenticado. Un ÚNICO hook por página (instancia de
+ * HomeClient) para que GameInfo y MyLibrary compartan fuente de verdad.
+ * Contrato PUT: el backend escribe TODOS los campos (missing → null), así que
+ * el cuerpo lleva el triple completo y los null vigentes se OMITEN.
  * "Borrar reseña" = omitir la clave review.
  */
 export function useLibrary(token: string | null) {

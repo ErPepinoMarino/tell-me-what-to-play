@@ -27,18 +27,11 @@ import type {
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 /*
- * Matcher puro: (GameSearchIntent, MatchableGame) → MatchResult.
- * Determinista, explicable y sin I/O. Nunca lanza por contenido de datos:
- * UNKNOWN, arrays vacíos y todo-null se tratan como "no verificable".
- *
- * Dos fases:
- *  1. FILTRO DURO (sin números): todo lo no-semántico pedido explícitamente
- *     debe estar (must); lo excluido explícitamente (red flags) prohíbe.
- *     El juego puede tener MÁS de lo pedido, nunca menos. UNKNOWN falla el
- *     must (no verificable). Los gates marcan tier "invalid".
- *  2. RANKING (solo semántica): media de acuerdo sobre las dimensiones
- *     comparables, con contradicciones amplificadas. Es la única
- *     ponderación numérica.
+ * Matcher puro: (GameSearchIntent, MatchableGame) → MatchResult, determinista y
+ * sin I/O; UNKNOWN/vacío/todo-null = "no verificable".
+ *  1. FILTRO DURO: deben estar los must explícitos y nada de los red flags (más
+ *     es válido, menos no; UNKNOWN falla el must → "invalid").
+ *  2. RANKING, única ponderación numérica: media de acuerdo con contradicciones.
  */
 
 // Tiene datos clasificables: no vacío y no solo UNKNOWN.
@@ -466,15 +459,11 @@ function checkAbsenceGate(
 }
 
 /*
- * Ranking semántico: única ponderación numérica. Media de acuerdo sobre
- * las dimensiones comparables. Una contradicción amplificada (distancia ≥
- * AMPLIFICATION_THRESHOLD) aporta NEGATIVO y de magnitud (acuerdo − 1):
- * debe quedar estrictamente por debajo de una ficha DESCONOCIDA (0), incluso
- * en la contradicción total (distancia 1 → acuerdo 0 → −1; el caso
- * cozy/Bloodborne: un juego de terror no puede empatar con "no sé cómo es"
- * solo por estar bien documentado). La contribución de cada dimensión se
- * reparte entre las comparables, de modo que score = Σ contributions =
- * media (invariante exacta), en [-1,1].
+ * Ranking semántico: única ponderación numérica = media de acuerdo sobre las
+ * dimensiones comparables. Una contradicción amplificada (distancia ≥
+ * AMPLIFICATION_THRESHOLD) aporta NEGATIVO (acuerdo − 1), estrictamente por
+ * debajo de una ficha DESCONOCIDA (0): cozy/Bloodborne. Score = Σ contributions
+ * = media exacta, en [-1,1].
  */
 function computeSemanticRanking(
   intent: GameSearchIntent,
@@ -565,16 +554,10 @@ function assignTier(
 }
 
 /*
- * Fase de filtros duros aislada: ¿el juego cumple TODO lo pedido (must) y
- * no contiene NADA de lo excluido (red flags)? Sin ranking. La usan el
- * pre-filtro de descubrimiento y la canonicalización de la cache para no
- * gastar presupuesto en candidatos condenados a invalid.
- *
- * Opción semanticGates (default true): los gates semánticos de extremo
- * (ausencia/presencia) exigen valores CONOCIDOS del juego. En el pre-filtro
- * de discovery los candidatos aún NO tienen semánticas (las escribirá el
- * enrichment) → semanticGates: false; el candidato se re-evalúa con las
- * semánticas reales tras el enriquecimiento.
+ * Filtros duros aislados: ¿cumple los must y no contiene red flags? Sin ranking;
+ * los usan el pre-filtro de discovery y la canonicalización de la cache.
+ * semanticGates (default true): en discovery el candidato aún no tiene
+ * semánticas → false, y se re-evalúa tras el enrichment.
  */
 export function passesHardFilters(
   intent: GameSearchIntent,

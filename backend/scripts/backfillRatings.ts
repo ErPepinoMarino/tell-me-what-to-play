@@ -1,10 +1,8 @@
 /*
  * Backfill de la señal de calidad de IGDB (total_rating_count / total_rating)
- * para las fichas ya descubiertas (source_id presente). Alimenta el criterio
- * objetivo de purga del catálogo: rating_count < 3 = la misma barra que el
- * gate de descubrimiento (minIgdbRatingCount).
- *
- * Uso: npm run ratings:backfill   (IGDB configurado; 1 llamada por cada 100 ids)
+ * de las fichas descubiertas. Alimenta la purga: rating_count < 3 = la misma
+ * barra que el gate de descubrimiento (minIgdbRatingCount).
+ * Uso: npm run ratings:backfill   (1 llamada por cada 100 ids)
  */
 import "./env.js";
 import { prisma } from "../src/lib/prisma.js";

@@ -1,20 +1,9 @@
 /*
- * Backfill de calidad del catálogo: rehabilita fichas incompletas.
- *
- * Criterio de selección: fichas sin source_id (p. ej. las del seed,
- * inenriquecibles por diseño hasta ahora) o con menos de
- * RECOMMENDATION_REENRICH_MIN_KNOWN_SEMANTICS semánticas conocidas.
- *
- * Por cada ficha: IGDB search por título (match por sourceId, slug o título
- * normalizado) → si la ficha no tenía identidad se ADOPTAN los datos
- * objetivos canónicos de IGDB (source_id, clasificaciones, portada, año) →
- * Brave + LLM para descripciones y semánticas (conservando las conocidas).
- * Las keywords NO se modifican (invariante: reEnrich es un patch sin
- * keywords; refrescarlas desde IGDB es una sincronización explícita de
- * catálogo, fuera del alcance de este script).
- *
- * Uso: npm run enrich:backfill   (desde backend/, con IGDB/Brave/OpenAI
- * configuradas y PG accesible). Respeta el presupuesto diario.
+ * Backfill de calidad: rehabilita fichas incompletas (sin source_id o con menos
+ * de RECOMMENDATION_REENRICH_MIN_KNOWN_SEMANTICS semánticas). IGDB search por
+ * título → adopta identidad/clasificaciones canónicas → Brave + LLM para
+ * descripciones y semánticas (conserva las conocidas). Las keywords NO se tocan.
+ * Uso: npm run enrich:backfill   (respeta el presupuesto diario)
  */
 import "./env.js";
 import {

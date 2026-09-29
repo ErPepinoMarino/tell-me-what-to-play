@@ -1,16 +1,8 @@
 /*
- * Dos conceptos de keywords que NO deben compartir tipo:
- *
- *  - IgdbKeyword    → SOLO del vocabulario de `raw.keywords` de IGDB
- *                     (mint sellado en src/igdb/keywords.ts). Es la ÚNICA
- *                     semántica de Game.keywords.
- *  - SearchKeyword  → vocabulario de BÚSQUEDA: query del usuario, hints,
- *                     additionalKeywords del LLM. Jamás persistible.
- *
- * Las marcas son símbolos únicos NO exportados: la única forma de fabricar
- * un valor es un cast `as` (prohibido por lint fuera de los módulos de
- * confianza) o un mint explícito. Ninguna de estas marcas es asignable a
- * la otra, y ambas sí son asignables a `string`/`readonly string[]`.
+ * Dos conceptos que NO comparten tipo: IgdbKeyword (solo raw.keywords de IGDB, mint
+ * sellado en src/igdb/keywords.ts; única semántica de Game.keywords) y SearchKeyword
+ * (vocabulario de BÚSQUEDA: query, hints y additionalKeywords del LLM; jamás
+ * persistible). Marcas = símbolos únicos no exportados, fabricables solo con cast.
  */
 declare const igdbKeywordBrand: unique symbol;
 declare const searchKeywordBrand: unique symbol;

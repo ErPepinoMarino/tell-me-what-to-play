@@ -8,18 +8,9 @@ export interface SeedCatalogResult {
 
 /*
  * Bootstrap del catálogo popular: garantiza que las fichas del seed
- * (src/data/games.ts — los juegos más populares, cache fría versionada)
- * existan en PostgreSQL.
- *
- * Idempotente y conservador: si la ficha ya existe en PG se salta — NUNCA
- * se sobreescribe una ficha enriquecida de la BDD con los datos (posibles-
- * mente pobres) del seed. Para actualizar fichas existentes están el
- * re-enrichment orgánico y `npm run enrich:backfill`.
- *
- * Pensado para el arranque del backend (server.ts, best-effort: si PG no
- * responde, el server arranca igual y las rutas degradan como siempre) y
- * para el CLI `npm run seed:catalog`. Funciona igual en compose que en
- * Railway: no depende de servicios one-shot.
+ * (src/data/games.ts) existan en PostgreSQL. Idempotente y conservador: si ya
+ * existe se salta, NUNCA se sobreescribe una ficha enriquecida con el seed.
+ * Lo usan el arranque del server (best-effort) y `npm run seed:catalog`.
  */
 export async function ensureSeedCatalog(
   catalog: CatalogLayer,

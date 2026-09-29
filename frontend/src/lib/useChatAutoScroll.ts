@@ -11,12 +11,10 @@ function scrollToBottom(el: HTMLElement) {
 }
 
 /*
- * Auto-scroll del chat: si el usuario está siguiendo la cola, cada mensaje
- * nuevo ancla al final; si se desplazó hacia arriba a leer, NO se roba el
- * scroll. Al iniciar un turno nuevo (status → "searching", momento en el
- * que el mensaje del usuario ya está en el transcript optimista) se
- * re-ancla la cola. El ciclo de vida reset/continue del protocolo no
- * interviene: cualquier turno re-ancla igual.
+ * Auto-scroll del chat: si el usuario sigue la cola, cada mensaje nuevo ancla
+ * al final; si subió a leer, NO se le roba el scroll. Al empezar un turno
+ * (status → "searching") se re-ancla la cola. El ciclo reset/continue del
+ * protocolo no interviene: cualquier turno re-ancla igual.
  */
 export function useChatAutoScroll(status: ChatStatus, transcript: TranscriptMessage[]) {
   const containerRef = useRef<HTMLDivElement | null>(null);

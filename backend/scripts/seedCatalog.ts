@@ -1,9 +1,7 @@
 /*
  * CLI manual del bootstrap del catálogo popular. La lógica vive en
- * src/services/seedCatalogService.ts (el server la ejecuta también al
- * arrancar). Este CLI existe para forzarla desde el host sin arrancar el
- * server y para entornos donde quieras sembrar sin levantar la API.
- *
+ * src/services/seedCatalogService.ts (el server también la ejecuta al arrancar);
+ * este CLI permite forzarla sin levantar la API.
  * Uso: npm run seed:catalog   (desde backend/, con PG accesible)
  */
 import "./env.js";

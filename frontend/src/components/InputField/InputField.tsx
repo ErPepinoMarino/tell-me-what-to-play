@@ -10,16 +10,10 @@ type InputFieldProps = {
 };
 
 /*
- * USER INPUT: texto libre + dos acciones. El backend (LLM) decide con el
- * contexto de sesión si el mensaje extiende la búsqueda anterior o empieza
- * otra: afinar o cambiar de tema no es decisión del cliente. "Mostrar más
- * resultados" repite la intención de sesión excluyendo lo ya mostrado.
- *
- * Reglas de producto:
- * - "more" deshabilitado hasta que una búsqueda devuelva ≥1 resultado
- *   (canMore lo refleja: results > 0, meta presente y pool no agotado).
- * - Decisión de producto: "more" también para anónimos — no exige login.
- * - No presenta resultados ni chat: solo entrada y envío.
+ * USER INPUT: texto libre + dos acciones. El backend (LLM) decide si el mensaje
+ * extiende la búsqueda anterior o empieza otra; "más" repite la intención
+ * excluyendo lo mostrado.
+ * "more" requiere ≥1 resultado (canMore) pero NO login. No pinta resultados.
  */
 export default function InputField({
   onSubmit,

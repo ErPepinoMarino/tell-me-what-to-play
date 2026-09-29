@@ -13,10 +13,9 @@ import type {
 } from "../matching/types.js";
 
 /*
- * Acciones del contrato. "search" es cualquier mensaje nuevo: si hay sesión,
- * el LLM recibe el intent previo y decide si lo EXTIENDE o lo REEMPLAZA
- * (afinar o cambiar de tema es decisión del intérprete, no del cliente).
- * "more" repite la intención de sesión excluyendo lo ya mostrado.
+ * search = mensaje nuevo: con sesión activa el LLM ve el intent previo y decide
+ * si lo EXTIENDE (afinar) o lo REEMPLAZA (otra búsqueda).
+ * more = repite el intent de sesión excluyendo lo ya mostrado.
  */
 export type RecommendationAction = "search" | "more";
 
@@ -51,10 +50,9 @@ export interface RecommendedGameDTO {
 }
 
 /*
- * Razón explicable para la UI. block+kind permiten renderizar los chips
- * ✓ (bonus) / ~ (parcial) / ✗ (penalty/gate) y agrupar por bloque; field
- * y note son el vocabulario que el frontend humaniza. contribution solo
- * se muestra en el modo demo/técnico.
+ * Razón explicable para la UI: block+kind pintan los chips ✓ (bonus) / ~
+ * (parcial) / ✗ (penalty); field+note es el vocabulario que el frontend
+ * humaniza, y contribution solo se muestra en el modo demo/técnico.
  */
 export interface MatchReasonDTO {
   block: MatchBlock;
@@ -80,11 +78,9 @@ export interface RecommendationResultItem {
 export interface RecommendationMeta {
   action: RecommendationAction;
   /*
-   * Ciclo de vida conversacional (el cliente es el dueño del contexto):
-   * "reset" = el turno empezó UNA BÚSQUEDA NUEVA (el cliente vacía su
-   * listado de mostrados y adopta el intent devuelto como contexto nuevo);
-   * "continue" = el turno siguió el mismo hilo (refine, more o ningún
-   * resultado) y el cliente acumula mostrados.
+   * "reset" = el turno empezó UNA BÚSQUEDA NUEVA: el cliente vacía su listado de
+   * mostrados y adopta el intent devuelto; "continue" = mismo hilo (refine/more),
+   * así que el cliente acumula los mostrados.
    */
   lifecycle: "reset" | "continue";
   evaluatedCandidates: number;
@@ -93,9 +89,9 @@ export interface RecommendationMeta {
   tierCounts: Record<MatchTier, number>;
   discoveryUnitsUsed: number;
   /*
-   * Grupos de requisitos soltados por la criba relajada (solo "more"):
-   * "years" | "perspectives" | "platforms" | "gameModes" | "themes" |
-   * "genres" | "keywords". Ausente o vacío = búsqueda estricta.
+   * Grupos soltados por la criba relajada cuando no hay matches (solo "more"), en
+   * orden: years, perspectives, platforms, gameModes, themes, genres, keywords.
+   * Ausente o vacío = búsqueda estricta.
    */
   relaxedFilters?: string[];
 }
@@ -113,9 +109,9 @@ export interface RecommendationResponse {
 }
 
 /*
- * Eventos del stream POST /api/recommendations/stream (SSE por trozos):
- * intent nada más resolverse, snapshots rankeados por tanda creada y done
- * con la respuesta completa final. El endpoint clásico sigue intacto.
+ * Eventos del stream SSE (POST /api/recommendations/stream), en tandas para no
+ * hacer esperar al frontend: intent al resolverse, results por tanda y done con
+ * la respuesta final. El endpoint clásico sigue intacto.
  */
 export type RecommendationStreamEvent =
   | { event: "intent"; intent: GameSearchIntent }

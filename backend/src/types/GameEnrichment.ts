@@ -22,12 +22,10 @@ export const SemanticSchema = z.object({
 export type Semantic = z.infer<typeof SemanticSchema>;
 
 /*
- * Output estructurado del LLM durante el enriquecimiento.
- * - semantic: 13 dimensiones inferidas SÓLO si hay evidencia suficiente.
- * - additionalKeywords: vocabulario abierto, sustancialmente distinto de las
- *   keywords ya presentes en el candidate. Señal transitoria del gate de
- *   valor del orquestador: jamás se persiste ni se fusiona con Game.keywords.
- * - description_es / description_en: descripción propia y breve, bilingüe.
+ * Output estructurado del LLM durante el enriquecimiento: semantic (13 dimensiones
+ * SÓLO con evidencia), description_es/en breves y bilingües, y additionalKeywords
+ * (vocabulario abierto, señal transitoria del gate de valor: jamás se persiste ni
+ * se fusiona con Game.keywords).
  */
 export const GameEnrichmentSchema = z.object({
   semantic: SemanticSchema,

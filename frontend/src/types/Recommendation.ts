@@ -1,11 +1,8 @@
 /*
  * Espejo del contrato de POST /api/recommendations del backend
- * (backend/src/types/Recommendation.ts). El frontend es una capa de
- * presentación: recibe strings del backend y no conoce los enums internos.
- *
- * "search" es cualquier mensaje nuevo: el backend (LLM) decide con el
- * contexto de sesión si el mensaje extiende la búsqueda anterior o empieza
- * otra. Afinar o cambiar de tema NO es decisión del cliente.
+ * (backend/src/types/Recommendation.ts): el frontend solo recibe strings.
+ * "search" es cualquier mensaje nuevo: el backend (LLM) decide si extiende la
+ * búsqueda anterior o empieza otra, no el cliente.
  */
 
 export type RecommendationAction = "search" | "more";

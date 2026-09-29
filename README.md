@@ -322,4 +322,4 @@ It was built as a demonstration of full-stack web engineering by a developer who
 
 ## License
 
-No license is declared for this repository.
+None. Feel free to use it as you like. It's just a summer experiment :P

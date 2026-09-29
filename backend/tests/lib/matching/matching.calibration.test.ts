@@ -3,16 +3,10 @@ import { rankMatches } from "../../../src/matching/rankMatches.js";
 import { makeGame, makeIntent, makeSemantic } from "./fixtures.js";
 
 /*
- * Escenarios de producto del modelo de filtros duros (recalibrados):
- *
- * S1 "un juego oscuro de piratas": la temática ya no puntúa, FILTRA. El
- *     juego de cowboys con semánticas perfectas queda FUERA (no tiene la
- *     keyword "pirates"); el de piratas pasa aunque contradiga algo la
- *     oscuridad, y su acuerdo semántico lo ordena.
- *
- * S2 "lento, cozy en pixel art": el match de temática desconocido gana al
- *     que contradice las dimensiones pedidas: una contradicción fuerte
- *     aporta NEGATIVO (peor que "no sé cómo es").
+ * Escenarios de producto del modelo de filtros duros:
+ * S1 "juego oscuro de piratas": la temática FILTRA, no puntúa — el cowboy con
+ *    semánticas perfectas queda FUERA y la semántica solo ordena a los piratas.
+ * S2 "lento, cozy en pixel art": gana el desconocido sobre el que contradice.
  */
 
 describe("escenario S1: la temática filtra, la semántica ordena", () => {

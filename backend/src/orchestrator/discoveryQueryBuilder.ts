@@ -1,13 +1,9 @@
 /*
- * DiscoveryQueryBuilder: traduce los criterios de búsqueda internos
- * (GameSearchIntent) a la consulta que necesita IGDB y la ejecuta.
- *
- *   GameSearchIntent → DiscoveryQueryBuilder → IGDB query (filteredSearch)
- *
- * Única responsabilidad: construcción y ejecución de la búsqueda IGDB —
- * `where` por atributos (keywords→IDs, themes→IDs, géneros/plataformas/
- * modos/perspectivas→nombres), años (exacto + rangos) y red flags negados.
- * No toca paginación, pool, cache, enrichment ni persistencia.
+ * DiscoveryQueryBuilder: GameSearchIntent → consulta IGDB (filteredSearch).
+ * Única responsabilidad: construir y ejecutar la búsqueda — `where` por
+ * atributos (keywords/themes → IDs, géneros/plataformas/modos/perspectivas →
+ * nombres), años (exacto + rangos) y red flags negados. No toca paginación,
+ * pool, cache, enrichment ni persistencia.
  */
 import {
   genreIgbNames,

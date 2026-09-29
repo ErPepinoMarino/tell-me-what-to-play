@@ -2,21 +2,17 @@ import { keywordStem } from "../matching/keywords.js";
 import type { GameSearchIntent } from "../types/GameSearchIntent.js";
 
 /*
- * Umbral de asimilación DECIDIDO en la calibración (FASE 2, ver
- * scripts/calibrateLexicon.ts): banda válida (0.44, 0.61] con
- * text-embedding-3-small sobre términos sueltos — los sinónimos conceptuales
- * reales puntúan 0.61-0.77 y los conceptos distintos ≤ 0.44. NOTA: pares
- * cross-lingual ("infectados"/"zombies") NO asimilan por diseño: la
- * traducción es responsabilidad del prompt del intent, no del léxico.
+ * Umbral de asimilación DECIDIDO en la calibración (scripts/calibrateLexicon.ts):
+ * banda válida (0.44, 0.61] con text-embedding-3-small — sinónimos reales
+ * 0.61-0.77, conceptos distintos ≤ 0.44. Los pares cross-lingual no asimilan
+ * por diseño: la traducción es del prompt del intent, no del léxico.
  */
 export const LEXICON_SIMILARITY_THRESHOLD = 0.58;
 
 /*
- * Política de supervisión compartida por el minado (FASE 1) y la migración
- * (FASE 3): keywords que NUNCA deben entrar al léxico ni proponerse como
- * entradas nuevas — metadatos de plataforma/distribución, y fragmentos que
- * la antigua contaminación de términos de búsqueda dejó colar en el
- * catálogo.
+ * Política de supervisión compartida por el minado y la migración: keywords que
+ * NUNCA deben entrar al léxico ni proponerse — metadatos de plataforma /
+ * distribución y fragmentos que coló la antigua contaminación de términos.
  */
 export const TECH_NOISE = new Set([
   "steam",
@@ -74,14 +70,10 @@ export const TECH_NOISE = new Set([
 export const KEYWORD_FRAGMENTS = new Set(["hack", "slash", "wash", "age"]);
 
 /*
- * Léxico de keywords canónicas.
- *
- * Algoritmo de asimilación greedy: candidatas ordenadas por frecuencia; una
- * candidata se convierte en ALIAS de un canónico si coincide por talo (gratis)
- * o si su embedding se parece lo bastante (similitud ≥ umbral); si es
- * suficientemente distinta, ENTRA NUEVA. El resultado queda maximalmente
- * distinto por construcción y el matcher no cambia: sigue comparando talos
- * literales sobre el vocabulario canónico resultante.
+ * Léxico de keywords canónicas. Asimilación greedy sobre candidatas ordenadas
+ * por frecuencia: ALIAS de un canónico si coincide por talo (gratis) o si su
+ * embedding se parece (≥ umbral); si es distinta, ENTRA NUEVA. El matcher no
+ * cambia: sigue comparando talos literales sobre el vocabulario canónico.
  */
 
 export interface LexiconCandidate {
@@ -284,25 +276,11 @@ export async function assimilateGreedily(
 }
 
 /*
- * ============================================================================
- * Servicio de léxico EN CALIENTE (FASE 4): canonicalización de keywords.
- * ============================================================================
- *
- * Qué hace: traduce términos del usuario/enrichment al VOCABULARIO CANÓNICO
- * del diccionario (tabla keyword_lexicon), por el orden más barato primero:
- *
- *   1. literal   — el término ES un canónico (gratis)
- *   2. stem      — el talo coincide con un canónico o alias (gratis)
- *   3. embedding — coseno contra los vectores del léxico (1 llamada por
- *                  canonicalize(), con cache de términos desconocidos)
- *   4. unmapped  — se conserva el término tal cual (NADA se descarta)
- *
- * Fallback degradado: si el servicio de embeddings falla o el presupuesto
- * "embedding" está seco, canonicalize() sigue funcionando con literal+stem
- * (el producto nunca se bloquea por el enriquecimiento semántico).
- *
- * El MATCHER no cambia: sigue comparando talos literales. Esta clase solo
- * normaliza el DATO antes de que llegue al matcher.
+ * Servicio de léxico EN CALIENTE (FASE 4): canonicaliza términos del
+ * usuario/enrichment al VOCABULARIO CANÓNICO de keyword_lexicon, del más barato al
+ * más caro: 1) literal (ES un canónico), 2) stem (talo = canónico/alias), 3)
+ * embedding (coseno con cache), 4) unmapped (se conserva, NADA se descarta).
+ * Sin embeddings sigue con literal+stem; el matcher no cambia, solo el DATO.
  */
 export interface LexiconRow {
   canonical: string;

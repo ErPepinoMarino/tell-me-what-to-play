@@ -56,11 +56,9 @@ export interface ReEnrichPatch {
 /*
  * Capa de catalogo canonica: TODA identidad de juego (ids de sesion,
  * resultados, exclusiones) nace de PG.
- *
- * Escritura de keywords: SOLO dos operaciones semánticamente explícitas
- * (createIgdb, syncCatalogKeywords). No existe ningún `create`/`update`
- * genérico que acepte un `Game` arbitrario.
- * updateReEnrich actualiza la ficha SIN acceso a keywords.
+ * Escritura de keywords: SOLO dos operaciones explícitas (createIgdb,
+ * syncCatalogKeywords); no hay create/update genérico que acepte un Game
+ * arbitrario, y updateReEnrich actualiza la ficha SIN acceso a keywords.
  */
 export interface CatalogLayer {
   findCandidates(filter: CandidateFilter): Promise<Game[]>;

@@ -1,9 +1,6 @@
 /*
- * FASE 1 del roadmap del léxico: ACEPTACIÓN del draft tras la supervisión
- * del usuario. Importa reports/lexicon-draft.json (posiblemente editado a
- * mano: renombrar canónicos, separar fusiones, quitar aliases) a la tabla
- * keyword_lexicon. Idempotente: upsert por canonical.
- *
+ * FASE 1 léxico: ACEPTACIÓN del draft supervisado → keyword_lexicon.
+ * Lee reports/lexicon-draft.json (editable a mano). Upsert por canonical.
  * Uso: npm run lexicon:accept
  */
 import "./env.js";
